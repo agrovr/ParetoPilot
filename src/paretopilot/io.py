@@ -121,6 +121,18 @@ def _load_json(path: Path) -> Mapping[str, Any]:
     return normalized
 
 
+def load_json_object(path: Path) -> Mapping[str, Any]:
+    """Load one strict JSON object without applying a domain schema.
+
+    This is the shared entry point for small metadata documents such as
+    benchmark settings and generated summaries.  It retains the same UTF-8,
+    duplicate-key, finite-number, and top-level-object checks used by the
+    benchmark and constraint loaders.
+    """
+
+    return _load_json(path)
+
+
 def load_benchmarks(path: Path) -> BenchmarkSet:
     raw = _load_json(path)
     try:

@@ -6,7 +6,7 @@ from tempfile import TemporaryDirectory
 import unittest
 
 from paretopilot.domain import ValidationError
-from paretopilot.io import load_benchmarks, sha256_file, write_json
+from paretopilot.io import load_benchmarks, load_json_object, sha256_file, write_json
 
 
 def valid_benchmark_json(*, parameters: str = "{}") -> str:
@@ -19,6 +19,16 @@ def valid_benchmark_json(*, parameters: str = "{}") -> str:
 
 
 class StrictJsonInputTests(unittest.TestCase):
+    def test_loads_generic_object_and_rejects_non_object_top_level(self) -> None:
+        with TemporaryDirectory() as directory:
+            path = Path(directory) / "settings.json"
+            path.write_text('{"threads":4}', encoding="utf-8")
+            self.assertEqual(load_json_object(path), {"threads": 4})
+
+            path.write_text('[1, 2, 3]', encoding="utf-8")
+            with self.assertRaisesRegex(ValidationError, "top-level value.*must be an object"):
+                load_json_object(path)
+
     def test_rejects_duplicate_keys_at_any_depth(self) -> None:
         with TemporaryDirectory() as directory:
             path = Path(directory) / "duplicate.json"

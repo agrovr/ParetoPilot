@@ -8,12 +8,14 @@ deployment configuration without hiding the underlying measurements.
 
 ## Current status
 
-This repository contains the benchmark-result contract and the first recommendation engine.
-The included example data is explicitly synthetic and exists only to exercise the workflow. It
-must never be presented as measured Arm performance.
+This repository contains the benchmark-result contract, recommendation engine, upstream
+`llama-bench` validation, and a reproducible native Arm64 benchmark workflow. The included
+example data is explicitly synthetic and exists only to exercise the local workflow. It must
+never be presented as measured Arm performance.
 
-The next milestone is an access spike on an Arm64 Linux target using `llama.cpp`, KleidiAI,
-`llama-bench`, and Arm Performix.
+The first measured experiment runs on GitHub's public `ubuntu-24.04-arm` runner at no compute
+cost. It builds one pinned `llama.cpp` commit twice, changes only KleidiAI enablement, and
+benchmarks both binaries against the same pinned Qwen Q4_0 model in balanced A-B-B-A order.
 
 ## MVP workflow
 
@@ -51,9 +53,20 @@ Run the dependency-free test suite:
 py -3.12 -m unittest discover -s tests -v
 ```
 
+## Run the free native Arm64 benchmark
+
+The repository must remain public for the standard Arm64 runner to be free. From the GitHub
+Actions page, select **Native Arm64 benchmark**, choose **Run workflow**, and keep the canonical
+defaults for publishable evidence. The workflow uploads a compact evidence bundle containing
+raw samples, command arrays, environment details, build/model hashes, summaries, comparisons,
+and a completion status. Models and build trees are never uploaded.
+
+See [the GitHub Actions benchmark guide](docs/github-actions-benchmark.md) for exact pins,
+validity boundaries, and artifact review steps.
+
 ## Evidence policy
 
-- Never mix measurements from different target SKUs in one comparison.
+- Never mix measurements from different runner instances or CPU identities in one comparison.
 - Pin the model checksum, runtime commit, compiler, build flags, and workload.
 - Warm up the runtime and publish every repetition, not only the best run.
 - Report quality changes alongside speed, memory, and model-size changes.
@@ -69,9 +82,10 @@ The exact upstream JSONL assumptions live in
 
 ## Scope guardrails
 
-The hackathon MVP targets one model family, one `llama.cpp` runtime, and one fixed Arm64 cloud
-target. Multi-cloud support, multiple inference runtimes, model training, authentication, and an
-autonomous code-rewriting agent are deliberately out of scope.
+The hackathon MVP targets one model family, one `llama.cpp` runtime, and one controlled paired
+experiment per Arm64 runner instance. Multi-cloud orchestration, multiple inference runtimes,
+model training, authentication, and an autonomous code-rewriting agent are deliberately out of
+scope.
 
 ## License
 

@@ -44,6 +44,12 @@ class LlamaBenchRecord:
     avg_ts: float
     samples_ns: tuple[float, ...]
     samples_ts: tuple[float, ...]
+    n_threads: int | None = None
+    n_batch: int | None = None
+    n_ubatch: int | None = None
+    n_gpu_layers: int | None = None
+    devices: str | None = None
+    no_op_offload: int | None = None
     synthetic_fixture: bool = False
 
     @property
@@ -69,6 +75,39 @@ def _required_nonnegative_int(raw: Mapping[str, Any], name: str, *, context: str
     if isinstance(value, bool) or not isinstance(value, int) or value < 0:
         raise LlamaBenchParseError(f"{context}: {name} must be a non-negative integer")
     return value
+
+
+def _optional_int(raw: Mapping[str, Any], name: str, *, context: str) -> int | None:
+    if name not in raw:
+        return None
+    value = raw[name]
+    if isinstance(value, bool) or not isinstance(value, int):
+        raise LlamaBenchParseError(f"{context}: {name} must be an integer")
+    return value
+
+
+def _optional_positive_int(
+    raw: Mapping[str, Any], name: str, *, context: str
+) -> int | None:
+    value = _optional_int(raw, name, context=context)
+    if value is not None and value <= 0:
+        raise LlamaBenchParseError(f"{context}: {name} must be a positive integer")
+    return value
+
+
+def _optional_binary_int(
+    raw: Mapping[str, Any], name: str, *, context: str
+) -> int | None:
+    value = _optional_int(raw, name, context=context)
+    if value is not None and value not in {0, 1}:
+        raise LlamaBenchParseError(f"{context}: {name} must be either 0 or 1")
+    return value
+
+
+def _optional_string(raw: Mapping[str, Any], name: str, *, context: str) -> str | None:
+    if name not in raw:
+        return None
+    return _required_string(raw, name, context=context)
 
 
 def _positive_number(value: Any, *, field_name: str, context: str) -> float:
@@ -183,6 +222,12 @@ def parse_llama_bench_row(
         avg_ts=avg_ts,
         samples_ns=samples_ns,
         samples_ts=samples_ts,
+        n_threads=_optional_positive_int(raw, "n_threads", context=context),
+        n_batch=_optional_positive_int(raw, "n_batch", context=context),
+        n_ubatch=_optional_positive_int(raw, "n_ubatch", context=context),
+        n_gpu_layers=_optional_int(raw, "n_gpu_layers", context=context),
+        devices=_optional_string(raw, "devices", context=context),
+        no_op_offload=_optional_binary_int(raw, "no_op_offload", context=context),
         synthetic_fixture=synthetic_fixture,
     )
 

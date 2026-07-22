@@ -106,6 +106,29 @@ class LlamaBenchParserTests(unittest.TestCase):
         with self.assertRaisesRegex(LlamaBenchParseError, r"samples_ts\[1\]"):
             parse_llama_bench_row(valid_row(samples_ts=[5_120.0, "fast"]))
 
+    def test_parses_reported_runtime_settings(self) -> None:
+        record = parse_llama_bench_row(
+            valid_row(
+                n_threads=4,
+                n_batch=512,
+                n_ubatch=128,
+                n_gpu_layers=0,
+                devices="none",
+                no_op_offload=1,
+            )
+        )
+
+        self.assertEqual(record.n_threads, 4)
+        self.assertEqual(record.n_batch, 512)
+        self.assertEqual(record.n_ubatch, 128)
+        self.assertEqual(record.n_gpu_layers, 0)
+        self.assertEqual(record.devices, "none")
+        self.assertEqual(record.no_op_offload, 1)
+
+    def test_rejects_boolean_runtime_integer(self) -> None:
+        with self.assertRaisesRegex(LlamaBenchParseError, "n_threads must be an integer"):
+            parse_llama_bench_row(valid_row(n_threads=True))
+
 
 if __name__ == "__main__":
     unittest.main()

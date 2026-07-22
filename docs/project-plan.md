@@ -1,8 +1,8 @@
 # ParetoPilot hackathon plan
 
 Target submission deadline: **August 14, 2026 at 4:00 PM PDT / 6:00 PM CDT**.
-The project is deliberately scoped to one model family, `llama.cpp`, and one repeatable Arm64
-cloud target.
+The project is deliberately scoped to one model family, `llama.cpp`, and controlled paired runs
+on GitHub's native Arm64 hosted runner.
 
 ## Product promise
 
@@ -30,7 +30,7 @@ that every optimization is better.
 ### July 21-23: foundation and target access
 
 - Finish schemas, environment doctor, upstream JSONL parser, constraints, and Pareto selection.
-- Secure one non-burstable Arm64 Linux target and run the environment doctor.
+- Establish the free public `ubuntu-24.04-arm` workflow and run the environment doctor.
 - Build generic and KleidiAI-enabled binaries from the same pinned commit.
 - Run one smoke benchmark before investing in presentation work.
 
@@ -45,7 +45,8 @@ that every optimization is better.
 
 - Measure generic baseline, quantization-only, KleidiAI, and runtime-tuned candidates.
 - Keep quantization and Arm-kernel gains separate so attribution is defensible.
-- Capture Arm Performix evidence for the baseline and selected optimized candidate.
+- Capture Arm Performix evidence for the baseline and selected optimized candidate if the chosen
+  target exposes the required hardware counters.
 - Freeze the experiment contract before reviewing final results.
 
 ### August 5-9: report and product workflow
