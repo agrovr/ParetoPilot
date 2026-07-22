@@ -12,8 +12,16 @@ from typing import Sequence
 from paretopilot.analysis import recommend
 from paretopilot.doctor import inspect_environment
 from paretopilot.domain import ValidationError
-from paretopilot.io import load_benchmarks, load_constraints, sha256_file, write_json
+from paretopilot.io import (
+    load_benchmarks,
+    load_constraints,
+    load_json_object,
+    sha256_file,
+    write_json,
+)
 from paretopilot.llama_bench import LlamaBenchRecord, load_llama_bench_jsonl
+from paretopilot.llama_compare import compare_llama_bench_summaries
+from paretopilot.llama_summary import summarize_llama_bench_paths
 
 
 PINNED_LLAMA_CPP_COMMIT = "67b9b0e7f6ce45d929a4411907d3c48ec719e81c"
@@ -59,6 +67,30 @@ def _parser() -> argparse.ArgumentParser:
         help="expected pinned llama.cpp commit for evidence validation",
     )
 
+    summarize_parser = subparsers.add_parser(
+        "summarize-llama-bench",
+        help="pool compatible labeled llama-bench artifacts into one variant summary",
+    )
+    summarize_parser.add_argument("--label", required=True)
+    summarize_parser.add_argument(
+        "--artifact",
+        dest="artifacts",
+        action="append",
+        required=True,
+        metavar="LABEL=PATH",
+        help="labeled JSONL artifact; repeat for each benchmark pass",
+    )
+    summarize_parser.add_argument("--settings", required=True, type=Path)
+    summarize_parser.add_argument("--output", required=True, type=Path)
+
+    compare_parser = subparsers.add_parser(
+        "compare-llama-bench",
+        help="compare compatible generic and KleidiAI variant summaries",
+    )
+    compare_parser.add_argument("--generic", required=True, type=Path)
+    compare_parser.add_argument("--kleidiai", required=True, type=Path)
+    compare_parser.add_argument("--output", required=True, type=Path)
+
     recommend_parser = subparsers.add_parser(
         "recommend",
         help="filter, compute a Pareto frontier, and recommend a candidate",
@@ -82,6 +114,17 @@ def main(argv: Sequence[str] | None = None) -> int:
                 if args.require_evidence_host and not report.evidence_eligible
                 else 0
             )
+        elif args.command == "validate":
+            benchmarks = load_benchmarks(args.results)
+            payload = {
+                "valid": True,
+                "schema_version": benchmarks.schema_version,
+                "baseline_id": benchmarks.baseline_id,
+                "candidate_count": len(benchmarks.candidates),
+                "synthetic": benchmarks.synthetic,
+                "input_sha256": sha256_file(args.results),
+            }
+            exit_code = 0
         elif args.command == "validate-llama-bench":
             records = load_llama_bench_jsonl(args.input)
             evidence_issues = _llama_evidence_issues(
@@ -109,19 +152,36 @@ def main(argv: Sequence[str] | None = None) -> int:
             if args.output:
                 write_json(args.output, payload)
             exit_code = 4 if args.evidence and evidence_issues else 0
-        else:
-            benchmarks = load_benchmarks(args.results)
-        if args.command == "validate":
-            payload = {
-                "valid": True,
-                "schema_version": benchmarks.schema_version,
-                "baseline_id": benchmarks.baseline_id,
-                "candidate_count": len(benchmarks.candidates),
-                "synthetic": benchmarks.synthetic,
-                "input_sha256": sha256_file(args.results),
+        elif args.command == "summarize-llama-bench":
+            settings = load_json_object(args.settings)
+            artifacts = _parse_labeled_artifacts(args.artifacts)
+            summary = summarize_llama_bench_paths(
+                args.label,
+                artifacts,
+                settings=settings,
+            )
+            payload = summary.to_mapping()
+            payload["input_fingerprints"] = {
+                "settings_sha256": sha256_file(args.settings),
+                "artifacts_sha256": {
+                    label: sha256_file(path) for label, path in artifacts
+                },
             }
+            write_json(args.output, payload)
+            exit_code = 0
+        elif args.command == "compare-llama-bench":
+            generic = load_json_object(args.generic)
+            kleidiai = load_json_object(args.kleidiai)
+            comparison = compare_llama_bench_summaries(generic, kleidiai)
+            payload = comparison.to_mapping()
+            payload["input_fingerprints"] = {
+                "generic_summary_sha256": sha256_file(args.generic),
+                "kleidiai_summary_sha256": sha256_file(args.kleidiai),
+            }
+            write_json(args.output, payload)
             exit_code = 0
         elif args.command == "recommend":
+            benchmarks = load_benchmarks(args.results)
             constraints = load_constraints(args.constraints)
             payload = dict(recommend(benchmarks, constraints))
             payload["input_fingerprints"] = {
@@ -137,6 +197,26 @@ def main(argv: Sequence[str] | None = None) -> int:
     except ValidationError as exc:
         print(f"error: {exc}", file=sys.stderr)
         return 2
+
+
+def _parse_labeled_artifacts(values: Sequence[str]) -> list[tuple[str, Path]]:
+    """Parse repeated ``LABEL=PATH`` CLI values while preserving their order."""
+
+    artifacts: list[tuple[str, Path]] = []
+    labels: set[str] = set()
+    for value in values:
+        label, separator, path_text = value.partition("=")
+        label = label.strip()
+        path_text = path_text.strip()
+        if not separator or not label or not path_text:
+            raise ValidationError(
+                f"artifact {value!r} must use the form LABEL=PATH with non-empty values"
+            )
+        if label in labels:
+            raise ValidationError(f"artifact label {label!r} must be unique")
+        labels.add(label)
+        artifacts.append((label, Path(path_text)))
+    return artifacts
 
 
 def _commits_match(actual: str, expected: str) -> bool:

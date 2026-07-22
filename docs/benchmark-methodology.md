@@ -7,18 +7,22 @@ not a claim that measurements have already been collected.
 
 All candidates in a comparison must share:
 
-- the exact Arm64 target SKU and operating-system image;
+- the same Arm64 runner instance, CPU identity, and operating-system image;
 - model family, source revision, tokenizer, and prompt/evaluation set;
 - runtime source commit and compiler version;
 - power mode, process placement policy, and background-service policy;
 - input/output lengths and end-to-end request behavior.
 
-Each experiment changes one declared variable at a time. The initial sequence is:
+Each experiment changes one declared variable at a time. The first GitHub Actions experiment is:
 
-1. generic FP16 or Q8 baseline;
-2. quantized Q4 model with the generic build;
-3. identical Q4 model with KleidiAI enabled;
-4. identical KleidiAI build with tuned runtime parameters.
+1. pinned Qwen Q4_0 model with a generic `llama.cpp` CPU build;
+2. the identical model and build flags with KleidiAI enabled;
+3. a second KleidiAI pass;
+4. a second generic pass.
+
+This A-B-B-A order reduces, but cannot eliminate, time-dependent hosted-VM noise. Compare paired
+ratios inside one job. Do not pool absolute throughput from separate workflow runs unless the CPU
+identity and runner image are identical and the aggregation is explicitly justified.
 
 ## Required measurements
 
@@ -30,7 +34,12 @@ Each experiment changes one declared variable at a time. The initial sequence is
 - end-to-end p50 and p95 latency;
 - requests per second at declared concurrency levels;
 - quality score on a versioned evaluation set;
-- Arm Performix hotspot evidence for selected baseline and optimized runs.
+- Arm Performix hotspot evidence for selected baseline and optimized runs when a target exposes
+  the required hardware counters.
+
+The first free-runner milestone measures prompt-processing and token-generation throughput.
+Server-level latency, memory, quality-suite, concurrency, and Performix evidence remain later
+experiments; `llama-bench` output must not be presented as proof of those metrics.
 
 ## Repetition and reporting
 
@@ -43,6 +52,8 @@ Each experiment changes one declared variable at a time. The initial sequence is
 - Treat cloud burst credits, noisy neighbors, and throttling as validity risks.
 - Randomize or alternate candidate order to reduce thermal and noisy-neighbor bias.
 - Use one authoritative producer per metric; do not infer TTFT from `llama-bench`.
+- Treat a GitHub-hosted runner as an ephemeral paired test environment, not a guaranteed fixed
+  cloud SKU.
 
 ## Quality gate
 
