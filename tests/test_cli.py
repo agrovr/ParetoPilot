@@ -87,6 +87,93 @@ class CliTests(unittest.TestCase):
             any("synthetic" in issue for issue in payload["evidence_issues"])
         )
 
+    def test_validate_llama_bench_evidence_checks_reported_runtime_settings(self) -> None:
+        common = {
+            "build_commit": cli.PINNED_LLAMA_CPP_COMMIT[:7],
+            "model_filename": "model.gguf",
+            "n_threads": 4,
+            "n_batch": 512,
+            "n_ubatch": 128,
+            "n_gpu_layers": 0,
+            "devices": "none",
+            "no_op_offload": 1,
+            "avg_ns": 100.0,
+            "avg_ts": 10.0,
+            "samples_ns": [100.0] * 10,
+            "samples_ts": [10.0] * 10,
+        }
+        rows = [
+            {**common, "n_prompt": 512, "n_gen": 0},
+            {**common, "n_prompt": 0, "n_gen": 128},
+        ]
+        with TemporaryDirectory() as directory:
+            artifact = Path(directory) / "evidence.jsonl"
+            artifact.write_text(
+                "".join(json.dumps(row) + "\n" for row in rows),
+                encoding="utf-8",
+            )
+            output = io.StringIO()
+            with patch("sys.stdout", output):
+                exit_code = cli.main(
+                    [
+                        "validate-llama-bench",
+                        str(artifact),
+                        "--evidence",
+                        "--expected-threads",
+                        "4",
+                        "--expected-batch",
+                        "512",
+                        "--expected-ubatch",
+                        "128",
+                    ]
+                )
+
+        payload = json.loads(output.getvalue())
+        self.assertEqual(exit_code, 0)
+        self.assertTrue(payload["evidence_valid"])
+        self.assertEqual(payload["execution_settings"]["devices"], ["none"])
+
+    def test_validate_llama_bench_evidence_rejects_reported_setting_mismatch(self) -> None:
+        common = {
+            "build_commit": cli.PINNED_LLAMA_CPP_COMMIT[:7],
+            "model_filename": "model.gguf",
+            "n_threads": 4,
+            "n_batch": 256,
+            "n_ubatch": 128,
+            "n_gpu_layers": 0,
+            "devices": "none",
+            "no_op_offload": 1,
+            "avg_ns": 100.0,
+            "avg_ts": 10.0,
+            "samples_ns": [100.0] * 10,
+            "samples_ts": [10.0] * 10,
+        }
+        rows = [
+            {**common, "n_prompt": 512, "n_gen": 0},
+            {**common, "n_prompt": 0, "n_gen": 128},
+        ]
+        with TemporaryDirectory() as directory:
+            artifact = Path(directory) / "evidence.jsonl"
+            artifact.write_text(
+                "".join(json.dumps(row) + "\n" for row in rows),
+                encoding="utf-8",
+            )
+            output = io.StringIO()
+            with patch("sys.stdout", output):
+                exit_code = cli.main(
+                    [
+                        "validate-llama-bench",
+                        str(artifact),
+                        "--evidence",
+                        "--expected-batch",
+                        "512",
+                    ]
+                )
+
+        payload = json.loads(output.getvalue())
+        self.assertEqual(exit_code, 4)
+        self.assertIn("records must use n_batch=512", payload["evidence_issues"])
+
     def test_validate_llama_bench_refuses_to_overwrite_input(self) -> None:
         source = Path(__file__).parent / "fixtures" / "llama_bench.synthetic.jsonl"
         with TemporaryDirectory() as directory:

@@ -23,6 +23,8 @@ using a K-quant model would not prove the optimization path was used.
 The two builds use the same source, compiler, flags, and static-link policy. The only experimental
 build variable is `GGML_CPU_KLEIDIAI=OFF` versus `ON`. Runtime logs must prove both optimized
 passes allocated the `CPU_KLEIDIAI` model buffer, while both generic logs must prove its absence.
+The workflow enables `llama-bench --verbose` specifically because the tool suppresses runtime
+logs by default; JSONL remains isolated on stdout and the dispatch proof is captured on stderr.
 
 ## Running it
 

@@ -66,6 +66,21 @@ def _parser() -> argparse.ArgumentParser:
         default=PINNED_LLAMA_CPP_COMMIT,
         help="expected pinned llama.cpp commit for evidence validation",
     )
+    llama_parser.add_argument(
+        "--expected-threads",
+        type=_positive_cli_int,
+        help="expected n_threads value for evidence validation",
+    )
+    llama_parser.add_argument(
+        "--expected-batch",
+        type=_positive_cli_int,
+        help="expected n_batch value for evidence validation",
+    )
+    llama_parser.add_argument(
+        "--expected-ubatch",
+        type=_positive_cli_int,
+        help="expected n_ubatch value for evidence validation",
+    )
 
     summarize_parser = subparsers.add_parser(
         "summarize-llama-bench",
@@ -130,6 +145,9 @@ def main(argv: Sequence[str] | None = None) -> int:
             evidence_issues = _llama_evidence_issues(
                 records,
                 expected_commit=args.expected_commit,
+                expected_threads=args.expected_threads,
+                expected_batch=args.expected_batch,
+                expected_ubatch=args.expected_ubatch,
             )
             payload = {
                 "valid": True,
@@ -147,6 +165,14 @@ def main(argv: Sequence[str] | None = None) -> int:
                 "repetition_counts": sorted(
                     {record.repetition_count for record in records}
                 ),
+                "execution_settings": {
+                    "n_threads": _declared_values(records, "n_threads"),
+                    "n_batch": _declared_values(records, "n_batch"),
+                    "n_ubatch": _declared_values(records, "n_ubatch"),
+                    "n_gpu_layers": _declared_values(records, "n_gpu_layers"),
+                    "devices": _declared_values(records, "devices"),
+                    "no_op_offload": _declared_values(records, "no_op_offload"),
+                },
                 "synthetic_fixture": any(record.synthetic_fixture for record in records),
             }
             if args.output:
@@ -219,6 +245,27 @@ def _parse_labeled_artifacts(values: Sequence[str]) -> list[tuple[str, Path]]:
     return artifacts
 
 
+def _positive_cli_int(value: str) -> int:
+    """Parse a strictly positive benchmark setting for argparse."""
+
+    try:
+        parsed = int(value)
+    except ValueError as exc:
+        raise argparse.ArgumentTypeError("must be a positive integer") from exc
+    if parsed <= 0:
+        raise argparse.ArgumentTypeError("must be a positive integer")
+    return parsed
+
+
+def _declared_values(
+    records: Sequence[LlamaBenchRecord], field_name: str
+) -> list[int | str | None]:
+    """Return deterministic distinct values, retaining missing declarations."""
+
+    values = {getattr(record, field_name) for record in records}
+    return sorted(values, key=lambda value: (value is None, str(value)))
+
+
 def _commits_match(actual: str, expected: str) -> bool:
     """Accept the full pinned SHA or the short prefix emitted by some builds."""
 
@@ -228,7 +275,12 @@ def _commits_match(actual: str, expected: str) -> bool:
 
 
 def _llama_evidence_issues(
-    records: Sequence[LlamaBenchRecord], *, expected_commit: str
+    records: Sequence[LlamaBenchRecord],
+    *,
+    expected_commit: str,
+    expected_threads: int | None = None,
+    expected_batch: int | None = None,
+    expected_ubatch: int | None = None,
 ) -> list[str]:
     issues: list[str] = []
     commits = sorted({record.build_commit for record in records})
@@ -251,6 +303,25 @@ def _llama_evidence_issues(
         issues.append("benchmark evidence must include prompt processing")
     if not any(record.test_kind in {"tg", "pg"} for record in records):
         issues.append("benchmark evidence must include token generation")
+
+    required_settings: tuple[tuple[str, int | str | None], ...] = (
+        ("n_threads", expected_threads),
+        ("n_batch", expected_batch),
+        ("n_ubatch", expected_ubatch),
+        ("n_gpu_layers", 0),
+        ("devices", "none"),
+        ("no_op_offload", 1),
+    )
+    for field_name, expected_value in required_settings:
+        values = [getattr(record, field_name) for record in records]
+        if any(value is None for value in values):
+            issues.append(f"all records must declare {field_name}")
+            continue
+        distinct_values = set(values)
+        if len(distinct_values) != 1:
+            issues.append(f"all records must use one {field_name} value")
+        if expected_value is not None and distinct_values != {expected_value}:
+            issues.append(f"records must use {field_name}={expected_value}")
     return issues
 
 

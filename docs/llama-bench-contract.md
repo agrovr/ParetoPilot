@@ -17,11 +17,14 @@ explicit:
   -t 4 -b 512 -ub 128 \
   -r 10 \
   -dev none -ngl 0 -nopo 1 \
+  -v \
   -o jsonl
 ```
 
 Warmup is enabled unless `--no-warmup` is passed. The final evidence protocol keeps warmup
 enabled and records the complete command separately because JSONL does not include this fact.
+Verbose mode preserves the model-buffer dispatch log on stderr; without `-v`, `llama-bench`
+replaces the normal logger with a null callback.
 
 The initial GitHub Actions experiment pins the official Qwen 2.5 1.5B Instruct Q4_0 GGUF.
 Q4_0 is required for this comparison because the pinned KleidiAI integration does not provide
