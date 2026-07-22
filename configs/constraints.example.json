@@ -1,0 +1,19 @@
+{
+  "min_quality_retention": 0.95,
+  "quality_metric": "quality_score",
+  "max_values": {
+    "e2e_latency_ms_p95": 3500,
+    "peak_rss_mb": 4096
+  },
+  "min_values": {},
+  "objective": {
+    "metric": "generation_tps",
+    "direction": "max"
+  },
+  "frontier_metrics": {
+    "generation_tps": "max",
+    "e2e_latency_ms_p95": "min",
+    "peak_rss_mb": "min",
+    "quality_score": "max"
+  }
+}

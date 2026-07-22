@@ -1,0 +1,85 @@
+{
+  "schema_version": "1.0",
+  "baseline_id": "baseline-fp16",
+  "synthetic": true,
+  "metadata": {
+    "warning": "Synthetic fixture for software testing only. These are not measured Arm results.",
+    "model": "example-model",
+    "target": "example-arm64-target"
+  },
+  "candidates": [
+    {
+      "id": "baseline-fp16",
+      "label": "Generic FP16 baseline",
+      "parameters": {
+        "quantization": "FP16",
+        "kleidiai": false,
+        "threads": 4
+      },
+      "metrics": {
+        "quality_score": 0.82,
+        "model_size_mb": 3090,
+        "peak_rss_mb": 4200,
+        "ttft_ms_p50": 900,
+        "e2e_latency_ms_p95": 4500,
+        "generation_tps": 14,
+        "requests_per_second": 0.22
+      }
+    },
+    {
+      "id": "q4-generic",
+      "label": "Q4 generic CPU build",
+      "parameters": {
+        "quantization": "Q4_K_M",
+        "kleidiai": false,
+        "threads": 4
+      },
+      "metrics": {
+        "quality_score": 0.79,
+        "model_size_mb": 950,
+        "peak_rss_mb": 1800,
+        "ttft_ms_p50": 650,
+        "e2e_latency_ms_p95": 3300,
+        "generation_tps": 18,
+        "requests_per_second": 0.30
+      }
+    },
+    {
+      "id": "q4-kleidiai",
+      "label": "Q4 with KleidiAI",
+      "parameters": {
+        "quantization": "Q4_K_M",
+        "kleidiai": true,
+        "threads": 4
+      },
+      "metrics": {
+        "quality_score": 0.79,
+        "model_size_mb": 950,
+        "peak_rss_mb": 1800,
+        "ttft_ms_p50": 500,
+        "e2e_latency_ms_p95": 2600,
+        "generation_tps": 24,
+        "requests_per_second": 0.38
+      }
+    },
+    {
+      "id": "q4-kleidiai-tuned",
+      "label": "Q4 with KleidiAI and tuned runtime",
+      "parameters": {
+        "quantization": "Q4_K_M",
+        "kleidiai": true,
+        "threads": 8,
+        "batch_size": 256
+      },
+      "metrics": {
+        "quality_score": 0.79,
+        "model_size_mb": 950,
+        "peak_rss_mb": 1900,
+        "ttft_ms_p50": 420,
+        "e2e_latency_ms_p95": 2200,
+        "generation_tps": 28,
+        "requests_per_second": 0.45
+      }
+    }
+  ]
+}

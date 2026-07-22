@@ -1,0 +1,19 @@
+.venv/
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+.coverage
+htmlcov/
+dist/
+build/
+.idea/
+.vscode/
+.DS_Store
+Thumbs.db
+
+# Real benchmark artifacts can be large. Keep only reviewed fixtures in git.
+results/**
+!results/.gitkeep
+!results/published/
+!results/published/**
