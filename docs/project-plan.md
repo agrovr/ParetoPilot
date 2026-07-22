@@ -13,6 +13,16 @@ deployment recommendation with raw evidence.
 The baseline is allowed to win. ParetoPilot is a measurement tool, not a predetermined claim
 that every optimization is better.
 
+## Progress as of July 22
+
+- The free native Arm64 workflow, strict evidence gates, balanced benchmark, and immutable compact
+  bundle are complete.
+- Canonical run [`29940067201`](../results/published/29940067201/README.md) established the first
+  measured baseline: a small consistent prompt-processing gain and inconclusive generation gain.
+- Performix is explicitly optional and does not block benchmark evidence.
+- The next implementation focus is the fixed quality evaluation and a broader controlled candidate
+  set, followed by server-level latency and memory measurements.
+
 ## MVP acceptance criteria
 
 - The same command works locally for smoke testing and natively on an Arm64 Linux host.

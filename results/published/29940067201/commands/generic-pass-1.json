@@ -1,0 +1,30 @@
+{
+  "argv": [
+    "/home/runner/work/_temp/build-generic/bin/llama-bench",
+    "-m",
+    "/home/runner/work/_temp/qwen2.5-1.5b-instruct-q4_0.gguf",
+    "-p",
+    "512",
+    "-n",
+    "128",
+    "-t",
+    "4",
+    "-b",
+    "512",
+    "-ub",
+    "128",
+    "-r",
+    "10",
+    "-dev",
+    "none",
+    "-ngl",
+    "0",
+    "-nopo",
+    "1",
+    "-v",
+    "-o",
+    "jsonl"
+  ],
+  "label": "generic-pass-1",
+  "schema_version": "1.0"
+}

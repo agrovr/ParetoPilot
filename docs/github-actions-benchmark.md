@@ -42,7 +42,7 @@ Only a manually dispatched default-branch run with all three canonical defaults 
 name. Feature-branch, push-triggered, and input-override successes are preserved as
 `EXPLORATORY-arm64-benchmark-*` with valid measurements but are not publishable evidence.
 
-## Evidence bundle
+## Full Actions evidence artifact
 
 A successful job uploads only compact evidence:
 
@@ -56,6 +56,10 @@ A successful job uploads only compact evidence:
 
 The approximately 1 GB model and temporary build directories are not uploaded or cached. A failed
 job is uploaded separately as `INCOMPLETE-*`, marked invalid, and may be used only for diagnosis.
+
+The complete artifact also retains build logs, CMake caches, symbol evidence, and optional
+performance-counter capability probes for diagnosis. Those files are not all needed in the
+long-lived repository copy.
 
 ## Interpretation boundaries
 
@@ -81,3 +85,11 @@ for this benchmark to succeed.
 GitHub Actions artifacts expire. After a successful run, review the status, hashes, dispatch logs,
 and comparisons, then copy only the verified compact bundle into `results/published/<run-id>/` or
 attach it to a tagged GitHub release. Never publish a partial bundle as measured evidence.
+
+Canonical run [`29940067201`](https://github.com/agrovr/ParetoPilot/actions/runs/29940067201)
+has been reviewed and preserved under
+[`results/published/29940067201/`](../results/published/29940067201/README.md). Its
+`SOURCE-SHA256SUMS` is the unchanged checksum manifest from the full Actions artifact, while its
+`SHA256SUMS` covers the selected repository bundle plus the review metadata. Build logs, CMake
+caches, and optional profiler capability probes remain available only in the full Actions
+artifact.

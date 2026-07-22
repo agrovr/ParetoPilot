@@ -13,9 +13,13 @@ This repository contains the benchmark-result contract, recommendation engine, u
 example data is explicitly synthetic and exists only to exercise the local workflow. It must
 never be presented as measured Arm performance.
 
-The first measured experiment runs on GitHub's public `ubuntu-24.04-arm` runner at no compute
-cost. It builds one pinned `llama.cpp` commit twice, changes only KleidiAI enablement, and
-benchmarks both binaries against the same pinned Qwen Q4_0 model in balanced A-B-B-A order.
+The first canonical experiment ran on GitHub's public `ubuntu-24.04-arm` runner at no compute
+cost. It built one pinned `llama.cpp` commit twice, changed only KleidiAI enablement, and
+benchmarked both binaries against the same pinned Qwen Q4_0 model in balanced A-B-B-A order.
+The reviewed evidence is checked in under
+[`results/published/29940067201/`](results/published/29940067201/README.md). It found a small,
+consistent 0.526% prompt-processing gain; the 0.049% pooled generation result was inconsistent
+between paired passes and is therefore inconclusive.
 
 ## MVP workflow
 
@@ -62,7 +66,7 @@ raw samples, command arrays, environment details, build/model hashes, summaries,
 and a completion status. Models and build trees are never uploaded.
 
 See [the GitHub Actions benchmark guide](docs/github-actions-benchmark.md) for exact pins,
-validity boundaries, and artifact review steps.
+validity boundaries, artifact review steps, and the published canonical result.
 
 ## Evidence policy
 

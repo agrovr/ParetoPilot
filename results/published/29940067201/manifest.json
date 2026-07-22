@@ -1,0 +1,52 @@
+{
+  "benchmark": {
+    "batch_size": 512,
+    "cpu_only": true,
+    "generation_tokens": 128,
+    "prompt_tokens": 512,
+    "repetitions_per_pass": 10,
+    "threads": 4,
+    "ubatch_size": 128,
+    "warmup": true
+  },
+  "classification": "canonical",
+  "evidence_scope": "paired GitHub-hosted Arm64 runner experiment",
+  "execution_order": [
+    "generic-pass-1",
+    "kleidiai-pass-1",
+    "kleidiai-pass-2",
+    "generic-pass-2"
+  ],
+  "kleidiai": {
+    "source_sha256": "9348b969e042d8890a54b01a463dbe71f5a4c074b5329e9c26a85ef3b68aa19b",
+    "source_size_bytes": 2466038,
+    "version": "v1.24.0"
+  },
+  "llama_cpp": {
+    "commit": "67b9b0e7f6ce45d929a4411907d3c48ec719e81c",
+    "generic_kleidiai": false,
+    "optimized_kleidiai": true
+  },
+  "model": {
+    "filename": "qwen2.5-1.5b-instruct-q4_0.gguf",
+    "quantization": "Q4_0",
+    "repository": "Qwen/Qwen2.5-1.5B-Instruct-GGUF",
+    "revision": "91cad51170dc346986eccefdc2dd33a9da36ead9",
+    "sha256": "dcd819ff094852c38faba6873d8ff0c9d51eadb2844539e52042ae5d647bbfdb",
+    "size_bytes": 1066227232
+  },
+  "quality": {
+    "evaluated": false,
+    "reason": "both variants use the identical model file; this run isolates runtime-kernel throughput"
+  },
+  "repository": {
+    "commit": "1c17c1f7e1edb331a2bf4eb8016927622dc11d45",
+    "name": "agrovr/ParetoPilot",
+    "run_attempt": "1",
+    "run_id": "29940067201",
+    "workflow_commit": "1c17c1f7e1edb331a2bf4eb8016927622dc11d45",
+    "workflow_ref": "agrovr/ParetoPilot/.github/workflows/benchmark-arm64.yml@refs/heads/main"
+  },
+  "schema_version": "1.0",
+  "synthetic": false
+}

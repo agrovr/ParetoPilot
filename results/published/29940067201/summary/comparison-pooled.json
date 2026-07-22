@@ -1,0 +1,70 @@
+{
+  "build_commit": "67b9b0e",
+  "comparison_type": "generic-vs-kleidiai",
+  "compatibility": {
+    "same_benchmark_settings_except_kleidiai": true,
+    "same_build_commit": true,
+    "same_model_filename": true,
+    "same_sample_counts": true,
+    "same_synthetic_status": true,
+    "same_workload_shapes": true,
+    "validated": true
+  },
+  "input_fingerprints": {
+    "generic_summary_sha256": "104c4e0e9352f6d8e292156f991eb6330b1890e14ec26a0318eba93a951dc0f9",
+    "kleidiai_summary_sha256": "dcfd453ace4857ece80a15b4213aebd12b4624bf155959d8084b38fc5b8ef8b8"
+  },
+  "model_filename": "/home/runner/work/_temp/qwen2.5-1.5b-instruct-q4_0.gguf",
+  "schema_version": "1.0",
+  "synthetic_fixture": false,
+  "tests": {
+    "pp": {
+      "generic": {
+        "duration_ns_median": 4504640198.5,
+        "duration_ns_sample_count": 20,
+        "tokens_per_second_median": 113.6605,
+        "tokens_per_second_sample_count": 20
+      },
+      "kleidiai": {
+        "duration_ns_median": 4481071420.0,
+        "duration_ns_sample_count": 20,
+        "tokens_per_second_median": 114.25800000000001,
+        "tokens_per_second_sample_count": 20
+      },
+      "median_duration_percent_change": -0.5232111214531265,
+      "median_throughput_percent_change": 0.5256883437957827,
+      "median_throughput_speedup": 1.0052568834379578,
+      "n_gen": 0,
+      "n_prompt": 512,
+      "test_kind": "pp"
+    },
+    "tg": {
+      "generic": {
+        "duration_ns_median": 3645371792.0,
+        "duration_ns_sample_count": 20,
+        "tokens_per_second_median": 35.1134,
+        "tokens_per_second_sample_count": 20
+      },
+      "kleidiai": {
+        "duration_ns_median": 3643539655.0,
+        "duration_ns_sample_count": 20,
+        "tokens_per_second_median": 35.130700000000004,
+        "tokens_per_second_sample_count": 20
+      },
+      "median_duration_percent_change": -0.05025926310234796,
+      "median_throughput_percent_change": 0.04926894006278548,
+      "median_throughput_speedup": 1.0004926894006279,
+      "n_gen": 128,
+      "n_prompt": 0,
+      "test_kind": "tg"
+    }
+  },
+  "variants": {
+    "generic": {
+      "label": "generic"
+    },
+    "kleidiai": {
+      "label": "kleidiai"
+    }
+  }
+}

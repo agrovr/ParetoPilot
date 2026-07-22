@@ -1,7 +1,9 @@
 # Initial benchmark methodology
 
-This document defines the evidence standard for the ParetoPilot hackathon MVP. It is a protocol,
-not a claim that measurements have already been collected.
+This document defines the evidence standard for the ParetoPilot hackathon MVP. Canonical run
+[`29940067201`](../results/published/29940067201/README.md) is the first measurement reviewed
+under this protocol; the protocol itself does not imply that every listed metric has been
+collected.
 
 ## Comparison contract
 

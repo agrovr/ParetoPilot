@@ -1,0 +1,90 @@
+{
+  "build_commit": "67b9b0e",
+  "input_fingerprints": {
+    "artifacts_sha256": {
+      "pass-2": "550837d8b8337346fcc9f4ad28fbd9c86a154e1647e58d27d70e0e1d965fc8c2"
+    },
+    "settings_sha256": "69c9e507a996bf87c8c7dd4203462598498edc12525b5695b02ea434e3931ccf"
+  },
+  "label": "kleidiai-pass-2",
+  "model_filename": "/home/runner/work/_temp/qwen2.5-1.5b-instruct-q4_0.gguf",
+  "schema_version": "1.0",
+  "settings": {
+    "batch_size": 512,
+    "build": {
+      "kleidiai": true
+    },
+    "cpu_only": true,
+    "generation_tokens": 128,
+    "llama_cpp_commit": "67b9b0e7f6ce45d929a4411907d3c48ec719e81c",
+    "model_sha256": "dcd819ff094852c38faba6873d8ff0c9d51eadb2844539e52042ae5d647bbfdb",
+    "prompt_tokens": 512,
+    "repetitions_per_pass": 10,
+    "threads": 4,
+    "ubatch_size": 128,
+    "warmup": true
+  },
+  "source_files": [
+    "artifacts/raw/kleidiai-pass-2.jsonl"
+  ],
+  "source_labels": [
+    "pass-2"
+  ],
+  "synthetic_fixture": false,
+  "tests": {
+    "pp": {
+      "duration_ns": {
+        "max": 4576398284.0,
+        "mean": 4491177314.9,
+        "median": 4481504740.0,
+        "min": 4476512034.0,
+        "sample_count": 10,
+        "sample_stdev": 30344396.77616083
+      },
+      "n_gen": 0,
+      "n_prompt": 512,
+      "source_files": [
+        "artifacts/raw/kleidiai-pass-2.jsonl"
+      ],
+      "source_labels": [
+        "pass-2"
+      ],
+      "test_kind": "pp",
+      "tokens_per_second": {
+        "max": 114.375,
+        "mean": 114.0056,
+        "median": 114.247,
+        "min": 111.878,
+        "sample_count": 10,
+        "sample_stdev": 0.7579693925218879
+      }
+    },
+    "tg": {
+      "duration_ns": {
+        "max": 3715811347.0,
+        "mean": 3657957755.7,
+        "median": 3656158152.5,
+        "min": 3615477258.0,
+        "sample_count": 10,
+        "sample_stdev": 30216140.947629064
+      },
+      "n_gen": 128,
+      "n_prompt": 0,
+      "source_files": [
+        "artifacts/raw/kleidiai-pass-2.jsonl"
+      ],
+      "source_labels": [
+        "pass-2"
+      ],
+      "test_kind": "tg",
+      "tokens_per_second": {
+        "max": 35.4033,
+        "mean": 34.994350000000004,
+        "median": 35.00945,
+        "min": 34.4474,
+        "sample_count": 10,
+        "sample_stdev": 0.2880613215966358
+      }
+    }
+  }
+}

@@ -1,0 +1,44 @@
+{
+  "artifact": {
+    "created_at": "2026-07-22T17:06:29Z",
+    "expires_at": "2026-08-21T17:06:28Z",
+    "github_reported_digest": "sha256:58f9c2c62ce454b631bcad59a93f63244358b067c22fb67f761ae9306a658b9e",
+    "id": 8538127719,
+    "name": "arm64-benchmark-29940067201-1",
+    "size_in_bytes": 72563
+  },
+  "canonical_inputs": {
+    "batch_size": 512,
+    "generation_tokens": 128,
+    "prompt_tokens": 512,
+    "repetitions_per_pass": 10,
+    "threads": 4,
+    "ubatch_size": 128
+  },
+  "repository": "agrovr/ParetoPilot",
+  "repository_commit": "1c17c1f7e1edb331a2bf4eb8016927622dc11d45",
+  "reviewed_on": "2026-07-22",
+  "run": {
+    "attempt": 1,
+    "id": 29940067201,
+    "job_id": 88991377859,
+    "url": "https://github.com/agrovr/ParetoPilot/actions/runs/29940067201"
+  },
+  "schema_version": "1.0",
+  "verification": {
+    "compact_bundle_sha256_verified": true,
+    "dispatch_marker_counts": {
+      "generic-pass-1": 0,
+      "generic-pass-2": 0,
+      "kleidiai-pass-1": 1,
+      "kleidiai-pass-2": 1
+    },
+    "local_raw_artifacts_validated": 4,
+    "measurement_valid": true,
+    "original_artifact_checksum_entries": 61,
+    "original_artifact_checksums_verified": true,
+    "status": "complete",
+    "valid_evidence": true
+  },
+  "workflow_commit": "1c17c1f7e1edb331a2bf4eb8016927622dc11d45"
+}

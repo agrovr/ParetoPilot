@@ -1,0 +1,70 @@
+{
+  "build_commit": "67b9b0e",
+  "comparison_type": "generic-vs-kleidiai",
+  "compatibility": {
+    "same_benchmark_settings_except_kleidiai": true,
+    "same_build_commit": true,
+    "same_model_filename": true,
+    "same_sample_counts": true,
+    "same_synthetic_status": true,
+    "same_workload_shapes": true,
+    "validated": true
+  },
+  "input_fingerprints": {
+    "generic_summary_sha256": "7c8df605599e36a0b5894df0c4bd84bb63c4c41521acf1ab4dc8b2ce9c137574",
+    "kleidiai_summary_sha256": "febe5d6509dc221a27083b9e3472d93316f31c88be92154fdb4171cd3e0fa2ed"
+  },
+  "model_filename": "/home/runner/work/_temp/qwen2.5-1.5b-instruct-q4_0.gguf",
+  "schema_version": "1.0",
+  "synthetic_fixture": false,
+  "tests": {
+    "pp": {
+      "generic": {
+        "duration_ns_median": 4500362944.0,
+        "duration_ns_sample_count": 10,
+        "tokens_per_second_median": 113.769,
+        "tokens_per_second_sample_count": 10
+      },
+      "kleidiai": {
+        "duration_ns_median": 4481504740.0,
+        "duration_ns_sample_count": 10,
+        "tokens_per_second_median": 114.247,
+        "tokens_per_second_sample_count": 10
+      },
+      "median_duration_percent_change": -0.41903740286418634,
+      "median_throughput_percent_change": 0.4201496013852557,
+      "median_throughput_speedup": 1.0042014960138526,
+      "n_gen": 0,
+      "n_prompt": 512,
+      "test_kind": "pp"
+    },
+    "tg": {
+      "generic": {
+        "duration_ns_median": 3611752324.0,
+        "duration_ns_sample_count": 10,
+        "tokens_per_second_median": 35.43985,
+        "tokens_per_second_sample_count": 10
+      },
+      "kleidiai": {
+        "duration_ns_median": 3656158152.5,
+        "duration_ns_sample_count": 10,
+        "tokens_per_second_median": 35.00945,
+        "tokens_per_second_sample_count": 10
+      },
+      "median_duration_percent_change": 1.2294815512382762,
+      "median_throughput_percent_change": -1.2144520927712676,
+      "median_throughput_speedup": 0.9878554790722873,
+      "n_gen": 128,
+      "n_prompt": 0,
+      "test_kind": "tg"
+    }
+  },
+  "variants": {
+    "generic": {
+      "label": "generic-pass-2"
+    },
+    "kleidiai": {
+      "label": "kleidiai-pass-2"
+    }
+  }
+}

@@ -1,0 +1,41 @@
+{
+  "build_commits": [
+    "67b9b0e"
+  ],
+  "evidence_issues": [],
+  "evidence_valid": true,
+  "execution_settings": {
+    "devices": [
+      "none"
+    ],
+    "n_batch": [
+      512
+    ],
+    "n_gpu_layers": [
+      0
+    ],
+    "n_threads": [
+      4
+    ],
+    "n_ubatch": [
+      128
+    ],
+    "no_op_offload": [
+      1
+    ]
+  },
+  "input_sha256": "e250732d5ab865cf1559b8f21236a0efdcb3e6f07aa96d513700892b821da3c5",
+  "model_filenames": [
+    "/home/runner/work/_temp/qwen2.5-1.5b-instruct-q4_0.gguf"
+  ],
+  "record_count": 2,
+  "repetition_counts": [
+    10
+  ],
+  "synthetic_fixture": false,
+  "test_counts": {
+    "pp": 1,
+    "tg": 1
+  },
+  "valid": true
+}

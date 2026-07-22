@@ -1,0 +1,21 @@
+{
+  "captured_environment": {
+    "GITHUB_ACTION": "__run_4",
+    "GITHUB_JOB": "benchmark",
+    "GITHUB_REF": "refs/heads/main",
+    "GITHUB_REPOSITORY": "agrovr/ParetoPilot",
+    "GITHUB_RUN_ATTEMPT": "1",
+    "GITHUB_RUN_ID": "29940067201",
+    "GITHUB_SHA": "1c17c1f7e1edb331a2bf4eb8016927622dc11d45",
+    "GITHUB_WORKFLOW_REF": "agrovr/ParetoPilot/.github/workflows/benchmark-arm64.yml@refs/heads/main",
+    "GITHUB_WORKFLOW_SHA": "1c17c1f7e1edb331a2bf4eb8016927622dc11d45",
+    "ImageOS": "ubuntu24-arm64",
+    "ImageVersion": "20260714.61.1",
+    "RUNNER_ARCH": "ARM64",
+    "RUNNER_NAME": "GitHub Actions 1000000986",
+    "RUNNER_OS": "Linux"
+  },
+  "machine": "aarch64",
+  "platform": "Linux-6.17.0-1020-azure-aarch64-with-glibc2.39",
+  "python_version": "3.12.13"
+}

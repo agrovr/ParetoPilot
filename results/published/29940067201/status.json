@@ -1,0 +1,8 @@
+{
+  "classification": "canonical",
+  "measurement_valid": true,
+  "reason": "all benchmark, dispatch, compatibility, and summary gates passed",
+  "schema_version": "1.0",
+  "status": "complete",
+  "valid_evidence": true
+}
