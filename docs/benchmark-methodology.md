@@ -34,12 +34,13 @@ identity and runner image are identical and the aggregation is explicitly justif
 - end-to-end p50 and p95 latency;
 - requests per second at declared concurrency levels;
 - quality score on a versioned evaluation set;
-- Arm Performix hotspot evidence for selected baseline and optimized runs when a target exposes
-  the required hardware counters.
+- Optional Arm Performix hotspot evidence for selected baseline and optimized runs when a target
+  exposes the required hardware counters.
 
 The first free-runner milestone measures prompt-processing and token-generation throughput.
-Server-level latency, memory, quality-suite, concurrency, and Performix evidence remain later
-experiments; `llama-bench` output must not be presented as proof of those metrics.
+Server-level latency, memory, quality-suite, and concurrency remain later experiments. Performix
+is a later optional experiment; `llama-bench` output must not be presented as proof of those
+metrics.
 
 ## Repetition and reporting
 
@@ -48,7 +49,8 @@ experiments; `llama-bench` output must not be presented as proof of those metric
 - Record at least ten repetitions for final evidence.
 - Publish raw samples plus aggregation code.
 - Report central tendency and variation; never report only the fastest sample.
-- Keep the benchmark active long enough for meaningful profiler sampling.
+- When optional profiling is enabled, keep the benchmark active long enough for meaningful
+  profiler sampling.
 - Treat cloud burst credits, noisy neighbors, and throttling as validity risks.
 - Randomize or alternate candidate order to reduce thermal and noisy-neighbor bias.
 - Use one authoritative producer per metric; do not infer TTFT from `llama-bench`.

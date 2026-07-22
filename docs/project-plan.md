@@ -45,8 +45,9 @@ that every optimization is better.
 
 - Measure generic baseline, quantization-only, KleidiAI, and runtime-tuned candidates.
 - Keep quantization and Arm-kernel gains separate so attribution is defensible.
-- Capture Arm Performix evidence for the baseline and selected optimized candidate if the chosen
-  target exposes the required hardware counters.
+- Optional: capture Arm Performix evidence for the baseline and selected optimized candidate if
+  the chosen target exposes the required hardware counters. Its absence does not block benchmark
+  evidence.
 - Freeze the experiment contract before reviewing final results.
 
 ### August 5-9: report and product workflow

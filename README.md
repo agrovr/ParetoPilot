@@ -74,7 +74,7 @@ validity boundaries, and artifact review steps.
 - Keep raw evidence immutable after a release is tagged.
 
 Reviewed compact evidence belongs under `results/published/`; unreviewed runs, models, and large
-profiler captures remain ignored by git.
+optional profiler captures remain ignored by git.
 
 See [the benchmark methodology](docs/benchmark-methodology.md) for the initial protocol.
 The exact upstream JSONL assumptions live in

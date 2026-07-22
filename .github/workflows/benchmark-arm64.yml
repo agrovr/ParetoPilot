@@ -149,7 +149,11 @@ jobs:
           g++-13 --version > artifacts/environment/g++.txt
           cmake --version > artifacts/environment/cmake.txt
           ninja --version > artifacts/environment/ninja.txt
-          cat /proc/sys/kernel/perf_event_paranoid > artifacts/environment/perf-event-paranoid.txt
+          if [[ -r /proc/sys/kernel/perf_event_paranoid ]]; then
+            cat /proc/sys/kernel/perf_event_paranoid > artifacts/environment/perf-event-paranoid.txt
+          else
+            printf '%s\n' "unavailable on this runner" > artifacts/environment/perf-event-paranoid.txt
+          fi
           if command -v perf >/dev/null 2>&1; then
             set +e
             perf stat -e cycles -- true > artifacts/environment/perf-cycles-probe.txt 2>&1
