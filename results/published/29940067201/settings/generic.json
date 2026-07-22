@@ -1,0 +1,15 @@
+{
+  "batch_size": 512,
+  "build": {
+    "kleidiai": false
+  },
+  "cpu_only": true,
+  "generation_tokens": 128,
+  "llama_cpp_commit": "67b9b0e7f6ce45d929a4411907d3c48ec719e81c",
+  "model_sha256": "dcd819ff094852c38faba6873d8ff0c9d51eadb2844539e52042ae5d647bbfdb",
+  "prompt_tokens": 512,
+  "repetitions_per_pass": 10,
+  "threads": 4,
+  "ubatch_size": 128,
+  "warmup": true
+}

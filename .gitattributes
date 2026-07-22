@@ -1,4 +1,5 @@
 * text=auto
+.gitattributes text eol=lf
 *.py text eol=lf
 *.json text eol=lf
 *.jsonl text eol=lf
@@ -6,3 +7,8 @@
 *.toml text eol=lf
 *.yml text eol=lf
 LICENSE text eol=lf
+results/published/**/*.log text eol=lf -whitespace
+results/published/**/*.txt text eol=lf -whitespace
+results/published/**/*.sha256 text eol=lf
+results/published/**/SHA256SUMS text eol=lf
+results/published/**/SOURCE-SHA256SUMS text eol=lf

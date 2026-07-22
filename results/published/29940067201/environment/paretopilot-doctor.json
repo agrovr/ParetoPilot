@@ -1,0 +1,12 @@
+{
+  "architecture_eligible": true,
+  "evidence_eligible": true,
+  "is_arm64": true,
+  "machine_architecture": "aarch64",
+  "operating_system": "Linux",
+  "os_release": "6.17.0-1020-azure",
+  "platform": "Linux-6.17.0-1020-azure-aarch64-with-glibc2.39",
+  "processor": "aarch64",
+  "python_version": "3.12.13",
+  "warnings": []
+}

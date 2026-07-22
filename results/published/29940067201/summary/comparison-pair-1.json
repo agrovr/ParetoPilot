@@ -1,0 +1,70 @@
+{
+  "build_commit": "67b9b0e",
+  "comparison_type": "generic-vs-kleidiai",
+  "compatibility": {
+    "same_benchmark_settings_except_kleidiai": true,
+    "same_build_commit": true,
+    "same_model_filename": true,
+    "same_sample_counts": true,
+    "same_synthetic_status": true,
+    "same_workload_shapes": true,
+    "validated": true
+  },
+  "input_fingerprints": {
+    "generic_summary_sha256": "734cac0a879325f01900fbfc61cf8acdbbea5de52b8c00f85f8b1b7dc4c36526",
+    "kleidiai_summary_sha256": "270a4502180a4b1b491cbec9fd8b23c15d9839d5c4f0037d16a57999ffebe125"
+  },
+  "model_filename": "/home/runner/work/_temp/qwen2.5-1.5b-instruct-q4_0.gguf",
+  "schema_version": "1.0",
+  "synthetic_fixture": false,
+  "tests": {
+    "pp": {
+      "generic": {
+        "duration_ns_median": 4506050689.0,
+        "duration_ns_sample_count": 10,
+        "tokens_per_second_median": 113.625,
+        "tokens_per_second_sample_count": 10
+      },
+      "kleidiai": {
+        "duration_ns_median": 4480272763.0,
+        "duration_ns_sample_count": 10,
+        "tokens_per_second_median": 114.27850000000001,
+        "tokens_per_second_sample_count": 10
+      },
+      "median_duration_percent_change": -0.5720735912476127,
+      "median_throughput_percent_change": 0.5751375137513781,
+      "median_throughput_speedup": 1.0057513751375138,
+      "n_gen": 0,
+      "n_prompt": 512,
+      "test_kind": "pp"
+    },
+    "tg": {
+      "generic": {
+        "duration_ns_median": 3707058165.5,
+        "duration_ns_sample_count": 10,
+        "tokens_per_second_median": 34.52889999999999,
+        "tokens_per_second_sample_count": 10
+      },
+      "kleidiai": {
+        "duration_ns_median": 3628718074.0,
+        "duration_ns_sample_count": 10,
+        "tokens_per_second_median": 35.274150000000006,
+        "tokens_per_second_sample_count": 10
+      },
+      "median_duration_percent_change": -2.113268473343033,
+      "median_throughput_percent_change": 2.158336929354876,
+      "median_throughput_speedup": 1.0215833692935488,
+      "n_gen": 128,
+      "n_prompt": 0,
+      "test_kind": "tg"
+    }
+  },
+  "variants": {
+    "generic": {
+      "label": "generic-pass-1"
+    },
+    "kleidiai": {
+      "label": "kleidiai-pass-1"
+    }
+  }
+}
