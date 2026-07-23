@@ -477,6 +477,7 @@ jobs:
               "--ctx-size", os.environ["CONTEXT_SIZE"],
               "--parallel", "1",
               "--n-gpu-layers", "0",
+              "-lv", "4",
               "--host", "127.0.0.1",
               "--port", port,
           ]

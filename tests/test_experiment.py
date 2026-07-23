@@ -288,6 +288,8 @@ def _build_experiment(root: Path) -> tuple[Path, dict]:
             "1",
             "--n-gpu-layers",
             "0",
+            "-lv",
+            "4",
             "--host",
             "127.0.0.1",
             "--port",
@@ -591,6 +593,8 @@ class ExperimentAssemblyTests(unittest.TestCase):
                     "1",
                     "--n-gpu-layers",
                     "0",
+                    "-lv",
+                    "4",
                     "--host",
                     "127.0.0.1",
                     "--port",
@@ -801,6 +805,13 @@ class ExperimentAssemblyTests(unittest.TestCase):
                     "2",
                 ),
                 "deployment_argv --parallel must be '1'",
+            ),
+            "log_verbosity": (
+                lambda candidate: candidate["deployment_argv"].__setitem__(
+                    candidate["deployment_argv"].index("-lv") + 1,
+                    "3",
+                ),
+                "deployment_argv -lv must be '4'",
             ),
             "host": (
                 lambda candidate: candidate["deployment_argv"].__setitem__(
