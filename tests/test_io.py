@@ -6,7 +6,13 @@ from tempfile import TemporaryDirectory
 import unittest
 
 from paretopilot.domain import ValidationError
-from paretopilot.io import load_benchmarks, load_json_object, sha256_file, write_json
+from paretopilot.io import (
+    load_benchmarks,
+    load_json_object,
+    sha256_file,
+    write_json,
+    write_text,
+)
 
 
 def valid_benchmark_json(*, parameters: str = "{}") -> str:
@@ -25,7 +31,7 @@ class StrictJsonInputTests(unittest.TestCase):
             path.write_text('{"threads":4}', encoding="utf-8")
             self.assertEqual(load_json_object(path), {"threads": 4})
 
-            path.write_text('[1, 2, 3]', encoding="utf-8")
+            path.write_text("[1, 2, 3]", encoding="utf-8")
             with self.assertRaisesRegex(ValidationError, "top-level value.*must be an object"):
                 load_json_object(path)
 
@@ -117,10 +123,23 @@ class StrictJsonOutputTests(unittest.TestCase):
         with TemporaryDirectory() as directory:
             path = Path(directory) / "output.json"
             with self.assertRaisesRegex(ValidationError, "NaN or Infinity"):
-                write_json(path, {"nested": [{"value": float("inf")} ]})
+                write_json(path, {"nested": [{"value": float("inf")}]})
             with self.assertRaisesRegex(ValidationError, "unsupported JSON value type"):
                 write_json(path, {"nested": {"not-json"}})
             self.assertFalse(path.exists())
+
+    def test_writes_utf8_text_atomically_and_refuses_overwrite(self) -> None:
+        with TemporaryDirectory() as directory:
+            path = Path(directory) / "nested" / "report.html"
+            write_text(path, "<h1>Café</h1>\n")
+            self.assertEqual(path.read_text(encoding="utf-8"), "<h1>Café</h1>\n")
+
+            with self.assertRaisesRegex(ValidationError, "refusing to overwrite"):
+                write_text(path, "replacement")
+            self.assertEqual(path.read_text(encoding="utf-8"), "<h1>Café</h1>\n")
+
+            write_text(path, "replacement\n", overwrite=True)
+            self.assertEqual(path.read_text(encoding="utf-8"), "replacement\n")
 
 
 class Sha256Tests(unittest.TestCase):

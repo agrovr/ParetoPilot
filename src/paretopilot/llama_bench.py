@@ -24,6 +24,10 @@ TestKind = Literal["pp", "tg", "pg"]
 # samples. A 0.1% relative tolerance admits ordinary display rounding while
 # still rejecting summaries that do not describe their attached samples.
 _AVERAGE_REL_TOLERANCE = 1e-3
+_MAX_FILE_BYTES = 64 * 1024 * 1024
+_MAX_LINE_CHARACTERS = 2 * 1024 * 1024
+_MAX_RECORDS = 10_000
+_MAX_SAMPLES_PER_RECORD = 10_000
 
 
 class LlamaBenchParseError(ValidationError):
@@ -86,18 +90,14 @@ def _optional_int(raw: Mapping[str, Any], name: str, *, context: str) -> int | N
     return value
 
 
-def _optional_positive_int(
-    raw: Mapping[str, Any], name: str, *, context: str
-) -> int | None:
+def _optional_positive_int(raw: Mapping[str, Any], name: str, *, context: str) -> int | None:
     value = _optional_int(raw, name, context=context)
     if value is not None and value <= 0:
         raise LlamaBenchParseError(f"{context}: {name} must be a positive integer")
     return value
 
 
-def _optional_binary_int(
-    raw: Mapping[str, Any], name: str, *, context: str
-) -> int | None:
+def _optional_binary_int(raw: Mapping[str, Any], name: str, *, context: str) -> int | None:
     value = _optional_int(raw, name, context=context)
     if value is not None and value not in {0, 1}:
         raise LlamaBenchParseError(f"{context}: {name} must be either 0 or 1")
@@ -123,12 +123,14 @@ def _required_positive_number(raw: Mapping[str, Any], name: str, *, context: str
     return _positive_number(raw.get(name), field_name=name, context=context)
 
 
-def _required_samples(
-    raw: Mapping[str, Any], name: str, *, context: str
-) -> tuple[float, ...]:
+def _required_samples(raw: Mapping[str, Any], name: str, *, context: str) -> tuple[float, ...]:
     values = raw.get(name)
     if not isinstance(values, list):
         raise LlamaBenchParseError(f"{context}: {name} must be an array")
+    if len(values) > _MAX_SAMPLES_PER_RECORD:
+        raise LlamaBenchParseError(
+            f"{context}: {name} exceeds the {_MAX_SAMPLES_PER_RECORD}-sample safety limit"
+        )
     return tuple(
         _positive_number(value, field_name=f"{name}[{index}]", context=context)
         for index, value in enumerate(values)
@@ -232,9 +234,7 @@ def parse_llama_bench_row(
     )
 
 
-def parse_llama_bench_jsonl(
-    text: str, *, source: str = "<memory>"
-) -> tuple[LlamaBenchRecord, ...]:
+def parse_llama_bench_jsonl(text: str, *, source: str = "<memory>") -> tuple[LlamaBenchRecord, ...]:
     """Parse JSONL text, ignoring blank lines and rejecting malformed rows."""
 
     if not isinstance(text, str):
@@ -245,17 +245,27 @@ def parse_llama_bench_jsonl(
         if not line.strip():
             continue
         context = _context(source, line_number)
+        if len(line) > _MAX_LINE_CHARACTERS:
+            raise LlamaBenchParseError(
+                f"{context}: row exceeds the {_MAX_LINE_CHARACTERS}-character safety limit"
+            )
+        if len(records) >= _MAX_RECORDS:
+            raise LlamaBenchParseError(f"{source}: exceeds the {_MAX_RECORDS}-record safety limit")
         try:
-            raw = json.loads(line)
+            raw = json.loads(
+                line,
+                object_pairs_hook=lambda pairs: _unique_json_object(pairs, context=context),
+                parse_constant=lambda value: _reject_json_constant(value, context=context),
+            )
+        except LlamaBenchParseError:
+            raise
         except json.JSONDecodeError as exc:
             raise LlamaBenchParseError(
                 f"{context}: invalid JSON at column {exc.colno}: {exc.msg}"
             ) from exc
         if not isinstance(raw, Mapping):
             raise LlamaBenchParseError(f"{context}: row must be a JSON object")
-        records.append(
-            parse_llama_bench_row(raw, source=source, line_number=line_number)
-        )
+        records.append(parse_llama_bench_row(raw, source=source, line_number=line_number))
 
     if not records:
         raise LlamaBenchParseError(f"{source}: no llama-bench records found")
@@ -266,9 +276,29 @@ def load_llama_bench_jsonl(path: Path) -> tuple[LlamaBenchRecord, ...]:
     """Read and parse a llama-bench JSONL artifact from disk."""
 
     try:
+        size = path.stat().st_size
+        if size > _MAX_FILE_BYTES:
+            raise LlamaBenchParseError(
+                f"{path}: file exceeds the {_MAX_FILE_BYTES}-byte safety limit"
+            )
         text = path.read_text(encoding="utf-8")
-    except FileNotFoundError as exc:
-        raise LlamaBenchParseError(f"file not found: {path}") from exc
+    except LlamaBenchParseError:
+        raise
     except UnicodeDecodeError as exc:
         raise LlamaBenchParseError(f"{path}: file must be UTF-8 text") from exc
+    except OSError as exc:
+        raise LlamaBenchParseError(f"could not read {path}: {exc}") from exc
     return parse_llama_bench_jsonl(text, source=str(path))
+
+
+def _unique_json_object(pairs: list[tuple[str, Any]], *, context: str) -> dict[str, Any]:
+    result: dict[str, Any] = {}
+    for key, value in pairs:
+        if key in result:
+            raise LlamaBenchParseError(f"{context}: duplicate JSON object key {key!r}")
+        result[key] = value
+    return result
+
+
+def _reject_json_constant(value: str, *, context: str) -> None:
+    raise LlamaBenchParseError(f"{context}: non-standard JSON constant {value!r} is not allowed")

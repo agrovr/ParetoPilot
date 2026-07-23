@@ -93,9 +93,7 @@ class LlamaBenchComparisonTests(unittest.TestCase):
         self.assertEqual(payload["comparison_type"], "generic-vs-kleidiai")
         self.assertEqual(payload["build_commit"], COMMIT)
         self.assertTrue(payload["compatibility"]["validated"])
-        self.assertTrue(
-            payload["compatibility"]["same_benchmark_settings_except_kleidiai"]
-        )
+        self.assertTrue(payload["compatibility"]["same_benchmark_settings_except_kleidiai"])
         self.assertTrue(payload["compatibility"]["same_sample_counts"])
         self.assertEqual(list(payload["tests"]), ["pp", "tg"])
         pp = payload["tests"]["pp"]

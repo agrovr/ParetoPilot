@@ -55,8 +55,7 @@ def _json_value(value: Any, *, context: str) -> Any:
         return copied
     if isinstance(value, Sequence) and not isinstance(value, (str, bytes, bytearray)):
         return [
-            _json_value(item, context=f"{context}[{index}]")
-            for index, item in enumerate(value)
+            _json_value(item, context=f"{context}[{index}]") for index, item in enumerate(value)
         ]
     raise LlamaBenchSummaryError(f"{context} must be JSON-compatible")
 
@@ -95,8 +94,7 @@ class LabeledLlamaBenchArtifact:
         for index, record in enumerate(records):
             if not isinstance(record, LlamaBenchRecord):
                 raise LlamaBenchSummaryError(
-                    f"artifact {self.label!r} records[{index}] is not a "
-                    "LlamaBenchRecord"
+                    f"artifact {self.label!r} records[{index}] is not a LlamaBenchRecord"
                 )
         object.__setattr__(self, "records", records)
         object.__setattr__(self, "settings", _settings_copy(self.settings))
@@ -224,10 +222,7 @@ class LlamaBenchVariantSummary:
 
     @property
     def test_shapes(self) -> dict[TestKind, tuple[int, int]]:
-        return {
-            test.test_kind: (test.n_prompt, test.n_gen)
-            for test in self.tests
-        }
+        return {test.test_kind: (test.n_prompt, test.n_gen) for test in self.tests}
 
     def to_dict(self) -> dict[str, Any]:
         """Return a stable, entirely JSON-compatible mapping."""
@@ -241,10 +236,7 @@ class LlamaBenchVariantSummary:
             "synthetic_fixture": self.synthetic_fixture,
             "source_files": list(self.source_files),
             "source_labels": list(self.source_labels),
-            "tests": {
-                test.test_kind: test.to_dict()
-                for test in self.tests
-            },
+            "tests": {test.test_kind: test.to_dict() for test in self.tests},
         }
 
     def to_mapping(self) -> dict[str, Any]:
@@ -279,6 +271,8 @@ def _artifact_context(artifact: LabeledLlamaBenchArtifact) -> _ArtifactContext:
             f"artifact {artifact.label!r} mixes synthetic and measured records"
         )
 
+    _validate_settings_against_records(artifact)
+
     shapes: dict[TestKind, tuple[int, int]] = {}
     for record in artifact.records:
         shape = (record.n_prompt, record.n_gen)
@@ -298,11 +292,56 @@ def _artifact_context(artifact: LabeledLlamaBenchArtifact) -> _ArtifactContext:
     )
 
 
+def _validate_settings_against_records(
+    artifact: LabeledLlamaBenchArtifact,
+) -> None:
+    """Reconcile caller metadata with every runtime value reported by JSONL."""
+
+    field_to_setting = {
+        "n_threads": "threads",
+        "n_batch": "batch_size",
+        "n_ubatch": "ubatch_size",
+        "n_gpu_layers": "n_gpu_layers",
+        "devices": "devices",
+        "no_op_offload": "no_op_offload",
+    }
+    derived_cpu_only = {
+        "n_gpu_layers": 0,
+        "devices": "none",
+        "no_op_offload": 1,
+    }
+    for record_field, setting_name in field_to_setting.items():
+        reported = {getattr(record, record_field) for record in artifact.records}
+        if reported == {None}:
+            continue
+        if None in reported:
+            raise LlamaBenchSummaryError(
+                f"artifact {artifact.label!r} only partially reports {record_field}"
+            )
+        if len(reported) != 1:
+            raise LlamaBenchSummaryError(
+                f"artifact {artifact.label!r} reports multiple {record_field} values: "
+                f"{sorted(reported, key=str)!r}"
+            )
+        expected = artifact.settings.get(setting_name)
+        if expected is None and artifact.settings.get("cpu_only") is True:
+            expected = derived_cpu_only.get(record_field)
+        if expected is None:
+            raise LlamaBenchSummaryError(
+                f"artifact {artifact.label!r} reports {record_field} but settings omit "
+                f"{setting_name}"
+            )
+        actual = next(iter(reported))
+        if actual != expected:
+            raise LlamaBenchSummaryError(
+                f"artifact {artifact.label!r} reported {record_field}={actual!r} "
+                f"but settings declare {setting_name}={expected!r}"
+            )
+
+
 def _describe_shape(shape: Mapping[TestKind, tuple[int, int]]) -> str:
     return ", ".join(
-        f"{kind}=({shape[kind][0]},{shape[kind][1]})"
-        for kind in _TEST_ORDER
-        if kind in shape
+        f"{kind}=({shape[kind][0]},{shape[kind][1]})" for kind in _TEST_ORDER if kind in shape
     )
 
 
@@ -323,9 +362,7 @@ def summarize_llama_bench_variant(
         raise LlamaBenchSummaryError("at least one artifact is required")
     for index, artifact in enumerate(artifact_values):
         if not isinstance(artifact, LabeledLlamaBenchArtifact):
-            raise LlamaBenchSummaryError(
-                f"artifacts[{index}] is not a LabeledLlamaBenchArtifact"
-            )
+            raise LlamaBenchSummaryError(f"artifacts[{index}] is not a LabeledLlamaBenchArtifact")
 
     labels = [artifact.label for artifact in artifact_values]
     if len(labels) != len(set(labels)):
@@ -356,8 +393,7 @@ def summarize_llama_bench_variant(
             )
         if context.synthetic_fixture != expected.synthetic_fixture:
             raise LlamaBenchSummaryError(
-                f"artifact {artifact.label!r} synthetic status does not match "
-                "the first artifact"
+                f"artifact {artifact.label!r} synthetic status does not match the first artifact"
             )
 
     summaries: list[LlamaBenchTestSummary] = []
@@ -370,9 +406,7 @@ def summarize_llama_bench_variant(
         source_files: list[str] = []
         source_labels: list[str] = []
         for artifact in artifact_values:
-            matching = [
-                record for record in artifact.records if record.test_kind == test_kind
-            ]
+            matching = [record for record in artifact.records if record.test_kind == test_kind]
             if matching:
                 source_files.append(artifact.source_file)
                 source_labels.append(artifact.label)
@@ -406,8 +440,7 @@ def summarize_llama_bench_variant(
 
 def summarize_llama_bench_paths(
     label: str,
-    labeled_paths: Mapping[str, str | Path]
-    | Iterable[tuple[str, str | Path]],
+    labeled_paths: Mapping[str, str | Path] | Iterable[tuple[str, str | Path]],
     *,
     settings: Mapping[str, Any],
 ) -> LlamaBenchVariantSummary:

@@ -9,19 +9,29 @@ from pathlib import Path
 import sys
 from typing import Sequence
 
+from paretopilot import __version__
 from paretopilot.analysis import recommend
 from paretopilot.doctor import inspect_environment
-from paretopilot.domain import ValidationError
+from paretopilot.domain import BenchmarkSet, Constraints, ValidationError
+from paretopilot.experiment import assemble_experiment
 from paretopilot.io import (
     load_benchmarks,
     load_constraints,
     load_json_object,
     sha256_file,
     write_json,
+    write_text,
 )
 from paretopilot.llama_bench import LlamaBenchRecord, load_llama_bench_jsonl
 from paretopilot.llama_compare import compare_llama_bench_summaries
 from paretopilot.llama_summary import summarize_llama_bench_paths
+from paretopilot.report import render_report
+from paretopilot.server_eval import (
+    evaluate_server,
+    parse_gnu_time_peak_rss,
+    pool_server_evaluations,
+)
+from paretopilot.study import assemble_study
 
 
 PINNED_LLAMA_CPP_COMMIT = "67b9b0e7f6ce45d929a4411907d3c48ec719e81c"
@@ -32,6 +42,7 @@ def _parser() -> argparse.ArgumentParser:
         prog="paretopilot",
         description="Quality-aware recommendation for reproducible inference benchmarks.",
     )
+    parser.add_argument("--version", action="version", version=f"%(prog)s {__version__}")
     subparsers = parser.add_subparsers(dest="command", required=True)
 
     doctor_parser = subparsers.add_parser(
@@ -106,6 +117,73 @@ def _parser() -> argparse.ArgumentParser:
     compare_parser.add_argument("--kleidiai", required=True, type=Path)
     compare_parser.add_argument("--output", required=True, type=Path)
 
+    evaluate_parser = subparsers.add_parser(
+        "evaluate-server",
+        help="run the fixed quality and latency suite against llama-server",
+    )
+    evaluate_parser.add_argument("--base-url", required=True)
+    evaluate_parser.add_argument("--suite", required=True, type=Path)
+    evaluate_parser.add_argument("--candidate-id", required=True)
+    evaluate_parser.add_argument("--timeout-seconds", type=float, default=180.0)
+    evaluate_parser.add_argument("--output", required=True, type=Path)
+
+    pool_server_parser = subparsers.add_parser(
+        "pool-server-evaluations",
+        help="pool compatible balanced-pass llama-server evaluation artifacts",
+    )
+    pool_server_parser.add_argument(
+        "--input",
+        dest="inputs",
+        action="append",
+        required=True,
+        type=Path,
+        help="raw server-evaluation JSON artifact; repeat from 2 to 8 times",
+    )
+    pool_server_parser.add_argument("--output", required=True, type=Path)
+
+    rss_parser = subparsers.add_parser(
+        "parse-peak-rss",
+        help="convert GNU time -v maximum RSS output into a strict JSON artifact",
+    )
+    rss_parser.add_argument("input", type=Path)
+    rss_parser.add_argument("--candidate-id", required=True)
+    rss_parser.add_argument("--output", required=True, type=Path)
+
+    study_parser = subparsers.add_parser(
+        "assemble-study",
+        help="verify a published paired Arm64 bundle and create real selection inputs",
+    )
+    study_parser.add_argument("bundle", type=Path)
+    study_parser.add_argument("--practical-effect-threshold-percent", type=float, default=1.0)
+    study_parser.add_argument("--benchmarks-output", required=True, type=Path)
+    study_parser.add_argument("--constraints-output", required=True, type=Path)
+    study_parser.add_argument("--assembly-output", type=Path)
+
+    verify_study_parser = subparsers.add_parser(
+        "verify-study",
+        help="verify a published paired Arm64 bundle without writing files",
+    )
+    verify_study_parser.add_argument("bundle", type=Path)
+    verify_study_parser.add_argument(
+        "--practical-effect-threshold-percent", type=float, default=1.0
+    )
+
+    report_parser = subparsers.add_parser(
+        "report",
+        help="generate a deterministic self-contained HTML decision report",
+    )
+    report_parser.add_argument("results", type=Path)
+    report_parser.add_argument("--constraints", required=True, type=Path)
+    report_parser.add_argument("--output", required=True, type=Path)
+    report_parser.add_argument("--recommendation-output", type=Path)
+
+    experiment_parser = subparsers.add_parser(
+        "assemble-experiment",
+        help="verify a multi-candidate Arm64 manifest and create a real benchmark set",
+    )
+    experiment_parser.add_argument("manifest", type=Path)
+    experiment_parser.add_argument("--output", required=True, type=Path)
+
     recommend_parser = subparsers.add_parser(
         "recommend",
         help="filter, compute a Pareto frontier, and recommend a candidate",
@@ -124,11 +202,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             payload = report.to_mapping()
             if args.output:
                 write_json(args.output, payload)
-            exit_code = (
-                3
-                if args.require_evidence_host and not report.evidence_eligible
-                else 0
-            )
+            exit_code = 3 if args.require_evidence_host and not report.evidence_eligible else 0
         elif args.command == "validate":
             benchmarks = load_benchmarks(args.results)
             payload = {
@@ -156,15 +230,11 @@ def main(argv: Sequence[str] | None = None) -> int:
                 "record_count": len(records),
                 "input_sha256": sha256_file(args.input),
                 "build_commits": sorted({record.build_commit for record in records}),
-                "model_filenames": sorted(
-                    {record.model_filename for record in records}
-                ),
+                "model_filenames": sorted({record.model_filename for record in records}),
                 "test_counts": dict(
                     sorted(Counter(record.test_kind for record in records).items())
                 ),
-                "repetition_counts": sorted(
-                    {record.repetition_count for record in records}
-                ),
+                "repetition_counts": sorted({record.repetition_count for record in records}),
                 "execution_settings": {
                     "n_threads": _declared_values(records, "n_threads"),
                     "n_batch": _declared_values(records, "n_batch"),
@@ -189,9 +259,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             payload = summary.to_mapping()
             payload["input_fingerprints"] = {
                 "settings_sha256": sha256_file(args.settings),
-                "artifacts_sha256": {
-                    label: sha256_file(path) for label, path in artifacts
-                },
+                "artifacts_sha256": {label: sha256_file(path) for label, path in artifacts},
             }
             write_json(args.output, payload)
             exit_code = 0
@@ -204,6 +272,103 @@ def main(argv: Sequence[str] | None = None) -> int:
                 "generic_summary_sha256": sha256_file(args.generic),
                 "kleidiai_summary_sha256": sha256_file(args.kleidiai),
             }
+            write_json(args.output, payload)
+            exit_code = 0
+        elif args.command == "evaluate-server":
+            payload = evaluate_server(
+                args.base_url,
+                args.suite,
+                candidate_id=args.candidate_id,
+                timeout_seconds=args.timeout_seconds,
+            )
+            write_json(args.output, payload)
+            exit_code = 0
+        elif args.command == "pool-server-evaluations":
+            payload = pool_server_evaluations(args.inputs)
+            write_json(args.output, payload)
+            exit_code = 0
+        elif args.command == "parse-peak-rss":
+            if not args.candidate_id.strip():
+                raise ValidationError("candidate-id must be a non-empty string")
+            payload = {
+                "schema_version": "1.0",
+                "candidate_id": args.candidate_id,
+                "synthetic": False,
+                "peak_rss_mib": parse_gnu_time_peak_rss(args.input),
+                "source_sha256": sha256_file(args.input),
+                "method": "GNU time -v maximum resident set size",
+            }
+            write_json(args.output, payload)
+            exit_code = 0
+        elif args.command == "assemble-study":
+            destinations = [args.benchmarks_output, args.constraints_output]
+            if args.assembly_output is not None:
+                destinations.append(args.assembly_output)
+            _require_new_distinct_outputs(destinations)
+            assembly = assemble_study(
+                args.bundle,
+                practical_effect_threshold_percent=(args.practical_effect_threshold_percent),
+            )
+            payload = assembly.to_mapping()
+            write_json(args.benchmarks_output, assembly.benchmark_set)
+            write_json(args.constraints_output, assembly.constraints)
+            if args.assembly_output is not None:
+                write_json(args.assembly_output, payload)
+            exit_code = 0
+        elif args.command == "verify-study":
+            assembly = assemble_study(
+                args.bundle,
+                practical_effect_threshold_percent=(args.practical_effect_threshold_percent),
+            )
+            benchmarks = BenchmarkSet.from_mapping(assembly.benchmark_set)
+            constraints = Constraints.from_mapping(assembly.constraints)
+            decision = recommend(benchmarks, constraints)
+            payload = {
+                "valid": True,
+                "bundle": str(args.bundle),
+                "candidate_count": len(benchmarks.candidates),
+                "selected_id": decision["selected_id"],
+                "adoption_gate": dict(assembly.adoption_gate),
+            }
+            exit_code = 0
+        elif args.command == "report":
+            destinations = [args.output]
+            if args.recommendation_output is not None:
+                destinations.append(args.recommendation_output)
+            _require_new_distinct_outputs(destinations)
+            benchmarks = load_benchmarks(args.results)
+            constraints = load_constraints(args.constraints)
+            recommendation = dict(recommend(benchmarks, constraints))
+            recommendation["input_fingerprints"] = {
+                "benchmarks_sha256": sha256_file(args.results),
+                "constraints_sha256": sha256_file(args.constraints),
+            }
+            report_html = render_report(
+                benchmarks,
+                constraints,
+                recommendation,
+                benchmarks_sha256=recommendation["input_fingerprints"]["benchmarks_sha256"],
+                constraints_sha256=recommendation["input_fingerprints"]["constraints_sha256"],
+            )
+            write_text(args.output, report_html)
+            if args.recommendation_output is not None:
+                write_json(args.recommendation_output, recommendation)
+            payload = {
+                "valid": True,
+                "selected_id": recommendation["selected_id"],
+                "baseline_id": recommendation["baseline_id"],
+                "synthetic_source": recommendation["synthetic_source"],
+                "report": str(args.output),
+                "report_sha256": sha256_file(args.output),
+                "recommendation": (
+                    str(args.recommendation_output)
+                    if args.recommendation_output is not None
+                    else None
+                ),
+            }
+            exit_code = 0
+        elif args.command == "assemble-experiment":
+            payload = assemble_experiment(args.manifest)
             write_json(args.output, payload)
             exit_code = 0
         elif args.command == "recommend":
@@ -243,6 +408,19 @@ def _parse_labeled_artifacts(values: Sequence[str]) -> list[tuple[str, Path]]:
         labels.add(label)
         artifacts.append((label, Path(path_text)))
     return artifacts
+
+
+def _require_new_distinct_outputs(paths: Sequence[Path]) -> None:
+    """Fail before multi-file commands can leave a partial output set."""
+
+    resolved = [path.resolve() for path in paths]
+    if len(set(resolved)) != len(resolved):
+        raise ValidationError("output paths must be distinct")
+    existing = [str(path) for path in paths if path.exists()]
+    if existing:
+        raise ValidationError(
+            "refusing to overwrite existing output file(s): " + ", ".join(existing)
+        )
 
 
 def _positive_cli_int(value: str) -> int:

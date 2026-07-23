@@ -163,13 +163,16 @@ def write_json(
 
     try:
         normalized = _json_compatible(payload)
-        serialized = json.dumps(
-            normalized,
-            allow_nan=False,
-            ensure_ascii=False,
-            indent=2,
-            sort_keys=True,
-        ) + "\n"
+        serialized = (
+            json.dumps(
+                normalized,
+                allow_nan=False,
+                ensure_ascii=False,
+                indent=2,
+                sort_keys=True,
+            )
+            + "\n"
+        )
     except ValidationError:
         raise
     except (OverflowError, RecursionError, TypeError, ValueError) as exc:
@@ -191,6 +194,59 @@ def write_json(
         try:
             with os.fdopen(descriptor, "w", encoding="utf-8", newline="\n") as handle:
                 handle.write(serialized)
+                handle.flush()
+                os.fsync(handle.fileno())
+        except BaseException:
+            with suppress(OSError):
+                os.close(descriptor)
+            raise
+
+        if overwrite:
+            os.replace(temporary_path, path)
+            temporary_path = None
+        else:
+            try:
+                os.link(temporary_path, path)
+            except FileExistsError as exc:
+                raise ValidationError(f"refusing to overwrite existing file: {path}") from exc
+            temporary_path.unlink()
+            temporary_path = None
+    except ValidationError:
+        raise
+    except (OSError, OverflowError, TypeError, ValueError) as exc:
+        raise ValidationError(f"could not write {path}: {exc}") from exc
+    finally:
+        if temporary_path is not None:
+            with suppress(OSError):
+                temporary_path.unlink()
+
+
+def write_text(
+    path: Path,
+    text: str,
+    *,
+    overwrite: bool = False,
+) -> None:
+    """Atomically write UTF-8 text, refusing existing destinations by default."""
+
+    if not isinstance(text, str):
+        raise ValidationError("text payload must be a string")
+    temporary_path: Path | None = None
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        if not overwrite and path.exists():
+            raise ValidationError(f"refusing to overwrite existing file: {path}")
+
+        descriptor, temporary_name = tempfile.mkstemp(
+            dir=path.parent,
+            prefix=f".{path.name}.",
+            suffix=".tmp",
+            text=True,
+        )
+        temporary_path = Path(temporary_name)
+        try:
+            with os.fdopen(descriptor, "w", encoding="utf-8", newline="\n") as handle:
+                handle.write(text)
                 handle.flush()
                 os.fsync(handle.fileno())
         except BaseException:

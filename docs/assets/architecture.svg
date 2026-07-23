@@ -1,0 +1,192 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1600" height="900" viewBox="0 0 1600 900" role="img" aria-labelledby="architecture-title architecture-desc">
+  <title id="architecture-title">ParetoPilot evidence-to-deployment architecture</title>
+  <desc id="architecture-desc">Pinned experiment inputs enter one native Arm64 runner. Four generic and KleidiAI candidates produce throughput, quality, latency, and memory evidence. Strict assembly verifies identities and hashes before constraint filtering, Pareto selection, and an offline report. Arm Performix is shown outside the required path as optional profiling.</desc>
+  <defs>
+    <filter id="shadow" x="-20%" y="-20%" width="140%" height="150%">
+      <feDropShadow dx="0" dy="4" stdDeviation="7" flood-color="#1B3158" flood-opacity="0.09"/>
+    </filter>
+    <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#57708F"/>
+    </marker>
+    <marker id="arrow-blue" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#2866D7"/>
+    </marker>
+    <style>
+      .canvas { fill: #F6F8FC; }
+      .surface { fill: #FFFFFF; stroke: #CAD5E3; stroke-width: 1.5; filter: url(#shadow); }
+      .surface-accent { fill: #F7FAFF; stroke: #8FB0EA; stroke-width: 1.5; filter: url(#shadow); }
+      .surface-output { fill: #F5FBFA; stroke: #83BEB8; stroke-width: 1.5; filter: url(#shadow); }
+      .surface-decision { fill: #FFF9F0; stroke: #DBB472; stroke-width: 1.5; filter: url(#shadow); }
+      .mini { fill: #FFFFFF; stroke: #D8E1EC; stroke-width: 1.2; }
+      .mini-blue { fill: #EAF1FC; stroke: #ACC3ED; stroke-width: 1.2; }
+      .mini-teal { fill: #EAF7F5; stroke: #A8D5D0; stroke-width: 1.2; }
+      .optional { fill: #F9FAFC; stroke: #97A5B6; stroke-width: 1.5; stroke-dasharray: 7 6; }
+      .ink { fill: #13233D; }
+      .muted { fill: #52647B; }
+      .blue { fill: #225ABF; }
+      .teal { fill: #116E6A; }
+      .amber { fill: #8A5713; }
+      .eyebrow { font-family: Inter, ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif; font-size: 15px; font-weight: 700; letter-spacing: 1.8px; }
+      .title { font-family: Inter, ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif; font-size: 42px; font-weight: 700; letter-spacing: -1.1px; }
+      .subtitle { font-family: Inter, ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif; font-size: 20px; font-weight: 400; }
+      .stage { font-family: Inter, ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif; font-size: 13px; font-weight: 700; letter-spacing: 1.4px; }
+      .heading { font-family: Inter, ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif; font-size: 21px; font-weight: 700; }
+      .subheading { font-family: Inter, ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif; font-size: 16px; font-weight: 700; }
+      .body { font-family: Inter, ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif; font-size: 15px; font-weight: 400; }
+      .small { font-family: Inter, ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif; font-size: 13px; font-weight: 400; }
+      .small-strong { font-family: Inter, ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif; font-size: 13px; font-weight: 700; }
+      .mono { font-family: "SFMono-Regular", Consolas, "Liberation Mono", monospace; font-size: 12px; font-weight: 400; }
+      .connector { fill: none; stroke: #57708F; stroke-width: 2; marker-end: url(#arrow); }
+      .connector-blue { fill: none; stroke: #2866D7; stroke-width: 2.5; marker-end: url(#arrow-blue); }
+      .connector-optional { fill: none; stroke: #8796A8; stroke-width: 1.8; stroke-dasharray: 7 6; marker-end: url(#arrow); }
+      .rule { stroke: #DCE4EF; stroke-width: 1; }
+    </style>
+  </defs>
+
+  <rect class="canvas" width="1600" height="900"/>
+  <rect x="0" y="0" width="12" height="900" fill="#2866D7"/>
+
+  <text x="72" y="65" class="eyebrow blue">PARETOPILOT · CLOUD AI</text>
+  <text x="72" y="116" class="title ink">Evidence to a defensible Arm64 deployment</text>
+  <text x="72" y="154" class="subtitle muted">One controlled runner · attributable candidates · strict provenance · quality-aware selection</text>
+  <text x="72" y="199" class="stage muted">REQUIRED, REPRODUCIBLE PATH</text>
+  <line x1="310" y1="194" x2="1528" y2="194" class="rule"/>
+
+  <!-- Main path connectors -->
+  <path d="M 280 400 L 310 400" class="connector"/>
+  <path d="M 530 400 L 560 400" class="connector"/>
+  <path d="M 900 400 L 930 400" class="connector"/>
+  <path d="M 1170 400 L 1200 400" class="connector"/>
+
+  <!-- 01 Inputs -->
+  <g aria-label="Stage 1 pinned inputs">
+    <rect x="70" y="235" width="210" height="330" rx="16" class="surface"/>
+    <text x="92" y="271" class="stage blue">01 · INPUTS</text>
+    <text x="92" y="306" class="heading ink">Pinned first</text>
+    <line x1="92" y1="325" x2="258" y2="325" class="rule"/>
+    <circle cx="98" cy="355" r="4" fill="#2866D7"/>
+    <text x="112" y="360" class="body ink">Qwen model revision</text>
+    <text x="112" y="381" class="small muted">Q8_0 + Q4_0 hashes</text>
+    <circle cx="98" cy="418" r="4" fill="#2866D7"/>
+    <text x="112" y="423" class="body ink">llama.cpp commit</text>
+    <circle cx="98" cy="461" r="4" fill="#2866D7"/>
+    <text x="112" y="466" class="body ink">KleidiAI v1.24.0</text>
+    <circle cx="98" cy="504" r="4" fill="#2866D7"/>
+    <text x="112" y="509" class="body ink">Eval suite + policy</text>
+    <text x="92" y="542" class="small muted">SHA-256 checked before</text>
+    <text x="92" y="559" class="small muted">measurement starts</text>
+  </g>
+
+  <!-- 02 Native runner -->
+  <g aria-label="Stage 2 native Arm64 runner">
+    <rect x="310" y="235" width="220" height="330" rx="16" class="surface-accent"/>
+    <text x="332" y="271" class="stage blue">02 · EXECUTION</text>
+    <text x="332" y="306" class="heading ink">Native Arm64</text>
+    <rect x="332" y="330" width="176" height="56" rx="10" class="mini-blue"/>
+    <text x="347" y="354" class="small-strong ink">ubuntu-24.04-arm</text>
+    <text x="347" y="375" class="small muted">one hosted runner</text>
+    <text x="332" y="425" class="subheading ink">Two CPU-only builds</text>
+    <text x="332" y="452" class="body muted">Generic llama.cpp</text>
+    <text x="332" y="478" class="body muted">KleidiAI enabled</text>
+    <line x1="332" y1="500" x2="508" y2="500" class="rule"/>
+    <text x="332" y="527" class="small muted">CPU · OS · compiler · argv</text>
+    <text x="332" y="548" class="small muted">binaries + source hashes</text>
+  </g>
+
+  <!-- 03 Candidates -->
+  <g aria-label="Stage 3 four attributable candidates">
+    <rect x="560" y="215" width="340" height="380" rx="16" class="surface"/>
+    <text x="582" y="251" class="stage blue">03 · CANDIDATE MATRIX</text>
+    <text x="582" y="286" class="heading ink">One change at a time</text>
+
+    <rect x="582" y="307" width="296" height="53" rx="9" class="mini"/>
+    <text x="598" y="330" class="small-strong ink">A · Q8 generic</text>
+    <text x="598" y="349" class="small muted">reference baseline</text>
+
+    <rect x="582" y="371" width="296" height="53" rx="9" class="mini"/>
+    <text x="598" y="394" class="small-strong ink">B · Q4 generic</text>
+    <text x="598" y="413" class="small muted">quantization</text>
+
+    <rect x="582" y="435" width="296" height="53" rx="9" class="mini-blue"/>
+    <text x="598" y="458" class="small-strong ink">C · Q4 + KleidiAI</text>
+    <text x="598" y="477" class="small muted">Arm kernel dispatch</text>
+
+    <rect x="582" y="499" width="296" height="53" rx="9" class="mini-blue"/>
+    <text x="598" y="522" class="small-strong ink">D · Q4 + KleidiAI + tuned uBatch</text>
+    <text x="598" y="541" class="small muted">runtime tuning</text>
+
+    <text x="582" y="579" class="mono muted">A → B → C → D → D → C → B → A</text>
+  </g>
+
+  <!-- 04 Evaluation -->
+  <g aria-label="Stage 4 throughput and server evaluation">
+    <rect x="930" y="235" width="240" height="330" rx="16" class="surface-output"/>
+    <text x="952" y="271" class="stage teal">04 · MEASURE</text>
+    <text x="952" y="306" class="heading ink">Two evidence lanes</text>
+
+    <rect x="952" y="329" width="196" height="91" rx="10" class="mini-teal"/>
+    <text x="968" y="354" class="subheading ink">Throughput</text>
+    <text x="968" y="380" class="small muted">Prompt + generation tok/s</text>
+    <text x="968" y="401" class="small muted">raw multi-pass samples</text>
+
+    <rect x="952" y="435" width="196" height="91" rx="10" class="mini-teal"/>
+    <text x="968" y="460" class="subheading ink">Server behavior</text>
+    <text x="968" y="486" class="small muted">Quality · TTFT · e2e p95</text>
+    <text x="968" y="507" class="small muted">peak RSS via GNU time</text>
+
+    <text x="952" y="549" class="small-strong teal">Fixed suite · streamed output</text>
+  </g>
+
+  <!-- 05 Strict assembly -->
+  <g aria-label="Stage 5 strict assembly and integrity verification">
+    <rect x="1200" y="235" width="220" height="330" rx="16" class="surface"/>
+    <text x="1222" y="271" class="stage blue">05 · VERIFY</text>
+    <text x="1222" y="306" class="heading ink">Strict assembly</text>
+    <line x1="1222" y1="325" x2="1398" y2="325" class="rule"/>
+    <text x="1222" y="359" class="body ink">Closed manifest schema</text>
+    <text x="1222" y="393" class="body ink">Artifact SHA-256</text>
+    <text x="1222" y="427" class="body ink">Identity cross-checks</text>
+    <text x="1222" y="461" class="body ink">Metric source checks</text>
+    <rect x="1222" y="486" width="176" height="51" rx="9" class="mini-blue"/>
+    <text x="1238" y="508" class="small-strong ink">BenchmarkSet</text>
+    <text x="1238" y="527" class="small muted">fails closed on mismatch</text>
+  </g>
+
+  <!-- Downstream decision connector -->
+  <path d="M 1310 565 L 1310 620 L 995 620 L 995 650" class="connector-blue"/>
+
+  <!-- Optional Performix sidecar -->
+  <path d="M 1050 565 L 1050 620 L 430 620 L 430 665" class="connector-optional"/>
+  <g aria-label="Optional Arm Performix profiling">
+    <rect x="70" y="665" width="720" height="120" rx="14" class="optional"/>
+    <text x="94" y="701" class="stage muted">OPTIONAL DEPTH · OUTSIDE THE REQUIRED PATH</text>
+    <text x="94" y="735" class="heading ink">Arm Performix</text>
+    <text x="276" y="734" class="body muted">Hotspot profiling when supported by the target</text>
+    <text x="94" y="763" class="small muted">Adds diagnostic context; never blocks measurement, selection, or report generation.</text>
+  </g>
+
+  <!-- 06 Decision -->
+  <g aria-label="Stage 6 constraints and Pareto decision">
+    <rect x="860" y="650" width="270" height="150" rx="16" class="surface-decision"/>
+    <text x="882" y="685" class="stage amber">06 · DECIDE</text>
+    <text x="882" y="718" class="heading ink">Quality-aware Pareto</text>
+    <text x="882" y="748" class="small muted">Constraint gate → frontier → objective</text>
+    <text x="882" y="774" class="small-strong amber">Prefer simpler option within 1%</text>
+  </g>
+
+  <path d="M 1130 725 L 1170 725" class="connector-blue"/>
+
+  <!-- 07 Report -->
+  <g aria-label="Stage 7 offline report and evidence bundle">
+    <rect x="1170" y="650" width="350" height="150" rx="16" class="surface-accent"/>
+    <text x="1192" y="685" class="stage blue">07 · EXPORT</text>
+    <text x="1192" y="718" class="heading ink">Offline decision package</text>
+    <text x="1192" y="748" class="body muted">report.html · recommendation.json</text>
+    <text x="1192" y="775" class="body muted">raw evidence · status.json · SHA256SUMS</text>
+  </g>
+
+  <line x1="72" y1="838" x2="1528" y2="838" class="rule"/>
+  <circle cx="82" cy="865" r="5" fill="#2866D7"/>
+  <text x="98" y="870" class="small-strong ink">Truth boundary:</text>
+  <text x="210" y="870" class="small muted">the diagram describes the workflow; only a reviewed, complete, canonical evidence bundle supports performance claims.</text>
+</svg>

@@ -3,10 +3,15 @@ __pycache__/
 *.py[cod]
 *.egg-info/
 .pytest_cache/
+.playwright-cli/
 .coverage
 htmlcov/
 dist/
 build/
+artifacts/
+output/
+.candidate-build/
+.candidate-models/
 .idea/
 .vscode/
 .DS_Store

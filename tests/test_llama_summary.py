@@ -36,22 +36,24 @@ def record(
     model: str = "model.gguf",
     synthetic: bool = False,
     shape: tuple[int, int] | None = None,
+    runtime: dict[str, object] | None = None,
 ) -> LlamaBenchRecord:
     shapes = {"pp": (512, 0), "tg": (0, 128), "pg": (64, 32)}
     n_prompt, n_gen = shape or shapes[kind]
-    return parse_llama_bench_row(
-        {
-            "build_commit": commit,
-            "model_filename": model,
-            "n_prompt": n_prompt,
-            "n_gen": n_gen,
-            "avg_ns": sum(samples_ns) / len(samples_ns),
-            "avg_ts": sum(samples_ts) / len(samples_ts),
-            "samples_ns": samples_ns,
-            "samples_ts": samples_ts,
-            "synthetic_fixture": synthetic,
-        }
-    )
+    row: dict[str, object] = {
+        "build_commit": commit,
+        "model_filename": model,
+        "n_prompt": n_prompt,
+        "n_gen": n_gen,
+        "avg_ns": sum(samples_ns) / len(samples_ns),
+        "avg_ts": sum(samples_ts) / len(samples_ts),
+        "samples_ns": samples_ns,
+        "samples_ts": samples_ts,
+        "synthetic_fixture": synthetic,
+    }
+    if runtime:
+        row.update(runtime)
+    return parse_llama_bench_row(row)
 
 
 def artifact(
@@ -119,9 +121,7 @@ class LlamaBenchVariantSummaryTests(unittest.TestCase):
         self.assertEqual(pp.tokens_per_second.sample_count, 4)
         self.assertEqual(pp.tokens_per_second.mean, 115.0)
         self.assertEqual(pp.tokens_per_second.median, 115.0)
-        self.assertTrue(
-            math.isclose(pp.tokens_per_second.sample_stdev, math.sqrt(500 / 3))
-        )
+        self.assertTrue(math.isclose(pp.tokens_per_second.sample_stdev, math.sqrt(500 / 3)))
         self.assertEqual(pp.tokens_per_second.minimum, 100.0)
         self.assertEqual(pp.tokens_per_second.maximum, 130.0)
         self.assertEqual(pp.duration_ns.sample_count, 4)
@@ -137,10 +137,13 @@ class LlamaBenchVariantSummaryTests(unittest.TestCase):
 
         self.assertIn('"tokens_per_second"', encoded)
         self.assertIn('"duration_ns"', encoded)
-        self.assertEqual(mapping["tests"]["pp"]["source_files"], [
-            "run-01.jsonl",
-            "run-02.jsonl",
-        ])
+        self.assertEqual(
+            mapping["tests"]["pp"]["source_files"],
+            [
+                "run-01.jsonl",
+                "run-02.jsonl",
+            ],
+        )
         self.assertEqual(mapping["tests"]["pp"]["tokens_per_second"]["sample_count"], 4)
         self.assertEqual(mapping["tests"]["pp"]["tokens_per_second"]["min"], 100.0)
         self.assertEqual(summary.to_mapping(), mapping)
@@ -226,6 +229,48 @@ class LlamaBenchVariantSummaryTests(unittest.TestCase):
         )
         with self.assertRaisesRegex(LlamaBenchSummaryError, "settings"):
             summarize_llama_bench_variant("generic", [reordered, changed])
+
+    def test_reconciles_reported_runtime_values_with_declared_settings(self) -> None:
+        measured = artifact(
+            "measured",
+            [
+                record(
+                    "pp",
+                    [1.0, 2.0],
+                    [3.0, 4.0],
+                    runtime={
+                        "n_threads": 4,
+                        "n_batch": 512,
+                        "n_ubatch": 128,
+                        "n_gpu_layers": 0,
+                        "devices": "none",
+                        "no_op_offload": 1,
+                    },
+                )
+            ],
+            settings={
+                "threads": 4,
+                "batch_size": 512,
+                "ubatch_size": 128,
+                "cpu_only": True,
+            },
+        )
+        summarize_llama_bench_variant("generic", [measured])
+
+        mismatched = artifact(
+            "mismatched",
+            measured.records,
+            settings={
+                "threads": 8,
+                "batch_size": 512,
+                "ubatch_size": 128,
+                "cpu_only": True,
+            },
+        )
+        with self.assertRaisesRegex(
+            LlamaBenchSummaryError, "reported n_threads=4.*declare threads=8"
+        ):
+            summarize_llama_bench_variant("generic", [mismatched])
 
     def test_rejects_mixed_synthetic_and_measured_records(self) -> None:
         measured = artifact(

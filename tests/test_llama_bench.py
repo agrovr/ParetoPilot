@@ -77,30 +77,50 @@ class LlamaBenchParserTests(unittest.TestCase):
         self.assertEqual(record.avg_ns, 100_000_000.0)
 
     def test_rejects_inconsistent_nanosecond_average(self) -> None:
-        with self.assertRaisesRegex(
-            LlamaBenchParseError, "avg_ns is inconsistent.*samples_ns"
-        ):
+        with self.assertRaisesRegex(LlamaBenchParseError, "avg_ns is inconsistent.*samples_ns"):
             parse_llama_bench_row(valid_row(avg_ns=10_000_000))
 
     def test_rejects_inconsistent_throughput_average(self) -> None:
-        with self.assertRaisesRegex(
-            LlamaBenchParseError, "avg_ts is inconsistent.*samples_ts"
-        ):
+        with self.assertRaisesRegex(LlamaBenchParseError, "avg_ts is inconsistent.*samples_ts"):
             parse_llama_bench_row(valid_row(avg_ts=500.0))
 
     def test_bad_json_reports_its_line(self) -> None:
         with self.assertRaisesRegex(LlamaBenchParseError, r"bad\.jsonl:2: invalid JSON"):
             parse_llama_bench_jsonl("\n{not-json}\n", source="bad.jsonl")
 
+    def test_rejects_duplicate_keys_and_nonstandard_numbers(self) -> None:
+        duplicate = (
+            '{"build_commit":"abc","build_commit":"def","model_filename":"m",'
+            '"n_prompt":1,"n_gen":0,"avg_ns":1,"avg_ts":1,'
+            '"samples_ns":[1],"samples_ts":[1]}\n'
+        )
+        with self.assertRaisesRegex(LlamaBenchParseError, "duplicate JSON object key"):
+            parse_llama_bench_jsonl(duplicate, source="duplicate.jsonl")
+
+        nonstandard = duplicate.replace(
+            '"build_commit":"abc","build_commit":"def"',
+            '"build_commit":"abc"',
+        ).replace('"avg_ns":1', '"avg_ns":NaN')
+        with self.assertRaisesRegex(LlamaBenchParseError, "non-standard JSON constant"):
+            parse_llama_bench_jsonl(nonstandard, source="nan.jsonl")
+
+    def test_rejects_unreasonably_large_sample_arrays(self) -> None:
+        row = valid_row(
+            samples_ns=[1.0] * 10_001,
+            samples_ts=[1.0] * 10_001,
+            avg_ns=1.0,
+            avg_ts=1.0,
+        )
+        with self.assertRaisesRegex(LlamaBenchParseError, "sample safety limit"):
+            parse_llama_bench_row(row)
+
     def test_truncated_json_reports_its_line(self) -> None:
         valid = (
             '{"build_commit":"abc","model_filename":"m.gguf","n_prompt":8,'
             '"n_gen":0,"avg_ns":1,"avg_ts":8,"samples_ns":[1],"samples_ts":[8]}'
         )
-        with self.assertRaisesRegex(
-            LlamaBenchParseError, r"truncated\.jsonl:2: invalid JSON"
-        ):
-            parse_llama_bench_jsonl(valid + "\n{\"build_commit\":", source="truncated.jsonl")
+        with self.assertRaisesRegex(LlamaBenchParseError, r"truncated\.jsonl:2: invalid JSON"):
+            parse_llama_bench_jsonl(valid + '\n{"build_commit":', source="truncated.jsonl")
 
     def test_requires_numeric_sample_values(self) -> None:
         with self.assertRaisesRegex(LlamaBenchParseError, r"samples_ts\[1\]"):
