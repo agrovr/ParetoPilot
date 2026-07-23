@@ -3,6 +3,7 @@ __pycache__/
 *.py[cod]
 *.egg-info/
 .pytest_cache/
+.ruff_cache/
 .playwright-cli/
 .coverage
 htmlcov/
@@ -10,6 +11,7 @@ dist/
 build/
 artifacts/
 output/
+_site/
 .candidate-build/
 .candidate-models/
 .idea/
@@ -19,6 +21,5 @@ Thumbs.db
 
 # Real benchmark artifacts can be large. Keep only reviewed fixtures in git.
 results/**
-!results/.gitkeep
 !results/published/
 !results/published/**

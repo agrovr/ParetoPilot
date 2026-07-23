@@ -15,3 +15,6 @@ results/published/**/*.txt text eol=lf -whitespace
 results/published/**/*.sha256 text eol=lf
 results/published/**/SHA256SUMS text eol=lf
 results/published/**/SOURCE-SHA256SUMS text eol=lf
+
+# The paired-study fixture is checksummed; preserve LF bytes on every platform.
+tests/fixtures/paired-study/** text eol=lf

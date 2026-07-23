@@ -78,7 +78,9 @@ intended dispatch distinction without treating a build flag alone as runtime evi
 ## Truthful interpretation
 
 The diagram documents the executable candidate-study path; it is not itself benchmark evidence.
-A future run is publishable only after its `status.json`, raw measurements, provenance, dispatch
-logs, and checksums pass review. ParetoPilot reports measured software performance and does not
-claim energy savings or hardware-counter findings unless a separate source actually measures
-them.
+A run is publishable only after its `status.json`, raw measurements, provenance, dispatch logs,
+and checksums pass review. ParetoPilot reports measured software performance and does not claim
+energy savings or hardware-counter findings unless a separate source actually measures them.
+
+Canonical run [`29973188507`](../results/published/29973188507/README.md) completed this path and
+was rebuilt from its permanent release archive in a separate verification pass.

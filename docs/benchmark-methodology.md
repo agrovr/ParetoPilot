@@ -1,72 +1,99 @@
-# Initial benchmark methodology
+# Benchmark methodology
 
-This document defines the evidence standard for the ParetoPilot hackathon MVP. Canonical run
-[`29940067201`](../results/published/29940067201/README.md) is the first measurement reviewed
-under this protocol; the protocol itself does not imply that every listed metric has been
-collected.
+This document defines the controlled four-candidate protocol used for ParetoPilot's canonical
+Arm64 study. The decision policy and all source, model, evaluation, and runtime pins are declared
+before measurement.
 
-## Comparison contract
+## Decision question
 
-All candidates in a comparison must share:
+Which measured configuration should be deployed when the primary objective is minimum p95
+end-to-end latency, subject to full retention of the reference smoke-test score, a 15,000 ms p95
+latency ceiling, and a 4,096 MiB peak-RSS ceiling?
 
-- the same Arm64 runner instance, CPU identity, and operating-system image;
-- model family, source revision, tokenizer, and prompt/evaluation set;
-- runtime source commit and compiler version;
-- power mode, process placement policy, and background-service policy;
-- input/output lengths and end-to-end request behavior.
+The reference is allowed to win. A predeclared 1% objective tolerance keeps the simpler candidate
+when a smaller measured latency difference is not large enough to justify added complexity.
 
-Each experiment changes one declared variable at a time. The first GitHub Actions experiment is:
+## Candidates
 
-1. pinned Qwen Q4_0 model with a generic `llama.cpp` CPU build;
-2. the identical model and build flags with KleidiAI enabled;
-3. a second KleidiAI pass;
-4. a second generic pass.
+Each stage changes one declared variable relative to the preceding stage.
 
-This A-B-B-A order reduces, but cannot eliminate, time-dependent hosted-VM noise. Compare paired
-ratios inside one job. Do not pool absolute throughput from separate workflow runs unless the CPU
-identity and runner image are identical and the aggregation is explicitly justified.
+| Stage | Candidate | Deliberate change |
+| --- | --- | --- |
+| Reference | `q8-generic` | Q8_0 model on the generic CPU build |
+| Quantization | `q4-generic` | Q8_0 to Q4_0 with the same generic build |
+| Arm kernels | `q4-kleidiai` | Generic to KleidiAI-enabled build with the same Q4_0 model |
+| Runtime tuning | `q4-kleidiai-tuned` | Micro-batch size 128 to 512 |
 
-## Required measurements
+## Controlled inputs
 
-- model file size in MiB;
-- peak resident set size in MiB;
-- model load time;
-- time to first token;
-- prompt-processing and generation tokens per second;
-- end-to-end p50 and p95 latency;
-- requests per second at declared concurrency levels;
-- quality score on a versioned evaluation set;
-- Optional Arm Performix hotspot evidence for selected baseline and optimized runs when a target
-  exposes the required hardware counters.
+All four candidates run in one native Arm64 GitHub Actions job and share:
 
-The first free-runner milestone measures prompt-processing and token-generation throughput.
-Server-level latency, memory, quality-suite, and concurrency remain later experiments. Performix
-is a later optional experiment; `llama-bench` output must not be presented as proof of those
-metrics.
+- the same runner, CPU identity, operating-system image, and four CPU threads;
+- a pinned `llama.cpp` commit and pinned KleidiAI source;
+- pinned Qwen2.5 1.5B Instruct model revisions and file hashes;
+- a 512-token batch, CPU-only execution, and one server slot;
+- the same 512-token prompt-processing and 128-token generation shapes; and
+- the same fixed five-case exact-answer evaluation suite.
 
-## Repetition and reporting
+The Q8 and Q4 files intentionally differ because quantization is one of the measured stages. Model
+family, upstream revision, prompts, and every non-quantization setting remain fixed.
 
-- Pin every input and tool revision before measuring.
-- Warm up before recorded repetitions.
-- Record at least ten repetitions for final evidence.
-- Publish raw samples plus aggregation code.
-- Report central tendency and variation; never report only the fastest sample.
-- When optional profiling is enabled, keep the benchmark active long enough for meaningful
-  profiler sampling.
-- Treat cloud burst credits, noisy neighbors, and throttling as validity risks.
-- Randomize or alternate candidate order to reduce thermal and noisy-neighbor bias.
-- Use one authoritative producer per metric; do not infer TTFT from `llama-bench`.
-- Treat a GitHub-hosted runner as an ephemeral paired test environment, not a guaranteed fixed
-  cloud SKU.
+## Balanced execution order
 
-## Quality gate
+Throughput and server measurements both use `A-B-C-D-D-C-B-A`, where A is the Q8 reference and D
+is the tuned KleidiAI candidate. This gives every candidate one early and one late pass on the
+same ephemeral host. Ten seconds separate server candidates.
 
-The default software fixture uses 95% retention of the baseline quality score. The final quality
-metric and threshold will be declared before running the optimization search, not chosen after
-seeing the results.
+The order reduces time-dependent hosted-runner bias, but it cannot turn an ephemeral runner into a
+fixed hardware SKU. Results from separate runs are not pooled as though they came from one
+controlled experiment.
 
-## Synthetic data
+## Measurements
 
-Files under `examples/` may contain synthetic numbers for testing the recommendation engine.
-Every synthetic file must set `synthetic` to `true` and include a visible warning. Synthetic data
-must not appear in the final submission as measured evidence.
+- `llama-bench` records ten repetitions per pass for prompt processing and generation. The two
+  passes provide twenty samples per candidate and workload.
+- `llama-server` runs the five-case exact-answer suite in each pass and requires the outcomes to
+  agree. A separate fixed 64-token performance prompt runs once as warmup and ten times for
+  measurement per pass, giving twenty pooled latency samples per candidate.
+- The server evaluator records exact-answer smoke score, time to first token, and end-to-end
+  latency. Candidate summaries report p50 and p95 latency.
+- GNU `time -v` records process maximum resident set size. The published candidate value is the
+  larger of its two passes.
+- Model file size is taken from the pinned, hash-verified GGUF file.
+
+The five-case suite is a deterministic smoke gate, not a broad model-quality benchmark. Throughput,
+quality, latency, and memory each come from their declared producer; one metric is never inferred
+from another.
+
+## Selection rules
+
+ParetoPilot first rejects candidates that fail the quality, latency, or memory constraints. It then
+computes the non-dominated frontier across latency, generation throughput, model size, peak RSS,
+quality, and TTFT.
+
+Among eligible candidates, the engine minimizes p95 end-to-end latency. Candidates within 1% of
+the numeric best enter a deterministic shortlist ordered from the reference through quantization,
+Arm kernels, and runtime tuning. The resulting recommendation explains the numeric best, the
+shortlist, any preference-based change, rejected candidates, and frontier membership.
+
+## Evidence safeguards
+
+- Source revisions, model hashes, evaluation-suite hash, build flags, executable hashes, exact
+  command arrays, and runtime settings are recorded.
+- Generic server logs must not contain the `CPU_KLEIDIAI model buffer` dispatch marker. Both
+  KleidiAI candidates must contain it in both passes.
+- Strict parsers reject malformed, duplicate-key, non-finite, mismatched, oversized, path-escaping,
+  or synthetic source data.
+- The experiment manifest binds critical artifacts by SHA-256. A bundle-level `SHA256SUMS` binds
+  every released evidence file.
+- A run is canonical only when it uses the default branch, exactly ten repetitions, and passes
+  every environment, measurement, dispatch, integrity, selection, and reporting gate.
+
+## Limitations
+
+The study is one controlled comparison on one GitHub-hosted Arm Neoverse runner. It does not claim
+that the same ranking applies to every Arm processor, model, prompt distribution, concurrency
+level, or deployment environment. Energy and cost were not measured.
+
+Arm Performix is an optional follow-up for hotspot analysis when a compatible target exposes the
+required counters. It is not required by ParetoPilot and does not replace benchmark evidence.

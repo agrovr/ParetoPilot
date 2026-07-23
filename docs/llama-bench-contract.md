@@ -26,9 +26,9 @@ enabled and records the complete command separately because JSONL does not inclu
 Verbose mode preserves the model-buffer dispatch log on stderr; without `-v`, `llama-bench`
 replaces the normal logger with a null callback.
 
-The initial GitHub Actions experiment pins the official Qwen 2.5 1.5B Instruct Q4_0 GGUF.
-Q4_0 is required for this comparison because the pinned KleidiAI integration does not provide
-the same optimized path for K-quant model files.
+The canonical candidate study pins the official Qwen 2.5 1.5B Instruct Q8_0 and Q4_0 GGUFs.
+Q4_0 is required for the optimized candidates because the pinned KleidiAI integration does not
+provide the same optimized path for K-quant model files.
 
 ## Parser rules
 

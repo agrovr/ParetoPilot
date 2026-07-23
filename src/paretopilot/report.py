@@ -264,7 +264,10 @@ def _candidate_table(
             f'<code class="candidate-id">{_escape(candidate.candidate_id)}</code>'
             "</th>"
             f'<td><span class="status {status_class}">{_escape(status)}</span></td>'
-            f'<td><code class="parameter-json">{_escape(_stable_json(candidate.parameters))}</code></td>'
+            '<td><details class="evidence-details parameter-details">'
+            "<summary>View configuration</summary>"
+            f'<code class="parameter-json">{_escape(_stable_json(candidate.parameters))}</code>'
+            "</details></td>"
             f"{metric_cells}"
             f"<td>{reasons}</td>"
             "</tr>"
@@ -445,8 +448,8 @@ def _pareto_visualisation(benchmarks: BenchmarkSet, *, selected_id: str) -> str:
         'aria-labelledby="pareto-chart-title pareto-chart-description">'
         '<title id="pareto-chart-title">Candidate throughput and latency</title>'
         '<desc id="pareto-chart-description">Higher on the chart is more generation throughput; '
-        "farther left is lower p95 end-to-end latency. Selected and baseline candidates use "
-        "distinct markers.</desc>"
+        "farther left is lower p95 end-to-end latency. Selected and baseline status is shown "
+        "visually; one candidate may hold both roles.</desc>"
         '<line class="chart-axis" x1="82" y1="310" x2="750" y2="310"></line>'
         '<line class="chart-axis" x1="82" y1="34" x2="82" y2="310"></line>'
         '<text class="chart-axis-label" x="416" y="348" text-anchor="middle">'
@@ -875,7 +878,25 @@ def render_report(
     .candidate-id { display: block; margin-top: .2rem; color: var(--muted); }
     code, pre { font-family: "SFMono-Regular", Consolas, "Liberation Mono", monospace; }
     code { overflow-wrap: anywhere; }
-    .parameter-json { display: block; min-width: 14rem; white-space: pre-wrap; }
+    .evidence-details summary {
+      width: fit-content;
+      cursor: pointer;
+      color: var(--accent-dark);
+      font-weight: 700;
+      white-space: nowrap;
+    }
+    .evidence-details[open] summary { margin-bottom: .75rem; }
+    .parameter-details { min-width: 10rem; }
+    .parameter-json {
+      display: block;
+      width: min(28rem, 70vw);
+      max-height: 20rem;
+      padding: .75rem;
+      overflow: auto;
+      border-radius: 6px;
+      background: var(--surface);
+      white-space: pre-wrap;
+    }
     .quiet, .not-measured { color: var(--muted); }
     .reason-list { min-width: 15rem; margin: 0; padding-left: 1.1rem; }
     .reason-list li + li { margin-top: .3rem; }
@@ -1024,11 +1045,13 @@ def render_report(
         f"<div><dt>Selected ID</dt><dd><code>{_escape(selected_id)}</code></dd></div>\n"
         "</dl></div>\n"
         '<div class="provenance-block"><h3>Benchmark metadata</h3>\n'
+        '<details class="evidence-details metadata-details">\n'
+        "<summary>View full source metadata</summary>\n"
         '<div class="table-scroll" tabindex="0" role="region" '
         'aria-label="Scrollable benchmark metadata">\n'
         '<table class="metadata-table"><caption>Source-supplied metadata</caption>\n'
         '<thead><tr><th scope="col">Field</th><th scope="col">Value</th></tr></thead>\n'
-        f"<tbody>{_metadata_rows(benchmarks)}</tbody></table></div></div>\n"
+        f"<tbody>{_metadata_rows(benchmarks)}</tbody></table></div></details></div>\n"
         "</div>\n"
         "</section>\n"
         "</main>\n"

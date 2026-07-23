@@ -406,6 +406,10 @@ class ReportTests(unittest.TestCase):
         self.assertIn('role="status" aria-label="Recommendation outcome"', report)
         self.assertIn("Peak resident memory", report)
         self.assertIn("1,750 MiB", report)
+        self.assertIn('<details class="evidence-details parameter-details">', report)
+        self.assertIn("View configuration</summary>", report)
+        self.assertIn('<details class="evidence-details metadata-details">', report)
+        self.assertIn("View full source metadata</summary>", report)
         self.assertIn(":focus-visible", report)
 
     def test_scatter_requires_both_metrics_for_every_candidate(self) -> None:

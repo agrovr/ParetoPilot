@@ -1,0 +1,45 @@
+{
+  "schema_version": "1.0",
+  "classification": "canonical",
+  "source": {
+    "run_id": "29973188507",
+    "run_attempt": 1,
+    "job_id": "89099402414",
+    "head_sha": "0c144b1aae1b26a8cffa7356eec346457188edc6",
+    "workflow": ".github/workflows/candidate-study-arm64.yml",
+    "url": "https://github.com/agrovr/ParetoPilot/actions/runs/29973188507",
+    "generated_at_utc": "2026-07-23T02:26:07Z"
+  },
+  "archive": {
+    "actions_artifact_id": 8550868068,
+    "actions_artifact_name": "arm64-candidate-study-29973188507-1",
+    "actions_digest": "sha256:fb4f4c86a729a5eb42e23dbd3c6346fd4ab31ce14423dbb8c7672b11b6a6fd00",
+    "release_tag": "v1.0.0",
+    "release_asset_id": 486672268,
+    "release_asset_name": "paretopilot-v1.0.0-arm64-evidence-29973188507.zip",
+    "release_asset_url": "https://github.com/agrovr/ParetoPilot/releases/download/v1.0.0/paretopilot-v1.0.0-arm64-evidence-29973188507.zip",
+    "release_url": "https://github.com/agrovr/ParetoPilot/releases/tag/v1.0.0",
+    "size_bytes": 234873,
+    "sha256": "fb4f4c86a729a5eb42e23dbd3c6346fd4ab31ce14423dbb8c7672b11b6a6fd00"
+  },
+  "review": {
+    "reviewed_at_utc": "2026-07-23T02:34:01Z",
+    "checksum_entries": 124,
+    "all_checksums_verified": true,
+    "status_complete": true,
+    "measurement_valid": true,
+    "valid_evidence": true,
+    "dispatch_marker_counts": {
+      "q8-generic": [0, 0],
+      "q4-generic": [0, 0],
+      "q4-kleidiai": [1, 1],
+      "q4-kleidiai-tuned": [1, 1]
+    },
+    "benchmark_set_sha256": "a4ef6eaa8c9b016bb6c64e95310d4460b7dcc98182d6deb26445e7c10e6d053e",
+    "constraints_sha256": "4e617dbf8fc48b289a6f7a21c75c72354cfbdc0091fc4dae81a95a8661e3a83e",
+    "recommendation_sha256": "bc1954431eba85de2a6b963d2c999f63fd3b35decba6266467ac6e8a5887a73b",
+    "archived_report_sha256": "14b868d7bcc0a32b146a39902c74f4262b77681c3cffc9475108bbde6c6b6dda",
+    "submission_report_sha256": "ebe7b27fd5c3f130abbe882d89d18e0d9fea0b982c7c2fd581defa6dc9f1f7ac",
+    "tagged_v1_outputs_exact_match": true
+  }
+}
