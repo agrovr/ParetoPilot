@@ -815,6 +815,7 @@ def _validate_throughput_settings(
     fixed_options = {
         "--parallel": "1",
         "--n-gpu-layers": "0",
+        "-lv": "4",
         "--host": "127.0.0.1",
     }
     for option, expected in fixed_options.items():
