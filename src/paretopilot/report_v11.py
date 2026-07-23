@@ -2504,8 +2504,8 @@ def _trust_section(
         "<ol><li>Verify the evidence archive and recorded source hashes.</li>"
         "<li>Rebuild the benchmark set and canonical recommendation from the validated inputs.</li>"
         "<li>Render into a fresh path and compare the resulting artifact hash.</li></ol>"
-        "<p>The v1.1 renderer is opt-in. It does not alter the canonical v1.0 report path "
-        "or its byte output.</p></div>"
+        "<p>The v1.1 renderer is additive. The v1.0 renderer remains available for replaying "
+        "the published v1.0 evidence.</p></div>"
         "</section>"
     )
 
@@ -2925,7 +2925,7 @@ def render_report_v11(
     load_sha256: str = "",
     stability_sha256: str = "",
 ) -> str:
-    """Render one opt-in, deterministic, self-contained v1.1 decision report.
+    """Render one additive, deterministic, self-contained v1.1 decision report.
 
     ``recommendation`` must be the canonical mapping produced by
     :func:`paretopilot.analysis.recommend`. Supplied policy profiles contain
