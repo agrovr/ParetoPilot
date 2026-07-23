@@ -1,0 +1,38 @@
+{
+  "schema_version": "1.0",
+  "id": "paretopilot-qwen-smoke-v1",
+  "license": "CC0-1.0 (original ParetoPilot prompts)",
+  "quality_cases": [
+    {
+      "id": "identity",
+      "prompt": "Reply with exactly this single word and no punctuation: PARETOPILOT",
+      "accepted_answers": ["PARETOPILOT"]
+    },
+    {
+      "id": "arithmetic",
+      "prompt": "Reply with only the integer result of 17 plus 25.",
+      "accepted_answers": ["42"]
+    },
+    {
+      "id": "capital",
+      "prompt": "Reply with only the city name: What is the capital of France?",
+      "accepted_answers": ["Paris"]
+    },
+    {
+      "id": "sequence",
+      "prompt": "Reply with only the next integer in this sequence: 2, 4, 6, 8,",
+      "accepted_answers": ["10"]
+    },
+    {
+      "id": "classification",
+      "prompt": "Reply with only YES or NO: Is a whale a mammal?",
+      "accepted_answers": ["YES"]
+    }
+  ],
+  "performance": {
+    "prompt": "ParetoPilot evaluates several inference configurations on one controlled Arm64 host. It records raw samples, validates provenance, applies a declared quality floor and resource ceilings, computes the non-dominated candidates, and explains why a configuration should or should not be deployed. Summarize the value of transparent, reproducible optimization evidence for an engineering team.",
+    "generation_tokens": 64,
+    "repetitions": 10,
+    "warmups": 1
+  }
+}

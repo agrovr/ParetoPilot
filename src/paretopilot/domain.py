@@ -14,9 +14,7 @@ class ValidationError(ValueError):
     """Raised when benchmark evidence does not satisfy the canonical contract."""
 
 
-def _reject_unknown_fields(
-    raw: Mapping[str, Any], *, allowed: set[str], context: str
-) -> None:
+def _reject_unknown_fields(raw: Mapping[str, Any], *, allowed: set[str], context: str) -> None:
     unknown = sorted(str(name) for name in set(raw) - allowed)
     if unknown:
         raise ValidationError(f"{context} contains unknown fields: {', '.join(unknown)}")
@@ -189,6 +187,8 @@ class Constraints:
     min_values: Mapping[str, float]
     objective: Objective
     frontier_metrics: Mapping[str, Direction]
+    objective_tolerance_percent: float = 0.0
+    preference_order: tuple[str, ...] = ()
 
     @classmethod
     def from_mapping(cls, raw: Mapping[str, Any]) -> "Constraints":
@@ -201,6 +201,8 @@ class Constraints:
                 "min_values",
                 "objective",
                 "frontier_metrics",
+                "objective_tolerance_percent",
+                "preference_order",
             },
             context="constraints",
         )
@@ -219,9 +221,7 @@ class Constraints:
         min_values = cls._metric_thresholds(raw.get("min_values", {}), "min_values")
         for metric in sorted(set(max_values) & set(min_values)):
             if min_values[metric] > max_values[metric]:
-                raise ValidationError(
-                    f"minimum for {metric!r} cannot exceed its maximum"
-                )
+                raise ValidationError(f"minimum for {metric!r} cannot exceed its maximum")
 
         raw_objective = raw.get("objective")
         if not isinstance(raw_objective, Mapping):
@@ -244,13 +244,30 @@ class Constraints:
             raise ValidationError(
                 "objective.direction must match its direction in frontier_metrics"
             )
-        if (
-            quality_metric in frontier_metrics
-            and frontier_metrics[quality_metric] != "max"
+        if quality_metric in frontier_metrics and frontier_metrics[quality_metric] != "max":
+            raise ValidationError("quality_metric must use direction 'max' in frontier_metrics")
+
+        objective_tolerance_percent = _finite_number(
+            raw.get("objective_tolerance_percent", 0.0),
+            field_name="objective_tolerance_percent",
+        )
+        if not 0.0 <= objective_tolerance_percent <= 100.0:
+            raise ValidationError("objective_tolerance_percent must be between 0 and 100")
+
+        raw_preference_order = raw.get("preference_order", [])
+        if not isinstance(raw_preference_order, Sequence) or isinstance(
+            raw_preference_order, (str, bytes)
         ):
-            raise ValidationError(
-                "quality_metric must use direction 'max' in frontier_metrics"
-            )
+            raise ValidationError("preference_order must be an array")
+        preference_order: list[str] = []
+        for index, candidate_id in enumerate(raw_preference_order):
+            if not isinstance(candidate_id, str) or not candidate_id.strip():
+                raise ValidationError(
+                    f"preference_order[{index}] must be a non-empty candidate-id string"
+                )
+            preference_order.append(candidate_id)
+        if len(preference_order) != len(set(preference_order)):
+            raise ValidationError("preference_order candidate ids must be unique")
 
         return cls(
             min_quality_retention=min_quality_retention,
@@ -259,6 +276,8 @@ class Constraints:
             min_values=min_values,
             objective=objective,
             frontier_metrics=frontier_metrics,
+            objective_tolerance_percent=objective_tolerance_percent,
+            preference_order=tuple(preference_order),
         )
 
     @staticmethod

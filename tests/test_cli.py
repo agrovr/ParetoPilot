@@ -11,11 +11,69 @@ from paretopilot import cli
 from paretopilot.doctor import EnvironmentReport
 
 
+def _server_evaluation_payload(latency_ms: float) -> dict[str, object]:
+    return {
+        "schema_version": "1.0",
+        "candidate_id": "candidate-a",
+        "synthetic": False,
+        "suite": {
+            "id": "suite-v1",
+            "license": "CC0-1.0",
+            "sha256": "a" * 64,
+            "quality_case_count": 1,
+            "performance_repetitions": 1,
+            "performance_warmups": 1,
+            "generation_tokens": 64,
+            "cache_prompt": False,
+            "seed": 4242,
+            "temperature": 0,
+        },
+        "quality": {
+            "method": "fixed exact-answer smoke evaluation",
+            "score": 1.0,
+            "passed": 1,
+            "total": 1,
+            "cases": [
+                {
+                    "id": "identity",
+                    "prompt": "Reply YES.",
+                    "accepted_answers": ["YES"],
+                    "response": "YES",
+                    "matched": True,
+                    "matched_answer": "YES",
+                }
+            ],
+        },
+        "latency": {
+            "method": "single-client streamed HTTP requests",
+            "ttft_ms_p50": latency_ms / 2,
+            "ttft_ms_p95": latency_ms / 2,
+            "e2e_latency_ms_p50": latency_ms,
+            "e2e_latency_ms_p95": latency_ms,
+            "samples": [
+                {
+                    "index": 1,
+                    "ttft_ms": latency_ms / 2,
+                    "e2e_latency_ms": latency_ms,
+                    "event_count": 64,
+                    "predicted_tokens": 64,
+                    "content": "fixed output",
+                }
+            ],
+        },
+    }
+
+
 class CliTests(unittest.TestCase):
+    def test_version_is_available_without_a_subcommand(self) -> None:
+        output = io.StringIO()
+        with patch("sys.stdout", output), self.assertRaises(SystemExit) as raised:
+            cli.main(["--version"])
+        self.assertEqual(raised.exception.code, 0)
+        self.assertRegex(output.getvalue(), r"paretopilot \d+\.\d+\.\d+")
+
     def test_commit_match_accepts_normal_sha_prefixes_only(self) -> None:
-        self.assertTrue(
-            cli._commits_match("67b9b0e7", cli.PINNED_LLAMA_CPP_COMMIT)
-        )
+        self.assertTrue(cli._commits_match("67b9b0e7", cli.PINNED_LLAMA_CPP_COMMIT))
         self.assertFalse(cli._commits_match("6", cli.PINNED_LLAMA_CPP_COMMIT))
 
     def test_doctor_prints_report(self) -> None:
@@ -31,8 +89,9 @@ class CliTests(unittest.TestCase):
             warnings=("smoke-test-only",),
         )
         output = io.StringIO()
-        with patch.object(cli, "inspect_environment", return_value=report), patch(
-            "sys.stdout", output
+        with (
+            patch.object(cli, "inspect_environment", return_value=report),
+            patch("sys.stdout", output),
         ):
             exit_code = cli.main(["doctor"])
 
@@ -51,8 +110,9 @@ class CliTests(unittest.TestCase):
             evidence_eligible=False,
             warnings=("smoke-test-only",),
         )
-        with patch.object(cli, "inspect_environment", return_value=report), patch(
-            "sys.stdout", io.StringIO()
+        with (
+            patch.object(cli, "inspect_environment", return_value=report),
+            patch("sys.stdout", io.StringIO()),
         ):
             exit_code = cli.main(["doctor", "--require-evidence-host"])
 
@@ -76,16 +136,12 @@ class CliTests(unittest.TestCase):
         fixture = Path(__file__).parent / "fixtures" / "llama_bench.synthetic.jsonl"
         output = io.StringIO()
         with patch("sys.stdout", output):
-            exit_code = cli.main(
-                ["validate-llama-bench", str(fixture), "--evidence"]
-            )
+            exit_code = cli.main(["validate-llama-bench", str(fixture), "--evidence"])
 
         payload = json.loads(output.getvalue())
         self.assertEqual(exit_code, 4)
         self.assertFalse(payload["evidence_valid"])
-        self.assertTrue(
-            any("synthetic" in issue for issue in payload["evidence_issues"])
-        )
+        self.assertTrue(any("synthetic" in issue for issue in payload["evidence_issues"]))
 
     def test_validate_llama_bench_evidence_checks_reported_runtime_settings(self) -> None:
         common = {
@@ -181,9 +237,7 @@ class CliTests(unittest.TestCase):
             copied.write_bytes(source.read_bytes())
             original = copied.read_bytes()
             with patch("sys.stdout", io.StringIO()), patch("sys.stderr", io.StringIO()):
-                exit_code = cli.main(
-                    ["validate-llama-bench", str(copied), "--output", str(copied)]
-                )
+                exit_code = cli.main(["validate-llama-bench", str(copied), "--output", str(copied)])
 
             self.assertEqual(exit_code, 2)
             self.assertEqual(copied.read_bytes(), original)
@@ -386,6 +440,141 @@ class CliTests(unittest.TestCase):
         self.assertEqual(exit_code, 0)
         self.assertEqual(len(payload["input_fingerprints"]["benchmarks_sha256"]), 64)
         self.assertEqual(len(payload["input_fingerprints"]["constraints_sha256"]), 64)
+
+    def test_parse_peak_rss_writes_strict_resource_value(self) -> None:
+        with TemporaryDirectory() as directory:
+            root = Path(directory)
+            source = root / "time.txt"
+            source.write_text(
+                "\tMaximum resident set size (kbytes): 2097152\n",
+                encoding="utf-8",
+            )
+            output_path = root / "rss.json"
+            stdout = io.StringIO()
+            with patch("sys.stdout", stdout):
+                exit_code = cli.main(
+                    [
+                        "parse-peak-rss",
+                        str(source),
+                        "--candidate-id",
+                        "candidate-a",
+                        "--output",
+                        str(output_path),
+                    ]
+                )
+            payload = json.loads(stdout.getvalue())
+            self.assertEqual(exit_code, 0)
+            self.assertEqual(payload["peak_rss_mib"], 2048.0)
+            self.assertEqual(payload, json.loads(output_path.read_text(encoding="utf-8")))
+
+    def test_pool_server_evaluations_cli_writes_once_and_preserves_inputs(self) -> None:
+        with TemporaryDirectory() as directory:
+            root = Path(directory)
+            first = root / "pass-a.json"
+            second = root / "pass-b.json"
+            first.write_text(json.dumps(_server_evaluation_payload(100.0)), encoding="utf-8")
+            second.write_text(json.dumps(_server_evaluation_payload(200.0)), encoding="utf-8")
+            originals = (first.read_bytes(), second.read_bytes())
+            destination = root / "pooled.json"
+            stdout = io.StringIO()
+
+            with patch("sys.stdout", stdout):
+                exit_code = cli.main(
+                    [
+                        "pool-server-evaluations",
+                        "--input",
+                        str(first),
+                        "--input",
+                        str(second),
+                        "--output",
+                        str(destination),
+                    ]
+                )
+
+            payload = json.loads(destination.read_text(encoding="utf-8"))
+            self.assertEqual(exit_code, 0)
+            self.assertEqual(payload, json.loads(stdout.getvalue()))
+            self.assertEqual(payload["suite"]["performance_repetitions"], 2)
+            self.assertEqual(payload["suite"]["performance_warmups"], 2)
+            self.assertEqual(payload["latency"]["e2e_latency_ms_p50"], 150.0)
+            self.assertEqual((first.read_bytes(), second.read_bytes()), originals)
+
+            stderr = io.StringIO()
+            with patch("sys.stdout", io.StringIO()), patch("sys.stderr", stderr):
+                overwrite_exit = cli.main(
+                    [
+                        "pool-server-evaluations",
+                        "--input",
+                        str(first),
+                        "--input",
+                        str(second),
+                        "--output",
+                        str(destination),
+                    ]
+                )
+            self.assertEqual(overwrite_exit, 2)
+            self.assertIn("refusing to overwrite", stderr.getvalue())
+
+    def test_published_bundle_to_report_is_one_verified_workflow(self) -> None:
+        repository = Path(__file__).parents[1]
+        bundle = repository / "results" / "published" / "29940067201"
+        with TemporaryDirectory() as directory:
+            output_root = Path(directory)
+            benchmarks = output_root / "benchmarks.json"
+            constraints = output_root / "constraints.json"
+            assembly = output_root / "assembly.json"
+            with patch("sys.stdout", io.StringIO()):
+                assemble_exit = cli.main(
+                    [
+                        "assemble-study",
+                        str(bundle),
+                        "--benchmarks-output",
+                        str(benchmarks),
+                        "--constraints-output",
+                        str(constraints),
+                        "--assembly-output",
+                        str(assembly),
+                    ]
+                )
+
+            report = output_root / "report.html"
+            recommendation = output_root / "recommendation.json"
+            report_stdout = io.StringIO()
+            with patch("sys.stdout", report_stdout):
+                report_exit = cli.main(
+                    [
+                        "report",
+                        str(benchmarks),
+                        "--constraints",
+                        str(constraints),
+                        "--output",
+                        str(report),
+                        "--recommendation-output",
+                        str(recommendation),
+                    ]
+                )
+
+            self.assertEqual(assemble_exit, 0)
+            self.assertEqual(report_exit, 0)
+            self.assertEqual(
+                json.loads(recommendation.read_text(encoding="utf-8"))["selected_id"],
+                "generic-baseline",
+            )
+            html = report.read_text(encoding="utf-8")
+            self.assertIn("Baseline retained", html)
+            self.assertIn("inconclusive", html.lower())
+            self.assertFalse(json.loads(report_stdout.getvalue())["synthetic_source"])
+
+    def test_verify_study_does_not_write_files(self) -> None:
+        repository = Path(__file__).parents[1]
+        bundle = repository / "results" / "published" / "29940067201"
+        stdout = io.StringIO()
+        with patch("sys.stdout", stdout):
+            exit_code = cli.main(["verify-study", str(bundle)])
+        payload = json.loads(stdout.getvalue())
+        self.assertEqual(exit_code, 0)
+        self.assertTrue(payload["valid"])
+        self.assertEqual(payload["selected_id"], "generic-baseline")
 
 
 if __name__ == "__main__":

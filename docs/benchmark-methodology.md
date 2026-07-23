@@ -28,8 +28,8 @@ identity and runner image are identical and the aggregation is explicitly justif
 
 ## Required measurements
 
-- model file size in MB;
-- peak resident set size in MB;
+- model file size in MiB;
+- peak resident set size in MiB;
 - model load time;
 - time to first token;
 - prompt-processing and generation tokens per second;

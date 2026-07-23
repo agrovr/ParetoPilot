@@ -3,7 +3,7 @@
   "quality_metric": "quality_score",
   "max_values": {
     "e2e_latency_ms_p95": 3500,
-    "peak_rss_mb": 4096
+    "peak_rss_mib": 4096
   },
   "min_values": {},
   "objective": {
@@ -13,7 +13,7 @@
   "frontier_metrics": {
     "generation_tps": "max",
     "e2e_latency_ms_p95": "min",
-    "peak_rss_mb": "min",
+    "peak_rss_mib": "min",
     "quality_score": "max"
   }
 }

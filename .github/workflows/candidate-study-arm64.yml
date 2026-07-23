@@ -1,0 +1,985 @@
+name: Native Arm64 candidate study
+
+on:
+  workflow_dispatch:
+    inputs:
+      repetitions:
+        description: Recorded llama-bench repetitions per pass
+        required: true
+        default: "10"
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: arm64-candidate-study-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  LC_ALL: C.UTF-8
+  LLAMA_CPP_COMMIT: 67b9b0e7f6ce45d929a4411907d3c48ec719e81c
+  KLEIDIAI_VERSION: v1.24.0
+  KLEIDIAI_SHA256: 9348b969e042d8890a54b01a463dbe71f5a4c074b5329e9c26a85ef3b68aa19b
+  KLEIDIAI_SIZE_BYTES: "2466038"
+  MODEL_FAMILY: Qwen2.5-1.5B-Instruct
+  MODEL_REPOSITORY: Qwen/Qwen2.5-1.5B-Instruct-GGUF
+  MODEL_REVISION: 91cad51170dc346986eccefdc2dd33a9da36ead9
+  Q8_FILENAME: qwen2.5-1.5b-instruct-q8_0.gguf
+  Q8_SHA256: d7efb072e7724d25048a4fda0a3e10b04bdef5d06b1403a1c93bd9f1240a63c8
+  Q8_SIZE_BYTES: "1894532128"
+  Q4_FILENAME: qwen2.5-1.5b-instruct-q4_0.gguf
+  Q4_SHA256: dcd819ff094852c38faba6873d8ff0c9d51eadb2844539e52042ae5d647bbfdb
+  Q4_SIZE_BYTES: "1066227232"
+  EVAL_SUITE: evals/qwen-smoke-v1.json
+  EVAL_SUITE_ID: paretopilot-qwen-smoke-v1
+  EVAL_SUITE_SHA256: 0fa39498414dc2b1c9dd7a7b75680182b5c01dee1bbdcb5ed4cfaddb847896e9
+  THREADS: "4"
+  CONTEXT_SIZE: "2048"
+  PROMPT_TOKENS: "512"
+  GENERATION_TOKENS: "128"
+  PYTHONPATH: ${{ github.workspace }}/src
+
+jobs:
+  study:
+    name: Q8 to Q4 to KleidiAI decision study
+    runs-on: ubuntu-24.04-arm
+    timeout-minutes: 180
+    env:
+      REPETITIONS: ${{ inputs.repetitions || '10' }}
+      CANONICAL_RUN: ${{ github.event_name == 'workflow_dispatch' && github.ref_name == github.event.repository.default_branch && inputs.repetitions == '10' }}
+
+    steps:
+      - name: Check out ParetoPilot
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Set up Python
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.12"
+
+      - name: Initialize diagnostic status
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p artifacts/experiment
+          python - <<'PY'
+          import json
+          from pathlib import Path
+
+          Path("artifacts/status.json").write_text(
+              json.dumps(
+                  {
+                      "schema_version": "1.0",
+                      "status": "incomplete",
+                      "valid_evidence": False,
+                      "measurement_valid": False,
+                      "reason": "candidate study has not completed",
+                  },
+                  indent=2,
+                  sort_keys=True,
+              )
+              + "\n",
+              encoding="utf-8",
+          )
+          PY
+
+      - name: Validate pins, inputs, and tools
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ ! "$REPETITIONS" =~ ^[0-9]+$ ]]; then
+            echo "::error::repetitions must be an integer from 10 to 30"
+            exit 2
+          fi
+          repetitions=$((10#$REPETITIONS))
+          if (( repetitions < 10 || repetitions > 30 )); then
+            echo "::error::repetitions must be an integer from 10 to 30"
+            exit 2
+          fi
+          for required_tool in cmake curl g++-13 gcc-13 git ninja nm pgrep python sha256sum tar; do
+            command -v "$required_tool"
+          done
+          test -x /usr/bin/time
+          printf '%s  %s\n' "$EVAL_SUITE_SHA256" "$EVAL_SUITE" | sha256sum --check
+          python -m paretopilot doctor --require-evidence-host
+
+      - name: Capture Arm64 runner identity
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p artifacts/environment
+          uname -a > artifacts/environment/uname.txt
+          lscpu > artifacts/environment/lscpu.txt
+          cat /etc/os-release > artifacts/environment/os-release.txt
+          free -h > artifacts/environment/memory.txt
+          df -h > artifacts/environment/disk.txt
+          gcc-13 --version > artifacts/environment/gcc.txt
+          g++-13 --version > artifacts/environment/g++.txt
+          cmake --version > artifacts/environment/cmake.txt
+          ninja --version > artifacts/environment/ninja.txt
+          python -m paretopilot doctor \
+            --require-evidence-host \
+            --output artifacts/environment/paretopilot-doctor.json
+          python - <<'PY'
+          import json
+          import os
+          import platform
+          from pathlib import Path
+
+          keys = [
+              "GITHUB_REF",
+              "GITHUB_REPOSITORY",
+              "GITHUB_RUN_ATTEMPT",
+              "GITHUB_RUN_ID",
+              "GITHUB_SHA",
+              "GITHUB_WORKFLOW_REF",
+              "GITHUB_WORKFLOW_SHA",
+              "ImageOS",
+              "ImageVersion",
+              "RUNNER_ARCH",
+              "RUNNER_NAME",
+              "RUNNER_OS",
+          ]
+          payload = {
+              "captured_environment": {key: os.environ.get(key) for key in keys},
+              "machine": platform.machine(),
+              "platform": platform.platform(),
+              "python_version": platform.python_version(),
+              "cpu_count": os.cpu_count(),
+          }
+          Path("artifacts/environment/runner.json").write_text(
+              json.dumps(payload, indent=2, sort_keys=True) + "\n",
+              encoding="utf-8",
+          )
+          PY
+
+      - name: Fetch pinned llama.cpp and KleidiAI sources
+        shell: bash
+        run: |
+          set -euo pipefail
+          llama_source="$RUNNER_TEMP/llama.cpp"
+          git init "$llama_source"
+          git -C "$llama_source" remote add origin https://github.com/ggml-org/llama.cpp.git
+          git -C "$llama_source" fetch --depth 1 origin "$LLAMA_CPP_COMMIT"
+          git -C "$llama_source" checkout --detach FETCH_HEAD
+          test "$(git -C "$llama_source" rev-parse HEAD)" = "$LLAMA_CPP_COMMIT"
+
+          archive="$RUNNER_TEMP/kleidiai-${KLEIDIAI_VERSION}-src.tar.gz"
+          curl \
+            --fail \
+            --location \
+            --proto '=https' \
+            --proto-redir '=https' \
+            --connect-timeout 30 \
+            --max-time 300 \
+            --retry 5 \
+            --retry-all-errors \
+            --output "$archive" \
+            "https://github.com/ARM-software/kleidiai/releases/download/${KLEIDIAI_VERSION}/kleidiai-${KLEIDIAI_VERSION}-src.tar.gz"
+          test "$(stat --format='%s' "$archive")" = "$KLEIDIAI_SIZE_BYTES"
+          printf '%s  %s\n' "$KLEIDIAI_SHA256" "$archive" | sha256sum --check
+          mkdir -p artifacts/build
+          printf '%s  %s\n' \
+            "$KLEIDIAI_SHA256" \
+            "kleidiai-${KLEIDIAI_VERSION}-src.tar.gz" \
+            > artifacts/build/kleidiai-source.sha256
+          python - <<'PY'
+          import json
+          import os
+          from pathlib import Path
+
+          payload = {
+              "schema_version": "1.0",
+              "name": "KleidiAI",
+              "repository": "https://github.com/ARM-software/kleidiai",
+              "version": os.environ["KLEIDIAI_VERSION"],
+              "source_archive_sha256": os.environ["KLEIDIAI_SHA256"],
+              "source_archive_size_bytes": int(os.environ["KLEIDIAI_SIZE_BYTES"]),
+          }
+          Path("artifacts/build/optimization-library.json").write_text(
+              json.dumps(payload, indent=2, sort_keys=True) + "\n",
+              encoding="utf-8",
+          )
+          PY
+          kleidiai_source="$RUNNER_TEMP/kleidiai-${KLEIDIAI_VERSION}"
+          mkdir "$kleidiai_source"
+          tar -xzf "$archive" --strip-components=1 -C "$kleidiai_source"
+          test -f "$kleidiai_source/CMakeLists.txt"
+
+      - name: Build generic and KleidiAI benchmark and server binaries
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p .candidate-build artifacts/build
+          build_variant() {
+            local label="$1"
+            local enabled="$2"
+            local build_dir="$GITHUB_WORKSPACE/.candidate-build/$label"
+            cmake \
+              -S "$RUNNER_TEMP/llama.cpp" \
+              -B "$build_dir" \
+              -G Ninja \
+              -DCMAKE_BUILD_TYPE=Release \
+              -DCMAKE_C_COMPILER=gcc-13 \
+              -DCMAKE_CXX_COMPILER=g++-13 \
+              -DBUILD_SHARED_LIBS=OFF \
+              -DFETCHCONTENT_FULLY_DISCONNECTED=ON \
+              "-DFETCHCONTENT_SOURCE_DIR_KLEIDIAI_DOWNLOAD=$RUNNER_TEMP/kleidiai-${KLEIDIAI_VERSION}" \
+              -DGGML_NATIVE=ON \
+              -DGGML_CPU_REPACK=ON \
+              "-DGGML_CPU_KLEIDIAI=$enabled" \
+              -DGGML_BLAS=OFF \
+              -DGGML_CUDA=OFF \
+              -DGGML_OPENCL=OFF \
+              -DGGML_RPC=OFF \
+              -DGGML_VULKAN=OFF \
+              -DLLAMA_BUILD_TESTS=OFF \
+              -DLLAMA_BUILD_EXAMPLES=OFF \
+              -DLLAMA_BUILD_SERVER=ON \
+              -DLLAMA_BUILD_TOOLS=ON \
+              2>&1 | tee "artifacts/build/${label}-configure.log"
+            cmake --build "$build_dir" \
+              --target llama-bench llama-server \
+              --parallel "$THREADS" \
+              2>&1 | tee "artifacts/build/${label}-compile.log"
+            grep -Fxq "GGML_CPU_KLEIDIAI:BOOL=${enabled}" "$build_dir/CMakeCache.txt"
+            cp "$build_dir/CMakeCache.txt" "artifacts/build/${label}-CMakeCache.txt"
+            sha256sum "$build_dir/bin/llama-bench" > "artifacts/build/${label}-llama-bench.sha256"
+            sha256sum "$build_dir/bin/llama-server" > "artifacts/build/${label}-llama-server.sha256"
+            ldd "$build_dir/bin/llama-bench" > "artifacts/build/${label}-llama-bench.ldd.txt"
+            ldd "$build_dir/bin/llama-server" > "artifacts/build/${label}-llama-server.ldd.txt"
+          }
+          build_variant generic OFF
+          build_variant kleidiai ON
+          nm -C .candidate-build/kleidiai/bin/llama-bench \
+            | grep -Ei "kleidiai|(^|[^a-z])kai_" \
+            | head -n 500 \
+            > artifacts/build/kleidiai-symbols.txt || true
+
+      - name: Download and verify pinned Q8 and Q4 models
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p .candidate-models artifacts/models
+          fetch_model() {
+            local filename="$1"
+            local expected_sha="$2"
+            local expected_size="$3"
+            local destination="$GITHUB_WORKSPACE/.candidate-models/$filename"
+            curl \
+              --fail \
+              --location \
+              --proto '=https' \
+              --proto-redir '=https' \
+              --connect-timeout 30 \
+              --max-time 2400 \
+              --retry 5 \
+              --retry-all-errors \
+              --output "$destination" \
+              "https://huggingface.co/$MODEL_REPOSITORY/resolve/$MODEL_REVISION/$filename?download=true"
+            test "$(stat --format='%s' "$destination")" = "$expected_size"
+            printf '%s  %s\n' "$expected_sha" "$destination" | sha256sum --check
+            sha256sum "$destination" > "artifacts/models/${filename}.sha256"
+          }
+          fetch_model "$Q8_FILENAME" "$Q8_SHA256" "$Q8_SIZE_BYTES"
+          fetch_model "$Q4_FILENAME" "$Q4_SHA256" "$Q4_SIZE_BYTES"
+
+      - name: Run balanced multi-candidate throughput study
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p artifacts/experiment/candidates
+          prepare_candidate() {
+            local candidate="$1"
+            local build="$2"
+            local model="$3"
+            local model_sha="$4"
+            local batch="$5"
+            local ubatch="$6"
+            local kleidiai="$7"
+            local directory="artifacts/experiment/candidates/$candidate"
+            mkdir -p "$directory/raw" "$directory/validation"
+            python - \
+              "$directory/settings.json" \
+              "$directory/throughput-command.json" \
+              "$build" \
+              "$model" \
+              "$model_sha" \
+              "$batch" \
+              "$ubatch" \
+              "$kleidiai" <<'PY'
+          import json
+          import os
+          from pathlib import Path
+          import sys
+
+          output, command_output, build, model, model_sha, batch, ubatch, kleidiai = sys.argv[1:]
+          payload = {
+              "threads": int(os.environ["THREADS"]),
+              "batch_size": int(batch),
+              "ubatch_size": int(ubatch),
+              "prompt_tokens": int(os.environ["PROMPT_TOKENS"]),
+              "generation_tokens": int(os.environ["GENERATION_TOKENS"]),
+              "repetitions_per_pass": int(os.environ["REPETITIONS"]),
+              "warmup": True,
+              "cpu_only": True,
+              "model_sha256": model_sha,
+              "llama_cpp_commit": os.environ["LLAMA_CPP_COMMIT"],
+              "build": {"kleidiai": kleidiai == "true"},
+          }
+          Path(output).write_text(
+              json.dumps(payload, indent=2, sort_keys=True) + "\n",
+              encoding="utf-8",
+          )
+          command = {
+              "schema_version": "1.0",
+              "working_directory": ".candidate-models",
+              "argv": [
+                  f"../.candidate-build/{build}/bin/llama-bench",
+                  "-m", model,
+                  "-p", os.environ["PROMPT_TOKENS"],
+                  "-n", os.environ["GENERATION_TOKENS"],
+                  "-t", os.environ["THREADS"],
+                  "-b", batch,
+                  "-ub", ubatch,
+                  "-r", os.environ["REPETITIONS"],
+                  "-dev", "none",
+                  "-ngl", "0",
+                  "-nopo", "1",
+                  "-v",
+                  "-o", "jsonl",
+              ],
+          }
+          Path(command_output).write_text(
+              json.dumps(command, indent=2, sort_keys=True) + "\n",
+              encoding="utf-8",
+          )
+          PY
+          }
+          prepare_candidate q8-generic generic "$Q8_FILENAME" "$Q8_SHA256" 512 128 false
+          prepare_candidate q4-generic generic "$Q4_FILENAME" "$Q4_SHA256" 512 128 false
+          prepare_candidate q4-kleidiai kleidiai "$Q4_FILENAME" "$Q4_SHA256" 512 128 true
+          prepare_candidate q4-kleidiai-tuned kleidiai "$Q4_FILENAME" "$Q4_SHA256" 512 512 true
+
+          run_pass() {
+            local candidate="$1"
+            local build="$2"
+            local model="$3"
+            local batch="$4"
+            local ubatch="$5"
+            local pass="$6"
+            local directory="$GITHUB_WORKSPACE/artifacts/experiment/candidates/$candidate"
+            local label="pass-$pass"
+            local stdout="$directory/raw/${label}.jsonl"
+            local stderr="$directory/raw/${label}.stderr.log"
+            mapfile -t argv < <(python - "$directory/throughput-command.json" <<'PY'
+          import json
+          from pathlib import Path
+          import sys
+          for argument in json.loads(Path(sys.argv[1]).read_text(encoding="utf-8"))["argv"]:
+              print(argument)
+          PY
+            )
+            (
+              cd .candidate-models
+              "${argv[@]}"
+            ) > "$stdout" 2> "$stderr"
+            python -m paretopilot validate-llama-bench \
+              "$stdout" \
+              --evidence \
+              --expected-commit "$LLAMA_CPP_COMMIT" \
+              --expected-threads "$THREADS" \
+              --expected-batch "$batch" \
+              --expected-ubatch "$ubatch" \
+              --output "$directory/validation/${label}.json"
+          }
+
+          run_pass q8-generic generic "$Q8_FILENAME" 512 128 1
+          sleep 10
+          run_pass q4-generic generic "$Q4_FILENAME" 512 128 1
+          sleep 10
+          run_pass q4-kleidiai kleidiai "$Q4_FILENAME" 512 128 1
+          sleep 10
+          run_pass q4-kleidiai-tuned kleidiai "$Q4_FILENAME" 512 512 1
+          sleep 10
+          run_pass q4-kleidiai-tuned kleidiai "$Q4_FILENAME" 512 512 2
+          sleep 10
+          run_pass q4-kleidiai kleidiai "$Q4_FILENAME" 512 128 2
+          sleep 10
+          run_pass q4-generic generic "$Q4_FILENAME" 512 128 2
+          sleep 10
+          run_pass q8-generic generic "$Q8_FILENAME" 512 128 2
+
+          for candidate in q8-generic q4-generic; do
+            if grep -Fq "CPU_KLEIDIAI model buffer" \
+              "artifacts/experiment/candidates/$candidate/raw/pass-1.stderr.log" \
+              "artifacts/experiment/candidates/$candidate/raw/pass-2.stderr.log"; then
+              echo "::error::$candidate unexpectedly dispatched KleidiAI"
+              exit 5
+            fi
+          done
+          for candidate in q4-kleidiai q4-kleidiai-tuned; do
+            grep -Fq "CPU_KLEIDIAI model buffer" \
+              "artifacts/experiment/candidates/$candidate/raw/pass-1.stderr.log"
+            grep -Fq "CPU_KLEIDIAI model buffer" \
+              "artifacts/experiment/candidates/$candidate/raw/pass-2.stderr.log"
+          done
+
+      - name: Summarize throughput evidence
+        shell: bash
+        run: |
+          set -euo pipefail
+          for candidate in q8-generic q4-generic q4-kleidiai q4-kleidiai-tuned; do
+            directory="artifacts/experiment/candidates/$candidate"
+            python -m paretopilot summarize-llama-bench \
+              --label "$candidate" \
+              --artifact "pass-1=$directory/raw/pass-1.jsonl" \
+              --artifact "pass-2=$directory/raw/pass-2.jsonl" \
+              --settings "$directory/settings.json" \
+              --output "$directory/llama-summary.json"
+          done
+
+      - name: Run fixed quality, streamed latency, and peak RSS evaluation
+        shell: bash
+        run: |
+          set -euo pipefail
+          run_server_candidate() (
+            set -euo pipefail
+            local candidate="$1"
+            local build="$2"
+            local model="$3"
+            local model_sha="$4"
+            local model_size="$5"
+            local quantization="$6"
+            local batch="$7"
+            local ubatch="$8"
+            local port="$9"
+            local pass="${10}"
+            local directory="artifacts/experiment/candidates/$candidate"
+            local command_file="$directory/server-command.json"
+            python - "$command_file" "$build" "$model" "$batch" "$ubatch" "$port" <<'PY'
+          import json
+          import os
+          from pathlib import Path
+          import sys
+
+          output, build, model, batch, ubatch, port = sys.argv[1:]
+          argv = [
+              f"./.candidate-build/{build}/bin/llama-server",
+              "--model", f"./.candidate-models/{model}",
+              "--threads", os.environ["THREADS"],
+              "--threads-batch", os.environ["THREADS"],
+              "--batch-size", batch,
+              "--ubatch-size", ubatch,
+              "--ctx-size", os.environ["CONTEXT_SIZE"],
+              "--parallel", "1",
+              "--n-gpu-layers", "0",
+              "--host", "127.0.0.1",
+              "--port", port,
+          ]
+          Path(output).write_text(
+              json.dumps({"schema_version": "1.0", "argv": argv}, indent=2, sort_keys=True)
+              + "\n",
+              encoding="utf-8",
+          )
+          PY
+            mapfile -t argv < <(python - "$command_file" <<'PY'
+          import json
+          from pathlib import Path
+          import sys
+          for argument in json.loads(Path(sys.argv[1]).read_text(encoding="utf-8"))["argv"]:
+              print(argument)
+          PY
+            )
+            local time_file="$directory/server-time-pass-${pass}.txt"
+            local stdout_file="$directory/server-pass-${pass}.stdout.log"
+            local stderr_file="$directory/server-pass-${pass}.stderr.log"
+            /usr/bin/time -v -o "$time_file" \
+              "${argv[@]}" > "$stdout_file" 2> "$stderr_file" &
+            local timer_pid=$!
+            local server_pid=""
+            cleanup() {
+              if [[ -z "$server_pid" ]]; then
+                server_pid="$(pgrep -P "$timer_pid" | head -n 1 || true)"
+              fi
+              if [[ -n "$server_pid" ]] && kill -0 "$server_pid" 2>/dev/null; then
+                kill -INT "$server_pid" 2>/dev/null || true
+              elif kill -0 "$timer_pid" 2>/dev/null; then
+                kill -INT "$timer_pid" 2>/dev/null || true
+              fi
+              for _ in $(seq 1 30); do
+                kill -0 "$timer_pid" 2>/dev/null || break
+                sleep 1
+              done
+              if [[ -n "$server_pid" ]] && kill -0 "$server_pid" 2>/dev/null; then
+                kill -TERM "$server_pid" 2>/dev/null || true
+              fi
+              if kill -0 "$timer_pid" 2>/dev/null; then
+                kill -TERM "$timer_pid" 2>/dev/null || true
+              fi
+              for _ in $(seq 1 10); do
+                kill -0 "$timer_pid" 2>/dev/null || break
+                sleep 1
+              done
+              if [[ -n "$server_pid" ]] && kill -0 "$server_pid" 2>/dev/null; then
+                kill -KILL "$server_pid" 2>/dev/null || true
+              fi
+              if kill -0 "$timer_pid" 2>/dev/null; then
+                kill -KILL "$timer_pid" 2>/dev/null || true
+              fi
+              wait "$timer_pid" 2>/dev/null || true
+            }
+            trap cleanup EXIT
+            for _ in $(seq 1 120); do
+              server_pid="$(pgrep -P "$timer_pid" | head -n 1 || true)"
+              if curl --fail --silent --connect-timeout 2 --max-time 5 \
+                "http://127.0.0.1:${port}/health" >/dev/null; then
+                break
+              fi
+              if ! kill -0 "$timer_pid" 2>/dev/null; then
+                echo "::error::$candidate server exited before health check"
+                tail -n 200 "$stderr_file" || true
+                exit 6
+              fi
+              sleep 1
+            done
+            curl --fail --silent --connect-timeout 2 --max-time 5 \
+              "http://127.0.0.1:${port}/health" >/dev/null
+            python -m paretopilot evaluate-server \
+              --base-url "http://127.0.0.1:${port}" \
+              --suite "$EVAL_SUITE" \
+              --candidate-id "$candidate" \
+              --timeout-seconds 240 \
+              --output "$directory/server-evaluation-pass-${pass}.json"
+            cleanup
+            trap - EXIT
+            python - \
+              "$candidate" \
+              "$model" \
+              "$model_sha" \
+              "$command_file" \
+              "$time_file" \
+              "$directory/resource-measurement-pass-${pass}.json" <<'PY'
+          import json
+          import os
+          from pathlib import Path
+          import re
+          import sys
+
+          candidate, model, model_sha, command_file, time_file, output = sys.argv[1:]
+          time_text = Path(time_file).read_text(encoding="utf-8")
+          matches = re.findall(
+              r"^\s*Maximum resident set size \(kbytes\):\s*([0-9]+)\s*$",
+              time_text,
+              re.MULTILINE,
+          )
+          if len(matches) != 1 or int(matches[0]) <= 0:
+              raise SystemExit("GNU time output does not contain one positive maximum RSS")
+          command = json.loads(Path(command_file).read_text(encoding="utf-8"))["argv"]
+          payload = {
+              "schema_version": "1.0",
+              "candidate_id": candidate,
+              "synthetic": False,
+              "run_id": os.environ["GITHUB_RUN_ID"],
+              "model": {
+                  "family": os.environ["MODEL_FAMILY"],
+                  "repository": os.environ["MODEL_REPOSITORY"],
+                  "revision": os.environ["MODEL_REVISION"],
+                  "filename": model,
+                  "sha256": model_sha,
+              },
+              "runtime": {
+                  "name": "llama.cpp",
+                  "repository": "https://github.com/ggml-org/llama.cpp",
+                  "revision": os.environ["LLAMA_CPP_COMMIT"],
+              },
+              "evaluation_suite": {
+                  "id": os.environ["EVAL_SUITE_ID"],
+                  "sha256": os.environ["EVAL_SUITE_SHA256"],
+              },
+              "deployment_argv": command,
+              "measurement_tool": "/usr/bin/time -v",
+              "maximum_resident_set_kbytes": int(matches[0]),
+          }
+          Path(output).write_text(
+              json.dumps(payload, indent=2, sort_keys=True) + "\n",
+              encoding="utf-8",
+          )
+          PY
+          )
+
+          run_server_candidate q8-generic generic "$Q8_FILENAME" "$Q8_SHA256" "$Q8_SIZE_BYTES" Q8_0 512 128 18081 1
+          sleep 10
+          run_server_candidate q4-generic generic "$Q4_FILENAME" "$Q4_SHA256" "$Q4_SIZE_BYTES" Q4_0 512 128 18082 1
+          sleep 10
+          run_server_candidate q4-kleidiai kleidiai "$Q4_FILENAME" "$Q4_SHA256" "$Q4_SIZE_BYTES" Q4_0 512 128 18083 1
+          sleep 10
+          run_server_candidate q4-kleidiai-tuned kleidiai "$Q4_FILENAME" "$Q4_SHA256" "$Q4_SIZE_BYTES" Q4_0 512 512 18084 1
+          sleep 10
+          run_server_candidate q4-kleidiai-tuned kleidiai "$Q4_FILENAME" "$Q4_SHA256" "$Q4_SIZE_BYTES" Q4_0 512 512 18084 2
+          sleep 10
+          run_server_candidate q4-kleidiai kleidiai "$Q4_FILENAME" "$Q4_SHA256" "$Q4_SIZE_BYTES" Q4_0 512 128 18083 2
+          sleep 10
+          run_server_candidate q4-generic generic "$Q4_FILENAME" "$Q4_SHA256" "$Q4_SIZE_BYTES" Q4_0 512 128 18082 2
+          sleep 10
+          run_server_candidate q8-generic generic "$Q8_FILENAME" "$Q8_SHA256" "$Q8_SIZE_BYTES" Q8_0 512 128 18081 2
+
+          for candidate in q8-generic q4-generic q4-kleidiai q4-kleidiai-tuned; do
+            directory="artifacts/experiment/candidates/$candidate"
+            python -m paretopilot pool-server-evaluations \
+              --input "$directory/server-evaluation-pass-1.json" \
+              --input "$directory/server-evaluation-pass-2.json" \
+              --output "$directory/server-evaluation.json"
+            python - \
+              "$directory/resource-measurement-pass-1.json" \
+              "$directory/resource-measurement-pass-2.json" \
+              "$directory/resource-measurement.json" <<'PY'
+          import json
+          from pathlib import Path
+          import sys
+
+          first_path, second_path, output_path = map(Path, sys.argv[1:])
+          first = json.loads(first_path.read_text(encoding="utf-8"))
+          second = json.loads(second_path.read_text(encoding="utf-8"))
+          first_without_rss = {
+              key: value
+              for key, value in first.items()
+              if key != "maximum_resident_set_kbytes"
+          }
+          second_without_rss = {
+              key: value
+              for key, value in second.items()
+              if key != "maximum_resident_set_kbytes"
+          }
+          if first_without_rss != second_without_rss:
+              raise SystemExit("balanced resource-measurement identities do not match")
+          first["maximum_resident_set_kbytes"] = max(
+              int(first["maximum_resident_set_kbytes"]),
+              int(second["maximum_resident_set_kbytes"]),
+          )
+          Path(output_path).write_text(
+              json.dumps(first, indent=2, sort_keys=True) + "\n",
+              encoding="utf-8",
+          )
+          PY
+          done
+
+          for candidate in q8-generic q4-generic; do
+            if grep -Fq "CPU_KLEIDIAI model buffer" \
+              "artifacts/experiment/candidates/$candidate/server-pass-1.stderr.log" \
+              "artifacts/experiment/candidates/$candidate/server-pass-2.stderr.log"; then
+              echo "::error::$candidate server unexpectedly dispatched KleidiAI"
+              exit 7
+            fi
+          done
+          for candidate in q4-kleidiai q4-kleidiai-tuned; do
+            grep -Fq "CPU_KLEIDIAI model buffer" \
+              "artifacts/experiment/candidates/$candidate/server-pass-1.stderr.log"
+            grep -Fq "CPU_KLEIDIAI model buffer" \
+              "artifacts/experiment/candidates/$candidate/server-pass-2.stderr.log"
+          done
+
+      - name: Build and verify experiment manifest
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import datetime as dt
+          import hashlib
+          import json
+          import os
+          from pathlib import Path
+          import re
+
+          root = Path("artifacts/experiment")
+          lscpu = Path("artifacts/environment/lscpu.txt").read_text(encoding="utf-8")
+          match = re.search(r"^Model name:\s*(.+)$", lscpu, re.MULTILINE)
+          cpu = match.group(1).strip() if match else "Arm64 CPU (see lscpu evidence)"
+          candidates = [
+              {
+                  "id": "q8-generic",
+                  "label": "Q8 generic reference",
+                  "build": "generic",
+                  "model": os.environ["Q8_FILENAME"],
+                  "model_sha": os.environ["Q8_SHA256"],
+                  "model_size": int(os.environ["Q8_SIZE_BYTES"]),
+                  "quantization": "Q8_0",
+                  "batch": 512,
+                  "ubatch": 128,
+                  "kleidiai": False,
+                  "tuned": False,
+              },
+              {
+                  "id": "q4-generic",
+                  "label": "Q4 generic quantization",
+                  "build": "generic",
+                  "model": os.environ["Q4_FILENAME"],
+                  "model_sha": os.environ["Q4_SHA256"],
+                  "model_size": int(os.environ["Q4_SIZE_BYTES"]),
+                  "quantization": "Q4_0",
+                  "batch": 512,
+                  "ubatch": 128,
+                  "kleidiai": False,
+                  "tuned": False,
+              },
+              {
+                  "id": "q4-kleidiai",
+                  "label": "Q4 with KleidiAI",
+                  "build": "kleidiai",
+                  "model": os.environ["Q4_FILENAME"],
+                  "model_sha": os.environ["Q4_SHA256"],
+                  "model_size": int(os.environ["Q4_SIZE_BYTES"]),
+                  "quantization": "Q4_0",
+                  "batch": 512,
+                  "ubatch": 128,
+                  "kleidiai": True,
+                  "tuned": False,
+              },
+              {
+                  "id": "q4-kleidiai-tuned",
+                  "label": "Q4 with KleidiAI and 512-token micro-batch",
+                  "build": "kleidiai",
+                  "model": os.environ["Q4_FILENAME"],
+                  "model_sha": os.environ["Q4_SHA256"],
+                  "model_size": int(os.environ["Q4_SIZE_BYTES"]),
+                  "quantization": "Q4_0",
+                  "batch": 512,
+                  "ubatch": 512,
+                  "kleidiai": True,
+                  "tuned": True,
+              },
+          ]
+
+          def sha256(path: Path) -> str:
+              return hashlib.sha256(path.read_bytes()).hexdigest()
+
+          manifest_candidates = []
+          for candidate in candidates:
+              directory = root / "candidates" / candidate["id"]
+              command = json.loads(
+                  (directory / "server-command.json").read_text(encoding="utf-8")
+              )["argv"]
+              artifact_names = {
+                  "llama_summary": "llama-summary.json",
+                  "server_evaluation": "server-evaluation.json",
+                  "resource_measurement": "resource-measurement.json",
+                  "throughput_settings": "settings.json",
+                  "throughput_command": "throughput-command.json",
+                  "throughput_pass_1": "raw/pass-1.jsonl",
+                  "throughput_pass_2": "raw/pass-2.jsonl",
+                  "throughput_stderr_pass_1": "raw/pass-1.stderr.log",
+                  "throughput_stderr_pass_2": "raw/pass-2.stderr.log",
+                  "server_evaluation_pass_1": "server-evaluation-pass-1.json",
+                  "server_evaluation_pass_2": "server-evaluation-pass-2.json",
+                  "server_time_pass_1": "server-time-pass-1.txt",
+                  "server_time_pass_2": "server-time-pass-2.txt",
+                  "server_stderr_pass_1": "server-pass-1.stderr.log",
+                  "server_stderr_pass_2": "server-pass-2.stderr.log",
+              }
+              manifest_candidates.append(
+                  {
+                      "id": candidate["id"],
+                      "label": candidate["label"],
+                      "parameters": {
+                          "threads": int(os.environ["THREADS"]),
+                          "batch_size": candidate["batch"],
+                          "ubatch_size": candidate["ubatch"],
+                          "context_size": int(os.environ["CONTEXT_SIZE"]),
+                          "kleidiai": candidate["kleidiai"],
+                          "runtime_tuned": candidate["tuned"],
+                          "attribution_stage": (
+                              "reference"
+                              if candidate["id"] == "q8-generic"
+                              else "quantization"
+                              if candidate["id"] == "q4-generic"
+                              else "arm-kernel"
+                              if candidate["id"] == "q4-kleidiai"
+                              else "runtime-tuning"
+                          ),
+                      },
+                      "model": {
+                          "family": os.environ["MODEL_FAMILY"],
+                          "repository": os.environ["MODEL_REPOSITORY"],
+                          "revision": os.environ["MODEL_REVISION"],
+                          "filename": candidate["model"],
+                          "sha256": candidate["model_sha"],
+                          "size_bytes": candidate["model_size"],
+                          "quantization": candidate["quantization"],
+                      },
+                      "deployment_argv": command,
+                      "artifacts": {
+                          name: {
+                              "path": f"candidates/{candidate['id']}/{filename}",
+                              "sha256": sha256(directory / filename),
+                          }
+                          for name, filename in artifact_names.items()
+                      },
+                  }
+              )
+
+          payload = {
+              "schema_version": "1.0",
+              "experiment_id": "paretopilot-arm64-candidate-study-v1",
+              "baseline_id": "q8-generic",
+              "classification": (
+                  "canonical"
+                  if os.environ["CANONICAL_RUN"].lower() == "true"
+                  else "exploratory"
+              ),
+              "synthetic": False,
+              "source": {
+                  "repository": os.environ["GITHUB_REPOSITORY"],
+                  "revision": os.environ["GITHUB_SHA"],
+                  "workflow": ".github/workflows/candidate-study-arm64.yml",
+                  "run_id": os.environ["GITHUB_RUN_ID"],
+                  "run_attempt": int(os.environ["GITHUB_RUN_ATTEMPT"]),
+                  "generated_at_utc": dt.datetime.now(dt.timezone.utc)
+                  .replace(microsecond=0)
+                  .isoformat()
+                  .replace("+00:00", "Z"),
+                  "runner": {
+                      "os": "Ubuntu 24.04",
+                      "architecture": "arm64",
+                      "cpu": cpu,
+                      "cpu_count": os.cpu_count(),
+                  },
+              },
+              "model_family": {
+                  "name": os.environ["MODEL_FAMILY"],
+                  "repository": os.environ["MODEL_REPOSITORY"],
+                  "revision": os.environ["MODEL_REVISION"],
+              },
+              "runtime": {
+                  "name": "llama.cpp",
+                  "repository": "https://github.com/ggml-org/llama.cpp",
+                  "revision": os.environ["LLAMA_CPP_COMMIT"],
+              },
+              "optimization_library": {
+                  "name": "KleidiAI",
+                  "repository": "https://github.com/ARM-software/kleidiai",
+                  "version": os.environ["KLEIDIAI_VERSION"],
+                  "source_archive_sha256": os.environ["KLEIDIAI_SHA256"],
+                  "source_archive_size_bytes": int(os.environ["KLEIDIAI_SIZE_BYTES"]),
+              },
+              "evaluation_suite": {
+                  "id": os.environ["EVAL_SUITE_ID"],
+                  "sha256": os.environ["EVAL_SUITE_SHA256"],
+              },
+              "candidates": manifest_candidates,
+          }
+          (root / "manifest.json").write_text(
+              json.dumps(payload, indent=2, sort_keys=True) + "\n",
+              encoding="utf-8",
+          )
+          PY
+          python -m paretopilot assemble-experiment \
+            artifacts/experiment/manifest.json \
+            --output artifacts/experiment/benchmark-set.json
+
+      - name: Run Pareto recommendation and generate offline report
+        shell: bash
+        run: |
+          set -euo pipefail
+          cp configs/constraints.candidate-study.json artifacts/experiment/constraints.json
+          python -m paretopilot report \
+            artifacts/experiment/benchmark-set.json \
+            --constraints artifacts/experiment/constraints.json \
+            --output artifacts/experiment/report.html \
+            --recommendation-output artifacts/experiment/recommendation.json
+
+      - name: Finalize checksummed evidence bundle
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json
+          import os
+          from pathlib import Path
+
+          canonical = os.environ["CANONICAL_RUN"].lower() == "true"
+          payload = {
+              "schema_version": "1.0",
+              "status": "complete",
+              "valid_evidence": canonical,
+              "measurement_valid": True,
+              "classification": "canonical" if canonical else "exploratory",
+              "reason": (
+                  "all candidate, quality, latency, memory, integrity, selection, and report gates passed"
+                  if canonical
+                  else "measurement gates passed, but branch or inputs are exploratory"
+              ),
+          }
+          Path("artifacts/status.json").write_text(
+              json.dumps(payload, indent=2, sort_keys=True) + "\n",
+              encoding="utf-8",
+          )
+          PY
+          checksum_file="$RUNNER_TEMP/paretopilot-candidate-SHA256SUMS"
+          (
+            cd artifacts
+            find . -type f ! -name SHA256SUMS -print0 \
+              | sort -z \
+              | xargs -0 sha256sum \
+              > "$checksum_file"
+          )
+          mv "$checksum_file" artifacts/SHA256SUMS
+
+      - name: Upload validated candidate study
+        if: success()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: ${{ env.CANONICAL_RUN == 'true' && 'arm64-candidate-study' || 'EXPLORATORY-arm64-candidate-study' }}-${{ github.run_id }}-${{ github.run_attempt }}
+          path: artifacts/
+          if-no-files-found: error
+          retention-days: 30
+          compression-level: 9
+
+      - name: Refresh failed status and checksums
+        if: failure()
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p artifacts
+          python - <<'PY'
+          import json
+          from pathlib import Path
+
+          Path("artifacts/status.json").write_text(
+              json.dumps(
+                  {
+                      "schema_version": "1.0",
+                      "status": "incomplete",
+                      "valid_evidence": False,
+                      "measurement_valid": False,
+                      "classification": "incomplete",
+                      "reason": "one or more candidate-study gates failed",
+                  },
+                  indent=2,
+                  sort_keys=True,
+              )
+              + "\n",
+              encoding="utf-8",
+          )
+          PY
+          checksum_file="$RUNNER_TEMP/paretopilot-candidate-SHA256SUMS"
+          (
+            cd artifacts
+            find . -type f ! -name SHA256SUMS -print0 \
+              | sort -z \
+              | xargs -0 sha256sum \
+              > "$checksum_file"
+          )
+          mv "$checksum_file" artifacts/SHA256SUMS
+
+      - name: Upload incomplete candidate diagnostics
+        if: failure()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: INCOMPLETE-arm64-candidate-study-${{ github.run_id }}-${{ github.run_attempt }}
+          path: artifacts/
+          if-no-files-found: warn
+          retention-days: 7
+          compression-level: 9

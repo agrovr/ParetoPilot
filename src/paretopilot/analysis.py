@@ -26,9 +26,7 @@ def evaluate_constraints(
 ) -> tuple[CandidateEvaluation, ...]:
     baseline = benchmarks.baseline
     if constraints.quality_metric not in baseline.metrics:
-        raise ValidationError(
-            f"baseline is missing quality metric {constraints.quality_metric!r}"
-        )
+        raise ValidationError(f"baseline is missing quality metric {constraints.quality_metric!r}")
 
     baseline_quality = baseline.metrics[constraints.quality_metric]
     if baseline_quality <= 0:
@@ -52,8 +50,10 @@ def evaluate_constraints(
             for metric in sorted(required_metrics - set(candidate.metrics))
         ]
         quality = candidate.metrics.get(constraints.quality_metric)
-        if quality is not None and quality < quality_floor and not math.isclose(
-            quality, quality_floor
+        if (
+            quality is not None
+            and quality < quality_floor
+            and not math.isclose(quality, quality_floor)
         ):
             retention = quality / baseline_quality
             violations.append(
@@ -139,6 +139,67 @@ def _selection_key(candidate: Candidate, constraints: Constraints) -> tuple[Any,
     return directed_value, candidate.candidate_id
 
 
+def _objective_shortlist(
+    frontier: tuple[Candidate, ...],
+    constraints: Constraints,
+    best_value: float,
+) -> tuple[Candidate, ...]:
+    """Return frontier candidates within the permitted objective degradation."""
+
+    metric = constraints.objective.metric
+    tolerance = constraints.objective_tolerance_percent
+    if tolerance == 0.0:
+        shortlisted = tuple(
+            candidate for candidate in frontier if candidate.metrics[metric] == best_value
+        )
+    else:
+        margin = abs(best_value) * (tolerance / 100.0)
+        if constraints.objective.direction == "min":
+            boundary = best_value + margin
+            shortlisted = tuple(
+                candidate
+                for candidate in frontier
+                if candidate.metrics[metric] <= boundary
+                or math.isclose(candidate.metrics[metric], boundary)
+            )
+        else:
+            boundary = best_value - margin
+            shortlisted = tuple(
+                candidate
+                for candidate in frontier
+                if candidate.metrics[metric] >= boundary
+                or math.isclose(candidate.metrics[metric], boundary)
+            )
+
+    # The numeric winner is always in the shortlist, including when the best value is zero.
+    return tuple(sorted(shortlisted, key=lambda candidate: candidate.candidate_id))
+
+
+def _validate_preference_order(
+    benchmarks: BenchmarkSet,
+    constraints: Constraints,
+) -> None:
+    if not constraints.preference_order:
+        return
+
+    benchmark_ids = {candidate.candidate_id for candidate in benchmarks.candidates}
+    preference_ids = set(constraints.preference_order)
+    if preference_ids == benchmark_ids:
+        return
+
+    details: list[str] = []
+    missing = sorted(benchmark_ids - preference_ids)
+    unknown = sorted(preference_ids - benchmark_ids)
+    if missing:
+        details.append("missing: " + ", ".join(missing))
+    if unknown:
+        details.append("unknown: " + ", ".join(unknown))
+    raise ValidationError(
+        "preference_order must cover exactly all benchmark candidate ids"
+        + (f" ({'; '.join(details)})" if details else "")
+    )
+
+
 def _deltas(selected: Candidate, baseline: Candidate) -> Mapping[str, Mapping[str, float | None]]:
     deltas: dict[str, Mapping[str, float | None]] = {}
     for metric in sorted(set(selected.metrics) & set(baseline.metrics)):
@@ -156,6 +217,7 @@ def _deltas(selected: Candidate, baseline: Candidate) -> Mapping[str, Mapping[st
 
 
 def recommend(benchmarks: BenchmarkSet, constraints: Constraints) -> Mapping[str, Any]:
+    _validate_preference_order(benchmarks, constraints)
     evaluations = evaluate_constraints(benchmarks, constraints)
     eligible = tuple(item.candidate for item in evaluations if item.eligible)
     if not eligible:
@@ -165,7 +227,31 @@ def recommend(benchmarks: BenchmarkSet, constraints: Constraints) -> Mapping[str
         raise ValidationError(f"no candidate satisfies the constraints: {violation_summary}")
 
     frontier = pareto_frontier(eligible, constraints.frontier_metrics)
-    selected = min(frontier, key=lambda candidate: _selection_key(candidate, constraints))
+    numeric_best = min(frontier, key=lambda candidate: _selection_key(candidate, constraints))
+    best_value = numeric_best.metrics[constraints.objective.metric]
+    shortlist = _objective_shortlist(frontier, constraints, best_value)
+
+    if constraints.preference_order:
+        preference_rank = {
+            candidate_id: index for index, candidate_id in enumerate(constraints.preference_order)
+        }
+        selected = min(shortlist, key=lambda candidate: preference_rank[candidate.candidate_id])
+        if selected.candidate_id == numeric_best.candidate_id:
+            reason = "The highest-preference shortlisted candidate is the numeric objective winner."
+        else:
+            reason = (
+                "Preference order selected a candidate within the objective tolerance "
+                "instead of the numeric objective winner."
+            )
+    else:
+        selected = min(shortlist, key=lambda candidate: candidate.candidate_id)
+        if constraints.objective_tolerance_percent == 0.0:
+            reason = "Selected the numeric objective winner; candidate id breaks exact ties."
+        else:
+            reason = (
+                "No preference order was supplied; selected the lexicographically earliest "
+                "candidate id from the objective-tolerance shortlist."
+            )
 
     return {
         "schema_version": "1.0",
@@ -189,6 +275,18 @@ def recommend(benchmarks: BenchmarkSet, constraints: Constraints) -> Mapping[str
                 "direction": constraints.objective.direction,
             },
             "frontier_metrics": dict(sorted(constraints.frontier_metrics.items())),
+            "objective_tolerance_percent": constraints.objective_tolerance_percent,
+            "preference_order": list(constraints.preference_order),
+        },
+        "selection": {
+            "numeric_best_id": numeric_best.candidate_id,
+            "numeric_best_value": best_value,
+            "objective_tolerance_percent": constraints.objective_tolerance_percent,
+            "shortlist_ids": [candidate.candidate_id for candidate in shortlist],
+            "preference_order_applied": bool(constraints.preference_order),
+            "preference_changed_winner": bool(constraints.preference_order)
+            and selected.candidate_id != numeric_best.candidate_id,
+            "reason": reason,
         },
         "eligible_ids": sorted(candidate.candidate_id for candidate in eligible),
         "frontier_ids": [candidate.candidate_id for candidate in frontier],

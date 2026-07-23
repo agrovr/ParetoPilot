@@ -1,0 +1,552 @@
+{
+  "adoption_gate": {
+    "eligible": false,
+    "meets_practical_effect_threshold": false,
+    "metric": "generation_tokens_per_second",
+    "pair_percent_changes": [
+      2.158336929354876,
+      -1.2144520927712676
+    ],
+    "paired_direction_consistent": false,
+    "policy": "adopt only when both paired generation-throughput changes are positive and the pooled change meets the predeclared threshold",
+    "pooled_percent_change": 0.04926894006278548,
+    "practical_effect_threshold_percent": 1.0,
+    "reasons": [
+      "paired generation-throughput directions are inconsistent: +2.158337%, -1.214452%",
+      "pooled generation-throughput change +0.049269% is below the predeclared 1.000000% practical-effect threshold"
+    ],
+    "status": "inconclusive"
+  },
+  "benchmark_set": {
+    "baseline_id": "generic-baseline",
+    "candidates": [
+      {
+        "id": "generic-baseline",
+        "label": "Generic Arm64 baseline",
+        "metrics": {
+          "confidence_and_practical_effect_gate": 1.0,
+          "generation_duration_ms": 3645.371792,
+          "generation_tokens_per_second": 35.1134,
+          "model_identity_quality_retention": 1.0,
+          "prompt_duration_ms": 4504.6401985,
+          "prompt_tokens_per_second": 113.6605
+        },
+        "parameters": {
+          "adoption_gate": {
+            "eligible": true,
+            "reasons": [
+              "canonical reference baseline"
+            ],
+            "status": "reference-baseline"
+          },
+          "benchmark": {
+            "batch_size": 512,
+            "cpu_only": true,
+            "generation_tokens": 128,
+            "prompt_tokens": 512,
+            "repetitions_per_pass": 10,
+            "threads": 4,
+            "ubatch_size": 128,
+            "warmup": true
+          },
+          "kleidiai_enabled": false,
+          "llama_cpp_commit": "67b9b0e7f6ce45d929a4411907d3c48ec719e81c",
+          "model_filename": "qwen2.5-1.5b-instruct-q4_0.gguf",
+          "model_sha256": "dcd819ff094852c38faba6873d8ff0c9d51eadb2844539e52042ae5d647bbfdb",
+          "quality_evidence": {
+            "direct_quality_evaluation": false,
+            "kind": "model-identity",
+            "statement": "Both variants use the identical model artifact; this is model-identity retention, not a directly measured task-quality score."
+          },
+          "runtime_variant": "generic"
+        }
+      },
+      {
+        "id": "kleidiai-optimized",
+        "label": "KleidiAI Arm64 runtime",
+        "metrics": {
+          "confidence_and_practical_effect_gate": 0.0,
+          "generation_duration_ms": 3643.539655,
+          "generation_tokens_per_second": 35.130700000000004,
+          "model_identity_quality_retention": 1.0,
+          "prompt_duration_ms": 4481.07142,
+          "prompt_tokens_per_second": 114.25800000000001
+        },
+        "parameters": {
+          "adoption_gate": {
+            "eligible": false,
+            "meets_practical_effect_threshold": false,
+            "metric": "generation_tokens_per_second",
+            "pair_percent_changes": [
+              2.158336929354876,
+              -1.2144520927712676
+            ],
+            "paired_direction_consistent": false,
+            "policy": "adopt only when both paired generation-throughput changes are positive and the pooled change meets the predeclared threshold",
+            "pooled_percent_change": 0.04926894006278548,
+            "practical_effect_threshold_percent": 1.0,
+            "reasons": [
+              "paired generation-throughput directions are inconsistent: +2.158337%, -1.214452%",
+              "pooled generation-throughput change +0.049269% is below the predeclared 1.000000% practical-effect threshold"
+            ],
+            "status": "inconclusive"
+          },
+          "benchmark": {
+            "batch_size": 512,
+            "cpu_only": true,
+            "generation_tokens": 128,
+            "prompt_tokens": 512,
+            "repetitions_per_pass": 10,
+            "threads": 4,
+            "ubatch_size": 128,
+            "warmup": true
+          },
+          "kleidiai_enabled": true,
+          "kleidiai_version": "v1.24.0",
+          "llama_cpp_commit": "67b9b0e7f6ce45d929a4411907d3c48ec719e81c",
+          "model_filename": "qwen2.5-1.5b-instruct-q4_0.gguf",
+          "model_sha256": "dcd819ff094852c38faba6873d8ff0c9d51eadb2844539e52042ae5d647bbfdb",
+          "quality_evidence": {
+            "direct_quality_evaluation": false,
+            "kind": "model-identity",
+            "statement": "Both variants use the identical model artifact; this is model-identity retention, not a directly measured task-quality score."
+          },
+          "runtime_variant": "kleidiai"
+        }
+      }
+    ],
+    "metadata": {
+      "adoption_gate": {
+        "eligible": false,
+        "meets_practical_effect_threshold": false,
+        "metric": "generation_tokens_per_second",
+        "pair_percent_changes": [
+          2.158336929354876,
+          -1.2144520927712676
+        ],
+        "paired_direction_consistent": false,
+        "policy": "adopt only when both paired generation-throughput changes are positive and the pooled change meets the predeclared threshold",
+        "pooled_percent_change": 0.04926894006278548,
+        "practical_effect_threshold_percent": 1.0,
+        "reasons": [
+          "paired generation-throughput directions are inconsistent: +2.158337%, -1.214452%",
+          "pooled generation-throughput change +0.049269% is below the predeclared 1.000000% practical-effect threshold"
+        ],
+        "status": "inconclusive"
+      },
+      "benchmark": {
+        "batch_size": 512,
+        "cpu_only": true,
+        "generation_tokens": 128,
+        "prompt_tokens": 512,
+        "repetitions_per_pass": 10,
+        "threads": 4,
+        "ubatch_size": 128,
+        "warmup": true
+      },
+      "classification": "canonical",
+      "comparisons": {
+        "pair_1": {
+          "build_commit": "67b9b0e",
+          "comparison_type": "generic-vs-kleidiai",
+          "compatibility": {
+            "same_benchmark_settings_except_kleidiai": true,
+            "same_build_commit": true,
+            "same_model_filename": true,
+            "same_sample_counts": true,
+            "same_synthetic_status": true,
+            "same_workload_shapes": true,
+            "validated": true
+          },
+          "input_fingerprints": {
+            "generic_summary_sha256": "734cac0a879325f01900fbfc61cf8acdbbea5de52b8c00f85f8b1b7dc4c36526",
+            "kleidiai_summary_sha256": "270a4502180a4b1b491cbec9fd8b23c15d9839d5c4f0037d16a57999ffebe125"
+          },
+          "model_filename": "/home/runner/work/_temp/qwen2.5-1.5b-instruct-q4_0.gguf",
+          "schema_version": "1.0",
+          "synthetic_fixture": false,
+          "tests": {
+            "pp": {
+              "generic": {
+                "duration_ns_median": 4506050689.0,
+                "duration_ns_sample_count": 10,
+                "tokens_per_second_median": 113.625,
+                "tokens_per_second_sample_count": 10
+              },
+              "kleidiai": {
+                "duration_ns_median": 4480272763.0,
+                "duration_ns_sample_count": 10,
+                "tokens_per_second_median": 114.27850000000001,
+                "tokens_per_second_sample_count": 10
+              },
+              "median_duration_percent_change": -0.5720735912476127,
+              "median_throughput_percent_change": 0.5751375137513781,
+              "median_throughput_speedup": 1.0057513751375138,
+              "n_gen": 0,
+              "n_prompt": 512,
+              "test_kind": "pp"
+            },
+            "tg": {
+              "generic": {
+                "duration_ns_median": 3707058165.5,
+                "duration_ns_sample_count": 10,
+                "tokens_per_second_median": 34.52889999999999,
+                "tokens_per_second_sample_count": 10
+              },
+              "kleidiai": {
+                "duration_ns_median": 3628718074.0,
+                "duration_ns_sample_count": 10,
+                "tokens_per_second_median": 35.274150000000006,
+                "tokens_per_second_sample_count": 10
+              },
+              "median_duration_percent_change": -2.113268473343033,
+              "median_throughput_percent_change": 2.158336929354876,
+              "median_throughput_speedup": 1.0215833692935488,
+              "n_gen": 128,
+              "n_prompt": 0,
+              "test_kind": "tg"
+            }
+          },
+          "variants": {
+            "generic": {
+              "label": "generic-pass-1"
+            },
+            "kleidiai": {
+              "label": "kleidiai-pass-1"
+            }
+          }
+        },
+        "pair_2": {
+          "build_commit": "67b9b0e",
+          "comparison_type": "generic-vs-kleidiai",
+          "compatibility": {
+            "same_benchmark_settings_except_kleidiai": true,
+            "same_build_commit": true,
+            "same_model_filename": true,
+            "same_sample_counts": true,
+            "same_synthetic_status": true,
+            "same_workload_shapes": true,
+            "validated": true
+          },
+          "input_fingerprints": {
+            "generic_summary_sha256": "7c8df605599e36a0b5894df0c4bd84bb63c4c41521acf1ab4dc8b2ce9c137574",
+            "kleidiai_summary_sha256": "febe5d6509dc221a27083b9e3472d93316f31c88be92154fdb4171cd3e0fa2ed"
+          },
+          "model_filename": "/home/runner/work/_temp/qwen2.5-1.5b-instruct-q4_0.gguf",
+          "schema_version": "1.0",
+          "synthetic_fixture": false,
+          "tests": {
+            "pp": {
+              "generic": {
+                "duration_ns_median": 4500362944.0,
+                "duration_ns_sample_count": 10,
+                "tokens_per_second_median": 113.769,
+                "tokens_per_second_sample_count": 10
+              },
+              "kleidiai": {
+                "duration_ns_median": 4481504740.0,
+                "duration_ns_sample_count": 10,
+                "tokens_per_second_median": 114.247,
+                "tokens_per_second_sample_count": 10
+              },
+              "median_duration_percent_change": -0.41903740286418634,
+              "median_throughput_percent_change": 0.4201496013852557,
+              "median_throughput_speedup": 1.0042014960138526,
+              "n_gen": 0,
+              "n_prompt": 512,
+              "test_kind": "pp"
+            },
+            "tg": {
+              "generic": {
+                "duration_ns_median": 3611752324.0,
+                "duration_ns_sample_count": 10,
+                "tokens_per_second_median": 35.43985,
+                "tokens_per_second_sample_count": 10
+              },
+              "kleidiai": {
+                "duration_ns_median": 3656158152.5,
+                "duration_ns_sample_count": 10,
+                "tokens_per_second_median": 35.00945,
+                "tokens_per_second_sample_count": 10
+              },
+              "median_duration_percent_change": 1.2294815512382762,
+              "median_throughput_percent_change": -1.2144520927712676,
+              "median_throughput_speedup": 0.9878554790722873,
+              "n_gen": 128,
+              "n_prompt": 0,
+              "test_kind": "tg"
+            }
+          },
+          "variants": {
+            "generic": {
+              "label": "generic-pass-2"
+            },
+            "kleidiai": {
+              "label": "kleidiai-pass-2"
+            }
+          }
+        },
+        "pooled": {
+          "build_commit": "67b9b0e",
+          "comparison_type": "generic-vs-kleidiai",
+          "compatibility": {
+            "same_benchmark_settings_except_kleidiai": true,
+            "same_build_commit": true,
+            "same_model_filename": true,
+            "same_sample_counts": true,
+            "same_synthetic_status": true,
+            "same_workload_shapes": true,
+            "validated": true
+          },
+          "input_fingerprints": {
+            "generic_summary_sha256": "104c4e0e9352f6d8e292156f991eb6330b1890e14ec26a0318eba93a951dc0f9",
+            "kleidiai_summary_sha256": "dcfd453ace4857ece80a15b4213aebd12b4624bf155959d8084b38fc5b8ef8b8"
+          },
+          "model_filename": "/home/runner/work/_temp/qwen2.5-1.5b-instruct-q4_0.gguf",
+          "schema_version": "1.0",
+          "synthetic_fixture": false,
+          "tests": {
+            "pp": {
+              "generic": {
+                "duration_ns_median": 4504640198.5,
+                "duration_ns_sample_count": 20,
+                "tokens_per_second_median": 113.6605,
+                "tokens_per_second_sample_count": 20
+              },
+              "kleidiai": {
+                "duration_ns_median": 4481071420.0,
+                "duration_ns_sample_count": 20,
+                "tokens_per_second_median": 114.25800000000001,
+                "tokens_per_second_sample_count": 20
+              },
+              "median_duration_percent_change": -0.5232111214531265,
+              "median_throughput_percent_change": 0.5256883437957827,
+              "median_throughput_speedup": 1.0052568834379578,
+              "n_gen": 0,
+              "n_prompt": 512,
+              "test_kind": "pp"
+            },
+            "tg": {
+              "generic": {
+                "duration_ns_median": 3645371792.0,
+                "duration_ns_sample_count": 20,
+                "tokens_per_second_median": 35.1134,
+                "tokens_per_second_sample_count": 20
+              },
+              "kleidiai": {
+                "duration_ns_median": 3643539655.0,
+                "duration_ns_sample_count": 20,
+                "tokens_per_second_median": 35.130700000000004,
+                "tokens_per_second_sample_count": 20
+              },
+              "median_duration_percent_change": -0.05025926310234796,
+              "median_throughput_percent_change": 0.04926894006278548,
+              "median_throughput_speedup": 1.0004926894006279,
+              "n_gen": 128,
+              "n_prompt": 0,
+              "test_kind": "tg"
+            }
+          },
+          "variants": {
+            "generic": {
+              "label": "generic"
+            },
+            "kleidiai": {
+              "label": "kleidiai"
+            }
+          }
+        }
+      },
+      "evidence_integrity": {
+        "algorithm": "sha256",
+        "checksum_manifest": "SHA256SUMS",
+        "checksum_manifest_sha256": "5f7f9d21f7b031f2ff756163d178bfd45968fa2d5574a80f791c89ee10032ff4",
+        "verified_entry_count": 47,
+        "verified_files": {
+          "README.md": "7554eeadb5a7d7476e61b06cdda54cfc5a5e1122ffeef762c27b4ffaa36f997f",
+          "SOURCE-SHA256SUMS": "cc243966a49c9d7d206222b428df335ee5de75f9105cb3574c60cb1a5c170fe6",
+          "build/generic-llama-bench.ldd.txt": "e0debb3481b52701b368198dbaef04afd5ea5bb3bb05dce9567674069aa7e057",
+          "build/generic-llama-bench.sha256": "620379906eff3f08887d8b282db82d2ef288ac3ab2747ffa8f68a6db22c32156",
+          "build/kleidiai-llama-bench.ldd.txt": "ab75e77240688203ca4dec9b526a39abad078b12661868840cc5c8d81191dfe0",
+          "build/kleidiai-llama-bench.sha256": "cf407559fef35887dd831712640bae490b336a0a631365746ad3aa389e0b60e5",
+          "build/kleidiai-source.sha256": "ce8aa453827b83119ffc4347a67d22498c90678eff61e8517454e14375ff048e",
+          "build/llama-cpp-commit.txt": "1feb5941eb02148e53d0be17ce0e450fce23f4f09f35f17b21637c0c74887383",
+          "build/model.sha256": "7a1b19364a689d6a6409010e39383d16a39defb83acb61b11e54c17773e662c0",
+          "commands/generic-pass-1.json": "28f5d20b9a8de1217757e0bf3837c4192974e851c5023adc896d519551b735b0",
+          "commands/generic-pass-2.json": "eda97561aefad5fa01c27397e413b35c2603edd3d0c3200e295314dcf5fde0b7",
+          "commands/kleidiai-pass-1.json": "8ef9e5c62f1057ce8bc9d5684d976d07e866b3c81966db5f807fb3c8936849ac",
+          "commands/kleidiai-pass-2.json": "3061027257c1a4ad405eb7e71d532e98bf4491b0efa525848f9624d1156bef9f",
+          "environment/cmake.txt": "f6e81c2559f3ce00c5fdad01d7b226c301f5d6b07ee04f65db6dbfdc1cc5970b",
+          "environment/g++.txt": "b240ade48d7a4743cb2e7940990dd5a8dbc15120543c7eadd9541435edd2efd2",
+          "environment/gcc.txt": "5698ba2bce15103316282b418bf772fd5ce99fbe60fd5ba2987d69fa39f61e58",
+          "environment/lscpu.txt": "e5f7302f9882c8b4eca9892fce7bab78f37c49da0f8babcb23d2c2db5ed004bc",
+          "environment/ninja.txt": "810ab97f4b3fccb9adf1db7959945b479635931ccc4a0243c34a41b739eae25a",
+          "environment/os-release.txt": "01af466feb100306498c86aa6bad1815e33036019aa34d4362c20f374ea5c829",
+          "environment/paretopilot-doctor.json": "b999973010e39549481900fb0e62f9587bbf2c94c6a2b59ad6c98b9d6114b8f0",
+          "environment/runner.json": "7856b4a390e512663195a3037ada8dd8223d59a99cc21931ccc43a387502b6b6",
+          "manifest.json": "db52476c18bf7fea9d40a895fae320d568b474c673d97a9c33b833cc2639547d",
+          "provenance.json": "8c979006ff08714467e609c2255885cbb78052b4872fb19b95558f8b7ce2178e",
+          "raw/generic-pass-1.jsonl": "9dcea4727bec90289c3725cee828c6115916f6771d36bb95db0ee7cde13bb249",
+          "raw/generic-pass-1.stderr.log": "f30462597975134a43aa0443a865abf9ca16830a9ee0de498a67a9e8b9ce3e2f",
+          "raw/generic-pass-2.jsonl": "e250732d5ab865cf1559b8f21236a0efdcb3e6f07aa96d513700892b821da3c5",
+          "raw/generic-pass-2.stderr.log": "59e1066176b4050b120445df3e52561e960b9e2116c46d0644567caf1ea666bf",
+          "raw/kleidiai-pass-1.jsonl": "84d5e946743432aa0f92ef7f77557f3cfc9f04ffa44df959f307a300b4444760",
+          "raw/kleidiai-pass-1.stderr.log": "7997b47520c27fa52381270fe758f35c257847d8b2f5a3c148413dea37a79a58",
+          "raw/kleidiai-pass-2.jsonl": "550837d8b8337346fcc9f4ad28fbd9c86a154e1647e58d27d70e0e1d965fc8c2",
+          "raw/kleidiai-pass-2.stderr.log": "c977d495e5daf019eed444b2c0a5bb82ebc673b0bdda76a9d38caf042de673ea",
+          "settings/generic.json": "a0e58888c94cc186216af765357eca03d8a3753b92216efc1321a1985129bc18",
+          "settings/kleidiai.json": "69c9e507a996bf87c8c7dd4203462598498edc12525b5695b02ea434e3931ccf",
+          "status.json": "e5df64190625e90511ef2e13cc40398578a70eabf640215378c3cd235a97708b",
+          "summary/comparison-pair-1.json": "e770f0fce4211346897e7a3162c30239cd35855535594cb00f09480875ed761d",
+          "summary/comparison-pair-2.json": "d1d035851185ea8ea1fba13651ac07a4dbb2f335fd40fc15e202c38bde5bef2d",
+          "summary/comparison-pooled.json": "7c58b1853afa4612081b931a3f574a58c0ee39469766340dbe48d0b4e3a0fd28",
+          "summary/generic-pass-1.json": "734cac0a879325f01900fbfc61cf8acdbbea5de52b8c00f85f8b1b7dc4c36526",
+          "summary/generic-pass-2.json": "7c8df605599e36a0b5894df0c4bd84bb63c4c41521acf1ab4dc8b2ce9c137574",
+          "summary/generic.json": "104c4e0e9352f6d8e292156f991eb6330b1890e14ec26a0318eba93a951dc0f9",
+          "summary/kleidiai-pass-1.json": "270a4502180a4b1b491cbec9fd8b23c15d9839d5c4f0037d16a57999ffebe125",
+          "summary/kleidiai-pass-2.json": "febe5d6509dc221a27083b9e3472d93316f31c88be92154fdb4171cd3e0fa2ed",
+          "summary/kleidiai.json": "dcfd453ace4857ece80a15b4213aebd12b4624bf155959d8084b38fc5b8ef8b8",
+          "validation/generic-pass-1.json": "5b91785af4624a231d53bd6d9d03d5be9486118b9a34e2b506f4b36595315da6",
+          "validation/generic-pass-2.json": "b9f911db4e9b801ec08479605ab6ac5f96995026c61089194148fa745d76e6c2",
+          "validation/kleidiai-pass-1.json": "c35c5e90583d60dea35b02efc128826c15409ac2bb5dde7c9278843553042676",
+          "validation/kleidiai-pass-2.json": "ea49b6aa5d5b356b1255b506c4b5bc3ec98e7ac781f00055bf2ec8afee37ba98"
+        }
+      },
+      "evidence_scope": "paired GitHub-hosted Arm64 runner experiment",
+      "model": {
+        "filename": "qwen2.5-1.5b-instruct-q4_0.gguf",
+        "quantization": "Q4_0",
+        "repository": "Qwen/Qwen2.5-1.5B-Instruct-GGUF",
+        "revision": "91cad51170dc346986eccefdc2dd33a9da36ead9",
+        "sha256": "dcd819ff094852c38faba6873d8ff0c9d51eadb2844539e52042ae5d647bbfdb",
+        "size_bytes": 1066227232
+      },
+      "provenance": {
+        "artifact": {
+          "created_at": "2026-07-22T17:06:29Z",
+          "expires_at": "2026-08-21T17:06:28Z",
+          "github_reported_digest": "sha256:58f9c2c62ce454b631bcad59a93f63244358b067c22fb67f761ae9306a658b9e",
+          "id": 8538127719,
+          "name": "arm64-benchmark-29940067201-1",
+          "size_in_bytes": 72563
+        },
+        "canonical_inputs": {
+          "batch_size": 512,
+          "generation_tokens": 128,
+          "prompt_tokens": 512,
+          "repetitions_per_pass": 10,
+          "threads": 4,
+          "ubatch_size": 128
+        },
+        "repository": "agrovr/ParetoPilot",
+        "repository_commit": "1c17c1f7e1edb331a2bf4eb8016927622dc11d45",
+        "reviewed_on": "2026-07-22",
+        "run": {
+          "attempt": 1,
+          "id": 29940067201,
+          "job_id": 88991377859,
+          "url": "https://github.com/agrovr/ParetoPilot/actions/runs/29940067201"
+        },
+        "schema_version": "1.0",
+        "verification": {
+          "compact_bundle_sha256_verified": true,
+          "dispatch_marker_counts": {
+            "generic-pass-1": 0,
+            "generic-pass-2": 0,
+            "kleidiai-pass-1": 1,
+            "kleidiai-pass-2": 1
+          },
+          "local_raw_artifacts_validated": 4,
+          "measurement_valid": true,
+          "original_artifact_checksum_entries": 61,
+          "original_artifact_checksums_verified": true,
+          "status": "complete",
+          "valid_evidence": true
+        },
+        "workflow_commit": "1c17c1f7e1edb331a2bf4eb8016927622dc11d45"
+      },
+      "quality_evidence": {
+        "basis": "identical-model-sha256",
+        "direct_quality_evaluation": false,
+        "manifest_statement": {
+          "evaluated": false,
+          "reason": "both variants use the identical model file; this run isolates runtime-kernel throughput"
+        },
+        "metric": "model_identity_quality_retention",
+        "model_sha256": "dcd819ff094852c38faba6873d8ff0c9d51eadb2844539e52042ae5d647bbfdb",
+        "retention": 1.0
+      },
+      "repository": {
+        "commit": "1c17c1f7e1edb331a2bf4eb8016927622dc11d45",
+        "name": "agrovr/ParetoPilot",
+        "run_attempt": "1",
+        "run_id": "29940067201",
+        "workflow_commit": "1c17c1f7e1edb331a2bf4eb8016927622dc11d45",
+        "workflow_ref": "agrovr/ParetoPilot/.github/workflows/benchmark-arm64.yml@refs/heads/main"
+      },
+      "runner": {
+        "captured_environment": {
+          "GITHUB_ACTION": "__run_4",
+          "GITHUB_JOB": "benchmark",
+          "GITHUB_REF": "refs/heads/main",
+          "GITHUB_REPOSITORY": "agrovr/ParetoPilot",
+          "GITHUB_RUN_ATTEMPT": "1",
+          "GITHUB_RUN_ID": "29940067201",
+          "GITHUB_SHA": "1c17c1f7e1edb331a2bf4eb8016927622dc11d45",
+          "GITHUB_WORKFLOW_REF": "agrovr/ParetoPilot/.github/workflows/benchmark-arm64.yml@refs/heads/main",
+          "GITHUB_WORKFLOW_SHA": "1c17c1f7e1edb331a2bf4eb8016927622dc11d45",
+          "ImageOS": "ubuntu24-arm64",
+          "ImageVersion": "20260714.61.1",
+          "RUNNER_ARCH": "ARM64",
+          "RUNNER_NAME": "GitHub Actions 1000000986",
+          "RUNNER_OS": "Linux"
+        },
+        "machine": "aarch64",
+        "platform": "Linux-6.17.0-1020-azure-aarch64-with-glibc2.39",
+        "python_version": "3.12.13"
+      },
+      "runtime": {
+        "kleidiai": {
+          "source_sha256": "9348b969e042d8890a54b01a463dbe71f5a4c074b5329e9c26a85ef3b68aa19b",
+          "source_size_bytes": 2466038,
+          "version": "v1.24.0"
+        },
+        "llama_cpp": {
+          "commit": "67b9b0e7f6ce45d929a4411907d3c48ec719e81c",
+          "generic_kleidiai": false,
+          "optimized_kleidiai": true
+        }
+      },
+      "status": {
+        "classification": "canonical",
+        "measurement_valid": true,
+        "reason": "all benchmark, dispatch, compatibility, and summary gates passed",
+        "schema_version": "1.0",
+        "status": "complete",
+        "valid_evidence": true
+      },
+      "study_type": "paired-arm64-runtime-kernel"
+    },
+    "schema_version": "1.0",
+    "synthetic": false
+  },
+  "constraints": {
+    "frontier_metrics": {
+      "generation_duration_ms": "min",
+      "generation_tokens_per_second": "max",
+      "model_identity_quality_retention": "max",
+      "prompt_duration_ms": "min",
+      "prompt_tokens_per_second": "max"
+    },
+    "max_values": {},
+    "min_quality_retention": 1.0,
+    "min_values": {
+      "confidence_and_practical_effect_gate": 1.0
+    },
+    "objective": {
+      "direction": "max",
+      "metric": "generation_tokens_per_second"
+    },
+    "quality_metric": "model_identity_quality_retention"
+  }
+}

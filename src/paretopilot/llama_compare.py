@@ -76,8 +76,7 @@ def _json_value(value: Any, *, context: str) -> Any:
         return copied
     if isinstance(value, Sequence) and not isinstance(value, (str, bytes, bytearray)):
         return [
-            _json_value(item, context=f"{context}[{index}]")
-            for index, item in enumerate(value)
+            _json_value(item, context=f"{context}[{index}]") for index, item in enumerate(value)
         ]
     raise LlamaBenchComparisonError(f"{context} must be JSON-compatible")
 
@@ -102,9 +101,7 @@ def _settings_without_kleidiai(
         raise LlamaBenchComparisonError(f"{role}.settings.build must be an object")
     if build.get("kleidiai") is not expected_flag:
         expected_text = "true" if expected_flag else "false"
-        raise LlamaBenchComparisonError(
-            f"{role}.settings.build.kleidiai must be {expected_text}"
-        )
+        raise LlamaBenchComparisonError(f"{role}.settings.build.kleidiai must be {expected_text}")
     del build["kleidiai"]
     return copied
 
@@ -156,9 +153,7 @@ class _TestSnapshot:
             raise LlamaBenchComparisonError(
                 f"{context}.test_kind must match its object key {test_kind!r}"
             )
-        n_prompt = _nonnegative_integer(
-            mapping.get("n_prompt"), context=f"{context}.n_prompt"
-        )
+        n_prompt = _nonnegative_integer(mapping.get("n_prompt"), context=f"{context}.n_prompt")
         n_gen = _nonnegative_integer(mapping.get("n_gen"), context=f"{context}.n_gen")
         expected_kind = (
             "pp"
@@ -182,9 +177,7 @@ class _TestSnapshot:
             context=f"{context}.duration_ns",
         )
         if tokens_per_second.sample_count != duration_ns.sample_count:
-            raise LlamaBenchComparisonError(
-                f"{context} metric sample counts must match"
-            )
+            raise LlamaBenchComparisonError(f"{context} metric sample counts must match")
         return cls(
             test_kind=test_kind,
             n_prompt=n_prompt,
@@ -211,17 +204,13 @@ class _VariantSnapshot:
         context: str,
     ) -> "_VariantSnapshot":
         if raw.get("schema_version") != "1.0":
-            raise LlamaBenchComparisonError(
-                f"{context}.schema_version must currently be '1.0'"
-            )
+            raise LlamaBenchComparisonError(f"{context}.schema_version must currently be '1.0'")
         settings = _settings_copy(raw.get("settings"), context=f"{context}.settings")
         raw_tests = _object(raw.get("tests"), context=f"{context}.tests")
         if not raw_tests:
             raise LlamaBenchComparisonError(f"{context}.tests must not be empty")
         if any(not isinstance(kind, str) for kind in raw_tests):
-            raise LlamaBenchComparisonError(
-                f"{context}.tests workload keys must be strings"
-            )
+            raise LlamaBenchComparisonError(f"{context}.tests workload keys must be strings")
         unsupported = sorted(set(raw_tests) - set(_TEST_ORDER))
         if unsupported:
             raise LlamaBenchComparisonError(
@@ -275,25 +264,19 @@ class LlamaBenchWorkloadComparison:
             "n_gen": self.n_gen,
             "generic": {
                 "tokens_per_second_median": generic_throughput,
-                "tokens_per_second_sample_count": (
-                    self.generic.tokens_per_second.sample_count
-                ),
+                "tokens_per_second_sample_count": (self.generic.tokens_per_second.sample_count),
                 "duration_ns_median": generic_duration,
                 "duration_ns_sample_count": self.generic.duration_ns.sample_count,
             },
             "kleidiai": {
                 "tokens_per_second_median": kleidiai_throughput,
-                "tokens_per_second_sample_count": (
-                    self.kleidiai.tokens_per_second.sample_count
-                ),
+                "tokens_per_second_sample_count": (self.kleidiai.tokens_per_second.sample_count),
                 "duration_ns_median": kleidiai_duration,
                 "duration_ns_sample_count": self.kleidiai.duration_ns.sample_count,
             },
             "median_throughput_speedup": throughput_speedup,
             "median_throughput_percent_change": (throughput_speedup - 1.0) * 100.0,
-            "median_duration_percent_change": (
-                (kleidiai_duration / generic_duration) - 1.0
-            )
+            "median_duration_percent_change": ((kleidiai_duration / generic_duration) - 1.0)
             * 100.0,
         }
 

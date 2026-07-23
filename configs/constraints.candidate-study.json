@@ -1,0 +1,28 @@
+{
+  "min_quality_retention": 1.0,
+  "quality_metric": "quality_score",
+  "max_values": {
+    "e2e_latency_ms_p95": 15000,
+    "peak_rss_mib": 4096
+  },
+  "min_values": {},
+  "objective": {
+    "metric": "e2e_latency_ms_p95",
+    "direction": "min"
+  },
+  "objective_tolerance_percent": 1.0,
+  "preference_order": [
+    "q8-generic",
+    "q4-generic",
+    "q4-kleidiai",
+    "q4-kleidiai-tuned"
+  ],
+  "frontier_metrics": {
+    "e2e_latency_ms_p95": "min",
+    "generation_tps": "max",
+    "model_size_mib": "min",
+    "peak_rss_mib": "min",
+    "quality_score": "max",
+    "ttft_ms_p95": "min"
+  }
+}

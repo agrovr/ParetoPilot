@@ -7,9 +7,6 @@ on:
 permissions:
   contents: read
 
-env:
-  PYTHONPATH: ${{ github.workspace }}/src
-
 jobs:
   test:
     strategy:
@@ -24,9 +21,42 @@ jobs:
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
           python-version: "3.12"
+          cache: pip
+      - name: Install package and development tools
+        run: python -m pip install -e ".[dev]"
+      - name: Lint and format check
+        run: |
+          ruff check .
+          ruff format --check .
       - name: Test
         run: python -m unittest discover -s tests -v
-      - name: Validate synthetic fixtures
+      - name: Smoke installed console and fixtures
         run: |
-          python -m paretopilot validate examples/synthetic-results.json
-          python -m paretopilot validate-llama-bench tests/fixtures/llama_bench.synthetic.jsonl
+          paretopilot --version
+          paretopilot validate examples/synthetic-results.json
+          paretopilot validate-llama-bench tests/fixtures/llama_bench.synthetic.jsonl
+          paretopilot verify-study results/published/29940067201
+
+  package:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.12"
+          cache: pip
+      - name: Install build frontend
+        run: python -m pip install "build>=1.2.2,<2"
+      - name: Build wheel
+        run: python -m build --wheel
+      - name: Install wheel into an isolated environment
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m venv "$RUNNER_TEMP/paretopilot-wheel-smoke"
+          "$RUNNER_TEMP/paretopilot-wheel-smoke/bin/python" -m pip install --no-deps dist/*.whl
+          "$RUNNER_TEMP/paretopilot-wheel-smoke/bin/paretopilot" --version
+          "$RUNNER_TEMP/paretopilot-wheel-smoke/bin/paretopilot" verify-study \
+            results/published/29940067201
