@@ -1,0 +1,157 @@
+{
+  "schema_version": "1.0",
+  "id": "paretopilot-qwen-behavior-v2",
+  "license": "CC0-1.0 (original ParetoPilot prompts)",
+  "quality_cases": [
+    {
+      "id": "instruction-single-word",
+      "match_mode": "trimmed-exact",
+      "prompt": "Reply with exactly this single word and no punctuation: PARETOPILOT",
+      "accepted_answers": ["PARETOPILOT"]
+    },
+    {
+      "id": "instruction-color",
+      "match_mode": "trimmed-exact",
+      "prompt": "Reply with only the uppercase word BLUE.",
+      "accepted_answers": ["BLUE"]
+    },
+    {
+      "id": "instruction-two-words",
+      "match_mode": "trimmed-exact",
+      "prompt": "Reply with exactly these two words and nothing else: ARM READY",
+      "accepted_answers": ["ARM READY"]
+    },
+    {
+      "id": "instruction-code",
+      "match_mode": "trimmed-exact",
+      "prompt": "Reply with only this identifier: A64-2026",
+      "accepted_answers": ["A64-2026"]
+    },
+    {
+      "id": "extraction-ticket",
+      "match_mode": "trimmed-exact",
+      "prompt": "Extract the ticket identifier and reply with only it. Text: The deployment review for PP-104 begins tomorrow.",
+      "accepted_answers": ["PP-104"]
+    },
+    {
+      "id": "extraction-owner",
+      "match_mode": "trimmed-exact",
+      "prompt": "Extract the owner's full name and reply with only it. Text: Service: inference-api; Owner: Maya Chen; Region: central.",
+      "accepted_answers": ["Maya Chen"]
+    },
+    {
+      "id": "extraction-count",
+      "match_mode": "trimmed-exact",
+      "prompt": "Extract the retry count and reply with only the integer. Text: workers=4, retries=37, timeout=90.",
+      "accepted_answers": ["37"]
+    },
+    {
+      "id": "extraction-date",
+      "match_mode": "trimmed-exact",
+      "prompt": "Extract the deadline and reply with only the ISO date. Text: Draft due 2026-08-10; final deadline 2026-08-14.",
+      "accepted_answers": ["2026-08-14"]
+    },
+    {
+      "id": "classification-sentiment",
+      "match_mode": "trimmed-exact",
+      "prompt": "Classify the sentiment as POSITIVE, NEGATIVE, or NEUTRAL. Reply with only the label. Text: The optimized server is faster and uses less memory.",
+      "accepted_answers": ["POSITIVE"]
+    },
+    {
+      "id": "classification-category",
+      "match_mode": "trimmed-exact",
+      "prompt": "Classify this issue as PERFORMANCE, SECURITY, or DOCUMENTATION. Reply with only the label. Text: An unauthenticated endpoint exposes private records.",
+      "accepted_answers": ["SECURITY"]
+    },
+    {
+      "id": "classification-parity",
+      "match_mode": "trimmed-exact",
+      "prompt": "Classify 57 as ODD or EVEN. Reply with only the label.",
+      "accepted_answers": ["ODD"]
+    },
+    {
+      "id": "classification-animal",
+      "match_mode": "trimmed-exact",
+      "prompt": "Classify a dolphin as MAMMAL, BIRD, or FISH. Reply with only the label.",
+      "accepted_answers": ["MAMMAL"]
+    },
+    {
+      "id": "arithmetic-addition",
+      "match_mode": "trimmed-exact",
+      "prompt": "Reply with only the integer result of 17 plus 25.",
+      "accepted_answers": ["42"]
+    },
+    {
+      "id": "arithmetic-multiplication",
+      "match_mode": "trimmed-exact",
+      "prompt": "Reply with only the integer result of 9 multiplied by 7.",
+      "accepted_answers": ["63"]
+    },
+    {
+      "id": "arithmetic-division",
+      "match_mode": "trimmed-exact",
+      "prompt": "Reply with only the integer result of 144 divided by 12.",
+      "accepted_answers": ["12"]
+    },
+    {
+      "id": "arithmetic-percent",
+      "match_mode": "trimmed-exact",
+      "prompt": "Reply with only the integer that is 15 percent of 200.",
+      "accepted_answers": ["30"]
+    },
+    {
+      "id": "json-status",
+      "match_mode": "json-exact",
+      "prompt": "Reply with exactly this one-line JSON object and no code fence: {\"status\":\"ready\"}",
+      "accepted_answers": ["{\"status\":\"ready\"}"]
+    },
+    {
+      "id": "json-workers",
+      "match_mode": "json-exact",
+      "prompt": "Reply with exactly this one-line JSON object and no code fence: {\"arm64\":true,\"workers\":4}",
+      "accepted_answers": ["{\"arm64\":true,\"workers\":4}"]
+    },
+    {
+      "id": "json-array",
+      "match_mode": "json-exact",
+      "prompt": "Reply with exactly this one-line JSON array and no code fence: [\"red\",\"blue\"]",
+      "accepted_answers": ["[\"red\",\"blue\"]"]
+    },
+    {
+      "id": "json-measurement",
+      "match_mode": "json-exact",
+      "prompt": "Reply with exactly this one-line JSON object and no code fence: {\"result\":42,\"unit\":\"ms\"}",
+      "accepted_answers": ["{\"result\":42,\"unit\":\"ms\"}"]
+    },
+    {
+      "id": "fact-capital",
+      "match_mode": "trimmed-exact",
+      "prompt": "Reply with only the city name: What is the capital of Japan?",
+      "accepted_answers": ["Tokyo"]
+    },
+    {
+      "id": "fact-freezing-point",
+      "match_mode": "trimmed-exact",
+      "prompt": "At standard pressure, at what Celsius temperature does water freeze? Reply with only the integer.",
+      "accepted_answers": ["0"]
+    },
+    {
+      "id": "fact-planet",
+      "match_mode": "trimmed-exact",
+      "prompt": "Reply with only the planet name: What is the largest planet in the Solar System?",
+      "accepted_answers": ["Jupiter"]
+    },
+    {
+      "id": "fact-chemical-symbol",
+      "match_mode": "trimmed-exact",
+      "prompt": "Reply with only the chemical symbol for gold.",
+      "accepted_answers": ["Au"]
+    }
+  ],
+  "performance": {
+    "prompt": "ParetoPilot evaluates several inference configurations on one controlled Arm64 host. It records raw samples, validates provenance, applies a declared quality floor and resource ceilings, computes the non-dominated candidates, and explains why a configuration should or should not be deployed. Summarize the value of transparent, reproducible optimization evidence for an engineering team.",
+    "generation_tokens": 64,
+    "repetitions": 10,
+    "warmups": 1
+  }
+}

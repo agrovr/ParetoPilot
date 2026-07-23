@@ -104,7 +104,7 @@ class AnalysisTests(unittest.TestCase):
         self.assertEqual(result["frontier_ids"], ["balanced"])
         self.assertIn("fast-low-quality", result["rejected"])
         self.assertEqual(result["constraints"]["min_quality_retention"], 0.95)
-        self.assertEqual(result["paretopilot_version"], "1.0.0")
+        self.assertEqual(result["paretopilot_version"], "1.1.0")
 
     def test_quality_retention_requires_positive_baseline(self) -> None:
         data = BenchmarkSet.from_mapping(

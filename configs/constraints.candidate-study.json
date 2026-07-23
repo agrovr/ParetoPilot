@@ -5,7 +5,9 @@
     "e2e_latency_ms_p95": 15000,
     "peak_rss_mib": 4096
   },
-  "min_values": {},
+  "min_values": {
+    "quality_score": 0.9
+  },
   "objective": {
     "metric": "e2e_latency_ms_p95",
     "direction": "min"

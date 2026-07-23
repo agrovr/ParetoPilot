@@ -9,7 +9,7 @@ Arm Performix is an optional profiling enhancement; it is not required by the pr
 evidence pipeline.
 
 [Live decision report](https://agrovr.github.io/ParetoPilot/) |
-[Canonical result](results/published/29973188507/README.md) |
+[Published v1.0 result](results/published/29973188507/README.md) |
 [Complete evidence release](https://github.com/agrovr/ParetoPilot/releases/tag/v1.0.0) |
 [Reproduction guide](docs/reproducibility.md)
 
@@ -28,7 +28,7 @@ into an inspectable deployment decision:
 The baseline is allowed to win. An honest no-change result is more useful than extra deployment
 complexity for a gain below the decision tolerance.
 
-## Canonical Arm64 result
+## Published canonical Arm64 result
 
 [Run `29973188507`](https://github.com/agrovr/ParetoPilot/actions/runs/29973188507)
 compared four configurations in balanced order on one GitHub-hosted Arm Neoverse-N2 runner.
@@ -50,7 +50,7 @@ smaller model and 42.8% less peak RSS, raised prompt throughput by 29.0%, and re
 14.6%. It also had 0.08% higher p95 end-to-end latency and 5.2% lower generation throughput. No
 candidate won every metric, and all four stayed on the Pareto frontier.
 
-## How the evidence is built
+## How the published v1.0 evidence was built
 
 - One native `ubuntu-24.04-arm` job builds pinned generic and KleidiAI-enabled `llama.cpp`
   binaries and verifies two pinned Qwen2.5 1.5B Instruct model files.
@@ -66,6 +66,30 @@ candidate won every metric, and all four stayed on the Pareto frontier.
 The permanent release contains every raw sample, command, environment record, build log,
 dispatch log, manifest, recommendation, and offline report. For the canonical run, the Git
 repository keeps only a short reviewed summary and an exact archive lock.
+
+## Additive v1.1 evidence
+
+The current code extends that core with stricter quality, policy, load, and repeat-stability
+evidence. These features do not retroactively change the published result:
+
+- A checksummed 24-case behavior suite uses declared `trimmed-exact` and strict `json-exact`
+  matching. The candidate constraints require both a 0.90 absolute quality floor and full
+  retention of the measured reference score.
+- `policy-profiles.json` precomputes the canonical latency decision plus four clearly labeled
+  non-canonical deployment scenarios from the same validated benchmark set.
+- A bounded 1/2/4-client load sweep records raw requests and SLO outcomes. Its evidence binds the
+  load plan, request endpoint, exact load-server command, and canonical deployment command for
+  every candidate; only host and port binding differences are permitted.
+- Each balanced pass is reconstructed from its checksummed raw throughput, server-evaluation,
+  GNU `time -v`, and settings files before stability is summarized. The summary reports observed
+  direction and relative spread only, with no statistical-significance claim.
+- Replay verifies the checksummed archive and regenerates the core benchmark, recommendation,
+  policy profiles, combined load evaluation, pass benchmark sets, and stability summary. HTML
+  drift remains a presentation warning rather than being treated as changed measurement data.
+
+No canonical v1.1 Arm64 result is published yet. Until a fresh v1.1 workflow run passes review and
+is locked in a release, the v1.0 run above remains the authoritative measured evidence. See the
+[v1.1 evidence contract](docs/evidence-extensions-v1.1.md) for the additive boundary.
 
 ## Quick start
 
@@ -130,8 +154,8 @@ trees, or credentials. Only compact evidence is retained.
 - Candidate summaries reconcile reported runtime settings with declared settings.
 - Missing fingerprints, mismatched commands, invalid checksums, incomplete runs, or absent
   dispatch proof fail closed.
-- The five-case exact-answer evaluation is a smoke gate, not a broad language-model quality
-  benchmark.
+- The published v1.0 five-case suite and the v1.1 24-case behavior suite are deterministic gates,
+  not broad language-model quality benchmarks.
 - The canonical result is one controlled hosted-runner comparison. It does not claim the same
   ranking on every Arm processor, model, workload, or concurrency level.
 - Energy and cost were not measured.
@@ -140,8 +164,8 @@ trees, or credentials. Only compact evidence is retained.
 
 ```text
 src/paretopilot/                 validation, assembly, selection, and reporting
-evals/qwen-smoke-v1.json         fixed quality and latency smoke suite
-configs/                         declared decision constraints
+evals/                           versioned quality and latency suites
+configs/                         decision, policy-profile, and bounded-load declarations
 results/published/29973188507/   concise canonical summary and release lock
 .github/workflows/               cross-platform CI, Arm64 study, and verified Pages deploy
 docs/                            architecture, methodology, contracts, and reproduction

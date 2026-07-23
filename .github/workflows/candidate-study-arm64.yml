@@ -31,9 +31,15 @@ env:
   Q4_FILENAME: qwen2.5-1.5b-instruct-q4_0.gguf
   Q4_SHA256: dcd819ff094852c38faba6873d8ff0c9d51eadb2844539e52042ae5d647bbfdb
   Q4_SIZE_BYTES: "1066227232"
-  EVAL_SUITE: evals/qwen-smoke-v1.json
-  EVAL_SUITE_ID: paretopilot-qwen-smoke-v1
-  EVAL_SUITE_SHA256: 0fa39498414dc2b1c9dd7a7b75680182b5c01dee1bbdcb5ed4cfaddb847896e9
+  EVAL_SUITE: evals/qwen-behavior-v2.json
+  EVAL_SUITE_ID: paretopilot-qwen-behavior-v2
+  EVAL_SUITE_SHA256: e49c16fba32fd65c947264aef4141026ab68b1fd415ef09eeea6e8ade9a545c7
+  LOAD_PLAN: configs/load.arm64.json
+  LOAD_PLAN_SHA256: b10f61b7093f58ad6d142deafd7d6befe600d1d54a433b59c101131dd8c2d9bb
+  POLICY_CONFIG: configs/policies.arm64.json
+  POLICY_CONFIG_SHA256: 7621b7ffaba32f1670821eaddb79b720dca9cb1e8753873a732c168110415a78
+  CONSTRAINTS_CONFIG: configs/constraints.candidate-study.json
+  CONSTRAINTS_CONFIG_SHA256: 0efbf046dbf469580067ae3935a0b3461c51b06a896b700325f8242be9f7f90b
   THREADS: "4"
   CONTEXT_SIZE: "2048"
   PROMPT_TOKENS: "512"
@@ -104,6 +110,10 @@ jobs:
           done
           test -x /usr/bin/time
           printf '%s  %s\n' "$EVAL_SUITE_SHA256" "$EVAL_SUITE" | sha256sum --check
+          printf '%s  %s\n' "$LOAD_PLAN_SHA256" "$LOAD_PLAN" | sha256sum --check
+          printf '%s  %s\n' "$POLICY_CONFIG_SHA256" "$POLICY_CONFIG" | sha256sum --check
+          printf '%s  %s\n' "$CONSTRAINTS_CONFIG_SHA256" "$CONSTRAINTS_CONFIG" \
+            | sha256sum --check
           python -m paretopilot doctor --require-evidence-host
 
       - name: Capture Arm64 runner identity
@@ -683,10 +693,141 @@ jobs:
               "artifacts/experiment/candidates/$candidate/server-pass-2.stderr.log"
           done
 
+      - name: Run bounded multi-client load sweep
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p artifacts/extensions/load
+          cp "$LOAD_PLAN" artifacts/extensions/load-plan.json
+
+          run_load_candidate() (
+            set -euo pipefail
+            local candidate="$1"
+            local build="$2"
+            local model="$3"
+            local batch="$4"
+            local ubatch="$5"
+            local port="$6"
+            local directory="artifacts/extensions/load/$candidate"
+            local command_file="$directory/server-command.json"
+            local stdout_file="$directory/server.stdout.log"
+            local stderr_file="$directory/server.stderr.log"
+            local output_file="$directory/load-evaluation.json"
+            mkdir -p "$directory"
+            python - "$command_file" "$build" "$model" "$batch" "$ubatch" "$port" <<'PY'
+          import json
+          import os
+          from pathlib import Path
+          import sys
+
+          output, build, model, batch, ubatch, port = sys.argv[1:]
+          argv = [
+              f"./.candidate-build/{build}/bin/llama-server",
+              "--model", f"./.candidate-models/{model}",
+              "--threads", os.environ["THREADS"],
+              "--threads-batch", os.environ["THREADS"],
+              "--batch-size", batch,
+              "--ubatch-size", ubatch,
+              "--ctx-size", os.environ["CONTEXT_SIZE"],
+              "--parallel", "1",
+              "--n-gpu-layers", "0",
+              "-lv", "4",
+              "--host", "127.0.0.1",
+              "--port", port,
+          ]
+          Path(output).write_text(
+              json.dumps({"schema_version": "1.0", "argv": argv}, indent=2, sort_keys=True)
+              + "\n",
+              encoding="utf-8",
+          )
+          PY
+            mapfile -t argv < <(python - "$command_file" <<'PY'
+          import json
+          from pathlib import Path
+          import sys
+
+          for argument in json.loads(Path(sys.argv[1]).read_text(encoding="utf-8"))["argv"]:
+              print(argument)
+          PY
+            )
+            "${argv[@]}" > "$stdout_file" 2> "$stderr_file" &
+            local server_pid=$!
+            cleanup() {
+              if kill -0 "$server_pid" 2>/dev/null; then
+                kill -INT "$server_pid" 2>/dev/null || true
+              fi
+              for _ in $(seq 1 30); do
+                kill -0 "$server_pid" 2>/dev/null || break
+                sleep 1
+              done
+              if kill -0 "$server_pid" 2>/dev/null; then
+                kill -TERM "$server_pid" 2>/dev/null || true
+              fi
+              for _ in $(seq 1 10); do
+                kill -0 "$server_pid" 2>/dev/null || break
+                sleep 1
+              done
+              if kill -0 "$server_pid" 2>/dev/null; then
+                kill -KILL "$server_pid" 2>/dev/null || true
+              fi
+              wait "$server_pid" 2>/dev/null || true
+            }
+            trap cleanup EXIT
+            for _ in $(seq 1 120); do
+              if curl --fail --silent --connect-timeout 2 --max-time 5 \
+                "http://127.0.0.1:${port}/health" >/dev/null; then
+                break
+              fi
+              if ! kill -0 "$server_pid" 2>/dev/null; then
+                echo "::error::$candidate load server exited before health check"
+                tail -n 200 "$stderr_file" || true
+                exit 8
+              fi
+              sleep 1
+            done
+            curl --fail --silent --connect-timeout 2 --max-time 5 \
+              "http://127.0.0.1:${port}/health" >/dev/null
+            python -m paretopilot evaluate-load \
+              --base-url "http://127.0.0.1:${port}" \
+              --candidate-id "$candidate" \
+              --plan "$LOAD_PLAN" \
+              --server-command "$command_file" \
+              --canonical-server-command \
+                "artifacts/experiment/candidates/$candidate/server-command.json" \
+              --output "$output_file"
+            cleanup
+            trap - EXIT
+          )
+
+          run_load_candidate q8-generic generic "$Q8_FILENAME" 512 128 18181
+          run_load_candidate q4-generic generic "$Q4_FILENAME" 512 128 18182
+          run_load_candidate q4-kleidiai kleidiai "$Q4_FILENAME" 512 128 18183
+          run_load_candidate q4-kleidiai-tuned kleidiai "$Q4_FILENAME" 512 512 18184
+
+          for candidate in q8-generic q4-generic; do
+            if grep -Fq "CPU_KLEIDIAI model buffer" \
+              "artifacts/extensions/load/$candidate/server.stderr.log"; then
+              echo "::error::$candidate load server unexpectedly dispatched KleidiAI"
+              exit 9
+            fi
+          done
+          for candidate in q4-kleidiai q4-kleidiai-tuned; do
+            grep -Fq "CPU_KLEIDIAI model buffer" \
+              "artifacts/extensions/load/$candidate/server.stderr.log"
+          done
+
+          python -m paretopilot combine-load \
+            --input artifacts/extensions/load/q8-generic/load-evaluation.json \
+            --input artifacts/extensions/load/q4-generic/load-evaluation.json \
+            --input artifacts/extensions/load/q4-kleidiai/load-evaluation.json \
+            --input artifacts/extensions/load/q4-kleidiai-tuned/load-evaluation.json \
+            --output artifacts/extensions/load-evaluation.json
+
       - name: Build and verify experiment manifest
         shell: bash
         run: |
           set -euo pipefail
+          cp "$EVAL_SUITE" artifacts/experiment/evaluation-suite.json
           python - <<'PY'
           import datetime as dt
           import hashlib
@@ -869,6 +1010,7 @@ jobs:
                   "id": os.environ["EVAL_SUITE_ID"],
                   "sha256": os.environ["EVAL_SUITE_SHA256"],
               },
+              "evaluation_suite_path": "evaluation-suite.json",
               "candidates": manifest_candidates,
           }
           (root / "manifest.json").write_text(
@@ -884,12 +1026,54 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          cp configs/constraints.candidate-study.json artifacts/experiment/constraints.json
+          cp "$CONSTRAINTS_CONFIG" artifacts/experiment/constraints.json
           python -m paretopilot report \
             artifacts/experiment/benchmark-set.json \
             --constraints artifacts/experiment/constraints.json \
             --output artifacts/experiment/report.html \
             --recommendation-output artifacts/experiment/recommendation.json
+
+      - name: Build v1.1 policy, repeat-stability, and report extensions
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p artifacts/extensions
+          cp "$EVAL_SUITE" artifacts/extensions/evaluation-suite.json
+          cp "$POLICY_CONFIG" artifacts/extensions/policy-config.json
+
+          python -m paretopilot assemble-repeat-pass \
+            --experiment artifacts/experiment \
+            --pass-number 1 \
+            --output artifacts/extensions/benchmark-set-pass-1.json
+          python -m paretopilot assemble-repeat-pass \
+            --experiment artifacts/experiment \
+            --pass-number 2 \
+            --output artifacts/extensions/benchmark-set-pass-2.json
+
+          python -m paretopilot summarize-stability \
+            --input pass-1=artifacts/extensions/benchmark-set-pass-1.json \
+            --input pass-2=artifacts/extensions/benchmark-set-pass-2.json \
+            --metric prompt_tps=max \
+            --metric generation_tps=max \
+            --metric quality_score=max \
+            --metric ttft_ms_p95=min \
+            --metric e2e_latency_ms_p95=min \
+            --metric peak_rss_mib=min \
+            --output artifacts/extensions/repeat-stability.json
+
+          python -m paretopilot profiles \
+            artifacts/experiment/benchmark-set.json \
+            --constraints artifacts/experiment/constraints.json \
+            --policies artifacts/extensions/policy-config.json \
+            --output artifacts/extensions/policy-profiles.json
+
+          python -m paretopilot report-v11 \
+            artifacts/experiment/benchmark-set.json \
+            --recommendation artifacts/experiment/recommendation.json \
+            --profiles artifacts/extensions/policy-profiles.json \
+            --load artifacts/extensions/load-evaluation.json \
+            --stability artifacts/extensions/repeat-stability.json \
+            --output artifacts/report-v1.1.html
 
       - name: Finalize checksummed evidence bundle
         shell: bash
@@ -908,7 +1092,8 @@ jobs:
               "measurement_valid": True,
               "classification": "canonical" if canonical else "exploratory",
               "reason": (
-                  "all candidate, quality, latency, memory, integrity, selection, and report gates passed"
+                  "all candidate, quality, latency, memory, load, repeat-stability, "
+                  "integrity, policy, selection, and report gates passed"
                   if canonical
                   else "measurement gates passed, but branch or inputs are exploratory"
               ),

@@ -506,6 +506,116 @@ def _rewrite_manifest(path: Path, manifest: dict) -> None:
     _write_json(path, manifest)
 
 
+def _bind_evaluation_suite_file(
+    root: Path,
+    manifest_path: Path,
+    manifest: dict,
+) -> Path:
+    suite = {
+        "schema_version": "1.0",
+        "id": "paretopilot-qwen-behavior-v2",
+        "license": "CC0-1.0",
+        "quality_cases": [
+            {
+                "id": "arithmetic",
+                "prompt": "Return only the result of 2 + 2.",
+                "accepted_answers": ["4"],
+                "match_mode": "normalized-text",
+            },
+            {
+                "id": "capital",
+                "prompt": "Return only the capital of France.",
+                "accepted_answers": ["Paris"],
+                "match_mode": "normalized-text",
+            },
+        ],
+        "performance": {
+            "prompt": "Explain why reproducible measurements matter.",
+            "generation_tokens": 64,
+            "repetitions": 5,
+            "warmups": 1,
+        },
+    }
+    suite_path = root / "evaluation-suite.json"
+    _write_json(suite_path, suite)
+    suite_sha256 = _sha256(suite_path)
+    manifest["evaluation_suite"] = {
+        "id": suite["id"],
+        "sha256": suite_sha256,
+    }
+    manifest["evaluation_suite_path"] = "evaluation-suite.json"
+
+    for candidate in manifest["candidates"]:
+        refs = candidate["artifacts"]
+        pass_paths = []
+        for pass_number in (1, 2):
+            ref = refs[f"server_evaluation_pass_{pass_number}"]
+            path = root / Path(ref["path"])
+            payload = json.loads(path.read_text(encoding="utf-8"))
+            payload["suite"].update(
+                {
+                    "id": suite["id"],
+                    "license": suite["license"],
+                    "sha256": suite_sha256,
+                    "quality_case_count": len(suite["quality_cases"]),
+                    "performance_repetitions": suite["performance"]["repetitions"],
+                    "performance_warmups": suite["performance"]["warmups"],
+                    "generation_tokens": suite["performance"]["generation_tokens"],
+                }
+            )
+            for case, expected in zip(
+                payload["quality"]["cases"],
+                suite["quality_cases"],
+                strict=True,
+            ):
+                case["match_mode"] = expected["match_mode"]
+            _write_json(path, payload)
+            ref["sha256"] = _sha256(path)
+            pass_paths.append(path)
+
+        aggregate_ref = refs["server_evaluation"]
+        aggregate_path = root / Path(aggregate_ref["path"])
+        _write_json(aggregate_path, pool_server_evaluations(pass_paths))
+        aggregate_ref["sha256"] = _sha256(aggregate_path)
+
+        resource_ref = refs["resource_measurement"]
+        resource_path = root / Path(resource_ref["path"])
+        resource = json.loads(resource_path.read_text(encoding="utf-8"))
+        resource["evaluation_suite"] = {
+            "id": suite["id"],
+            "sha256": suite_sha256,
+        }
+        _write_json(resource_path, resource)
+        resource_ref["sha256"] = _sha256(resource_path)
+
+    _rewrite_manifest(manifest_path, manifest)
+    return suite_path
+
+
+def _set_server_run_counts(
+    payload: dict,
+    *,
+    repetitions: int | None = None,
+    warmups: int | None = None,
+) -> None:
+    if repetitions is not None:
+        payload["suite"]["performance_repetitions"] = repetitions
+        samples = payload["latency"]["samples"][:repetitions]
+        payload["latency"]["samples"] = samples
+        for field, source in (
+            ("ttft_ms_p50", "ttft_ms"),
+            ("ttft_ms_p95", "ttft_ms"),
+            ("e2e_latency_ms_p50", "e2e_latency_ms"),
+            ("e2e_latency_ms_p95", "e2e_latency_ms"),
+        ):
+            values = sorted(float(sample[source]) for sample in samples)
+            percentile = 50 if field.endswith("p50") else 95
+            rank = max(1, (percentile * len(values) + 99) // 100)
+            payload["latency"][field] = values[rank - 1]
+    if warmups is not None:
+        payload["suite"]["performance_warmups"] = warmups
+
+
 def _mutate_artifact(
     root: Path,
     manifest_path: Path,
@@ -545,6 +655,151 @@ def _mutate_text_artifact(
 
 
 class ExperimentAssemblyTests(unittest.TestCase):
+    def test_checksummed_v2_evaluation_suite_is_bound_to_every_server_artifact(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            manifest_path, manifest = _build_experiment(root)
+            _bind_evaluation_suite_file(root, manifest_path, manifest)
+
+            mapping = assemble_experiment(manifest_path)
+
+            self.assertEqual(
+                mapping["metadata"]["evaluation_suite"]["id"],
+                "paretopilot-qwen-behavior-v2",
+            )
+            self.assertEqual(
+                mapping["metadata"]["evaluation_suite"]["sha256"],
+                _sha256(root / "evaluation-suite.json"),
+            )
+
+    def test_v2_suite_path_hash_contract_and_run_settings_fail_closed(self) -> None:
+        scenarios = (
+            (
+                "missing path",
+                lambda root, manifest, suite: manifest.pop("evaluation_suite_path"),
+                "requires a checksummed evaluation_suite_path",
+            ),
+            (
+                "unsafe path",
+                lambda root, manifest, suite: manifest.update(
+                    {"evaluation_suite_path": "../evaluation-suite.json"}
+                ),
+                "portable relative POSIX path",
+            ),
+            (
+                "suite hash",
+                lambda root, manifest, suite: _write_text(suite, "{}\n"),
+                "SHA-256 mismatch",
+            ),
+            (
+                "duplicate artifact path",
+                lambda root, manifest, suite: manifest["candidates"][0]["artifacts"][
+                    "throughput_settings"
+                ].update(
+                    {
+                        "path": "evaluation-suite.json",
+                        "sha256": _sha256(suite),
+                    }
+                ),
+                "artifact paths must be unique",
+            ),
+            (
+                "license",
+                lambda root, manifest, suite: _mutate_artifact(
+                    root,
+                    root / "experiment.json",
+                    manifest,
+                    0,
+                    "server_evaluation",
+                    lambda payload: payload["suite"].update({"license": "unknown"}),
+                ),
+                "license does not match",
+            ),
+            (
+                "case prompt",
+                lambda root, manifest, suite: _mutate_artifact(
+                    root,
+                    root / "experiment.json",
+                    manifest,
+                    0,
+                    "server_evaluation",
+                    lambda payload: payload["quality"]["cases"][0].update(
+                        {"prompt": "Different prompt"}
+                    ),
+                ),
+                "does not match the checksummed evaluation suite",
+            ),
+            (
+                "case answers",
+                lambda root, manifest, suite: _mutate_artifact(
+                    root,
+                    root / "experiment.json",
+                    manifest,
+                    0,
+                    "server_evaluation",
+                    lambda payload: payload["quality"]["cases"][0].update(
+                        {"accepted_answers": ["4", "four"]}
+                    ),
+                ),
+                "does not match the checksummed evaluation suite",
+            ),
+            (
+                "case mode",
+                lambda root, manifest, suite: _mutate_artifact(
+                    root,
+                    root / "experiment.json",
+                    manifest,
+                    0,
+                    "server_evaluation",
+                    lambda payload: payload["quality"]["cases"][0].update(
+                        {"match_mode": "trimmed-exact"}
+                    ),
+                ),
+                "does not match the checksummed evaluation suite",
+            ),
+            (
+                "repetitions",
+                lambda root, manifest, suite: _mutate_artifact(
+                    root,
+                    root / "experiment.json",
+                    manifest,
+                    0,
+                    "server_evaluation",
+                    lambda payload: _set_server_run_counts(
+                        payload,
+                        repetitions=9,
+                    ),
+                ),
+                "performance_repetitions does not match",
+            ),
+            (
+                "warmups",
+                lambda root, manifest, suite: _mutate_artifact(
+                    root,
+                    root / "experiment.json",
+                    manifest,
+                    0,
+                    "server_evaluation",
+                    lambda payload: _set_server_run_counts(
+                        payload,
+                        warmups=3,
+                    ),
+                ),
+                "performance_warmups does not match",
+            ),
+        )
+        for label, mutate, message in scenarios:
+            with self.subTest(label=label), tempfile.TemporaryDirectory() as temporary:
+                root = Path(temporary)
+                manifest_path, manifest = _build_experiment(root)
+                suite_path = _bind_evaluation_suite_file(root, manifest_path, manifest)
+                mutate(root, manifest, suite_path)
+                _rewrite_manifest(manifest_path, manifest)
+                with self.assertRaisesRegex(ExperimentAssemblyError, message):
+                    assemble_experiment(manifest_path)
+
     def test_intended_four_candidate_study_is_domain_and_recommend_compatible(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
@@ -951,7 +1206,8 @@ class ExperimentAssemblyTests(unittest.TestCase):
                 ),
             )
             with self.assertRaisesRegex(
-                ExperimentAssemblyError, "does not agree with the response"
+                ExperimentAssemblyError,
+                "matched outcome does not match response|does not agree with the response",
             ):
                 assemble_experiment(manifest_path)
 

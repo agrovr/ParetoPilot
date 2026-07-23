@@ -1,0 +1,18 @@
+{
+  "schema_version": "1.0",
+  "prompts": [
+    "An engineering team is choosing an Arm64 inference configuration. Explain in two concise sentences why measured latency and memory evidence should be reviewed together.",
+    "Summarize this deployment note in two concise sentences: the service must preserve response quality, keep tail latency within its declared limit, and leave enough memory for other workloads.",
+    "Describe in two concise sentences how a reproducible benchmark helps a student developer make an honest deployment decision."
+  ],
+  "output_tokens": 64,
+  "warmup_requests_per_level": 4,
+  "measured_requests_per_level": 8,
+  "concurrency_levels": [1, 2, 4],
+  "timeout_seconds": 180.0,
+  "slo": {
+    "min_completion_rate": 1.0,
+    "max_ttft_ms_p95": 2000.0,
+    "max_e2e_latency_ms_p95": 6500.0
+  }
+}

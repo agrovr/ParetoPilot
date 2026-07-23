@@ -8,15 +8,18 @@ from unittest.mock import patch
 
 from paretopilot.domain import ValidationError
 from paretopilot.server_eval import (
+    _answer_matches,
     evaluate_server,
     load_evaluation_suite,
     parse_gnu_time_peak_rss,
     pool_server_evaluations,
+    validate_server_evaluation,
 )
 
 
 ROOT = Path(__file__).parents[1]
 SUITE = ROOT / "evals" / "qwen-smoke-v1.json"
+BEHAVIOR_SUITE = ROOT / "evals" / "qwen-behavior-v2.json"
 
 
 def _evaluation_payload(
@@ -108,12 +111,73 @@ class _Response:
 
 
 class ServerEvalTests(unittest.TestCase):
+    def test_public_validator_checks_one_serialized_evaluation(self) -> None:
+        payload = _evaluation_payload()
+        validate_server_evaluation(payload)
+
+        payload["candidate_id"] = ""
+        with self.assertRaises(ValidationError):
+            validate_server_evaluation(payload)
+
     def test_bundled_suite_is_valid_and_versioned(self) -> None:
         suite = load_evaluation_suite(SUITE)
         self.assertEqual(suite.suite_id, "paretopilot-qwen-smoke-v1")
         self.assertEqual(len(suite.quality_cases), 5)
         self.assertEqual(suite.repetitions, 10)
         self.assertEqual(suite.warmups, 1)
+
+    def test_declared_quality_match_modes_preserve_format_and_json_structure(self) -> None:
+        self.assertTrue(_answer_matches("  ARM READY\n", "ARM READY", "trimmed-exact"))
+        self.assertFalse(_answer_matches("arm ready", "ARM READY", "trimmed-exact"))
+        self.assertFalse(_answer_matches("ARM READY.", "ARM READY", "trimmed-exact"))
+        self.assertTrue(
+            _answer_matches(
+                '{ "workers": 4, "arm64": true }',
+                '{"arm64":true,"workers":4}',
+                "json-exact",
+            )
+        )
+        self.assertFalse(
+            _answer_matches(
+                "arm64 true workers 4",
+                '{"arm64":true,"workers":4}',
+                "json-exact",
+            )
+        )
+        self.assertFalse(
+            _answer_matches(
+                '{"arm64":true,"arm64":true,"workers":4}',
+                '{"arm64":true,"workers":4}',
+                "json-exact",
+            )
+        )
+
+        artifact = _evaluation_payload()
+        case = artifact["quality"]["cases"][0]
+        case["accepted_answers"] = ['{"status":"ready"}']
+        case["match_mode"] = "json-exact"
+        case["response"] = "status ready"
+        case["matched"] = True
+        case["matched_answer"] = '{"status":"ready"}'
+        with self.assertRaisesRegex(ValidationError, "matched outcome"):
+            validate_server_evaluation(artifact)
+
+    def test_expanded_behavior_suite_is_valid_and_balanced(self) -> None:
+        suite = load_evaluation_suite(BEHAVIOR_SUITE)
+
+        self.assertEqual(suite.suite_id, "paretopilot-qwen-behavior-v2")
+        self.assertEqual(len(suite.quality_cases), 24)
+        self.assertEqual(
+            {case.case_id.split("-", 1)[0] for case in suite.quality_cases},
+            {"instruction", "extraction", "classification", "arithmetic", "json", "fact"},
+        )
+        self.assertEqual(suite.generation_tokens, 64)
+        self.assertEqual(suite.repetitions, 10)
+        self.assertEqual(suite.warmups, 1)
+        self.assertEqual(
+            {case.match_mode for case in suite.quality_cases},
+            {"trimmed-exact", "json-exact"},
+        )
 
     def test_suite_rejects_duplicate_ids_and_unknown_fields(self) -> None:
         raw = json.loads(SUITE.read_text(encoding="utf-8"))

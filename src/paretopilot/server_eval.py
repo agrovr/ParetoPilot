@@ -34,6 +34,7 @@ class QualityCase:
     case_id: str
     prompt: str
     accepted_answers: tuple[str, ...]
+    match_mode: str
 
 
 @dataclass(frozen=True)
@@ -74,7 +75,11 @@ def load_evaluation_suite(path: Path) -> EvaluationSuite:
     for index, item in enumerate(raw_cases):
         if not isinstance(item, Mapping):
             raise ValidationError(f"quality_cases[{index}] must be an object")
-        _reject_unknown(item, {"id", "prompt", "accepted_answers"}, f"quality_cases[{index}]")
+        _reject_unknown(
+            item,
+            {"id", "prompt", "accepted_answers", "match_mode"},
+            f"quality_cases[{index}]",
+        )
         case_id = _nonempty_string(item.get("id"), f"quality_cases[{index}].id")
         if case_id in ids:
             raise ValidationError(f"duplicate quality case id {case_id!r}")
@@ -93,7 +98,17 @@ def load_evaluation_suite(path: Path) -> EvaluationSuite:
             _bounded_text(value, f"quality case {case_id!r} accepted answer", 256)
             for value in raw_answers
         )
-        cases.append(QualityCase(case_id, prompt, answers))
+        match_mode = _quality_match_mode(
+            item.get("match_mode", "normalized-text"),
+            f"quality case {case_id!r} match_mode",
+        )
+        if match_mode == "json-exact" and any(
+            _canonical_json(answer) is None for answer in answers
+        ):
+            raise ValidationError(
+                f"quality case {case_id!r} json-exact accepted answers must be valid JSON"
+            )
+        cases.append(QualityCase(case_id, prompt, answers, match_mode))
 
     performance = raw.get("performance")
     if not isinstance(performance, Mapping):
@@ -177,9 +192,12 @@ def evaluate_server(
             timeout_seconds,
         )
         content = _chat_content(response, case.case_id)
-        normalized = _normalize_answer(content)
         matched_answer = next(
-            (answer for answer in case.accepted_answers if normalized == _normalize_answer(answer)),
+            (
+                answer
+                for answer in case.accepted_answers
+                if _answer_matches(content, answer, case.match_mode)
+            ),
             None,
         )
         matched = matched_answer is not None
@@ -189,6 +207,7 @@ def evaluate_server(
                 "id": case.case_id,
                 "prompt": case.prompt,
                 "accepted_answers": list(case.accepted_answers),
+                "match_mode": case.match_mode,
                 "response": content,
                 "matched": matched,
                 "matched_answer": matched_answer,
@@ -307,7 +326,13 @@ def pool_server_evaluations(paths: Sequence[Path]) -> Mapping[str, Any]:
     first_cases = first_quality["cases"]
     assert isinstance(first_cases, list)
     quality_identity = [
-        (case["id"], case["prompt"], tuple(case["accepted_answers"])) for case in first_cases
+        (
+            case["id"],
+            case["prompt"],
+            tuple(case["accepted_answers"]),
+            case.get("match_mode", "normalized-text"),
+        )
+        for case in first_cases
     ]
     quality_outcomes = [(case["matched"], case["matched_answer"]) for case in first_cases]
 
@@ -336,7 +361,15 @@ def pool_server_evaluations(paths: Sequence[Path]) -> Mapping[str, Any]:
             )
         cases = quality["cases"]
         assert isinstance(cases, list)
-        identity = [(case["id"], case["prompt"], tuple(case["accepted_answers"])) for case in cases]
+        identity = [
+            (
+                case["id"],
+                case["prompt"],
+                tuple(case["accepted_answers"]),
+                case.get("match_mode", "normalized-text"),
+            )
+            for case in cases
+        ]
         if identity != quality_identity:
             raise ValidationError(
                 f"server evaluation input {index} quality case identities do not match "
@@ -379,6 +412,12 @@ def pool_server_evaluations(paths: Sequence[Path]) -> Mapping[str, Any]:
             "samples": pooled_samples,
         },
     }
+
+
+def validate_server_evaluation(raw: Mapping[str, Any]) -> None:
+    """Validate one serialized server evaluation without pooling it."""
+
+    _validate_server_evaluation_artifact(raw, "server evaluation")
 
 
 def _validate_server_evaluation_artifact(raw: Mapping[str, Any], context: str) -> None:
@@ -489,11 +528,23 @@ def _validate_server_evaluation_artifact(raw: Mapping[str, Any], context: str) -
     for index, case_value in enumerate(cases):
         case_context = f"{context}.quality.cases[{index}]"
         case = _mapping(case_value, case_context)
-        _require_exact_fields(
-            case,
-            {"id", "prompt", "accepted_answers", "response", "matched", "matched_answer"},
-            case_context,
-        )
+        required_case_fields = {
+            "id",
+            "prompt",
+            "accepted_answers",
+            "response",
+            "matched",
+            "matched_answer",
+        }
+        missing_case_fields = sorted(required_case_fields - set(case))
+        unknown_case_fields = sorted(set(case) - required_case_fields - {"match_mode"})
+        if missing_case_fields or unknown_case_fields:
+            details: list[str] = []
+            if missing_case_fields:
+                details.append("missing fields: " + ", ".join(missing_case_fields))
+            if unknown_case_fields:
+                details.append("unknown fields: " + ", ".join(unknown_case_fields))
+            raise ValidationError(f"{case_context} has {'; '.join(details)}")
         case_id = _nonempty_string(case.get("id"), f"{case_context}.id")
         if case_id in seen_case_ids:
             raise ValidationError(f"{context}.quality.cases contains duplicate id {case_id!r}")
@@ -508,6 +559,16 @@ def _validate_server_evaluation_artifact(raw: Mapping[str, Any], context: str) -
             _nonempty_string(answer, f"{case_context}.accepted_answers[{answer_index}]")
             for answer_index, answer in enumerate(answers)
         ]
+        match_mode = _quality_match_mode(
+            case.get("match_mode", "normalized-text"),
+            f"{case_context}.match_mode",
+        )
+        if match_mode == "json-exact" and any(
+            _canonical_json(answer) is None for answer in accepted_answers
+        ):
+            raise ValidationError(
+                f"{case_context}.accepted_answers must be valid JSON for json-exact"
+            )
         response = case.get("response")
         if not isinstance(response, str):
             raise ValidationError(f"{case_context}.response must be a string")
@@ -515,11 +576,8 @@ def _validate_server_evaluation_artifact(raw: Mapping[str, Any], context: str) -
         if not isinstance(matched, bool):
             raise ValidationError(f"{case_context}.matched must be a boolean")
         matched_answer = case.get("matched_answer")
-        normalized_response = _normalize_answer(response)
         matching_answers = [
-            answer
-            for answer in accepted_answers
-            if normalized_response == _normalize_answer(answer)
+            answer for answer in accepted_answers if _answer_matches(response, answer, match_mode)
         ]
         if matched:
             if not isinstance(matched_answer, str) or matched_answer not in accepted_answers:
@@ -774,6 +832,67 @@ def _percentile(values: Sequence[float], percentile: int) -> float:
 
 def _normalize_answer(value: str) -> str:
     return re.sub(r"[^a-z0-9]+", "", value.casefold())
+
+
+def _quality_match_mode(value: Any, context: str) -> str:
+    if value not in {"normalized-text", "trimmed-exact", "json-exact"}:
+        raise ValidationError(
+            f"{context} must be 'normalized-text', 'trimmed-exact', or 'json-exact'"
+        )
+    return str(value)
+
+
+def quality_answer_matches(
+    response: str,
+    accepted_answer: str,
+    match_mode: str,
+) -> bool:
+    """Apply one validated deterministic quality-case matching contract."""
+
+    if match_mode == "normalized-text":
+        return _normalize_answer(response) == _normalize_answer(accepted_answer)
+    if match_mode == "trimmed-exact":
+        return response.strip() == accepted_answer.strip()
+    if match_mode == "json-exact":
+        response_json = _canonical_json(response)
+        accepted_json = _canonical_json(accepted_answer)
+        return response_json is not None and response_json == accepted_json
+    raise ValidationError(f"unknown quality match mode {match_mode!r}")
+
+
+def _answer_matches(response: str, accepted_answer: str, match_mode: str) -> bool:
+    """Backward-compatible private alias used by focused unit tests."""
+
+    return quality_answer_matches(response, accepted_answer, match_mode)
+
+
+def _canonical_json(value: str) -> str | None:
+    def reject_duplicate_keys(pairs: Sequence[tuple[str, Any]]) -> Mapping[str, Any]:
+        parsed: dict[str, Any] = {}
+        for key, item in pairs:
+            if key in parsed:
+                raise ValueError(f"duplicate JSON key {key!r}")
+            parsed[key] = item
+        return parsed
+
+    def reject_constant(value: str) -> None:
+        raise ValueError(f"non-standard JSON constant {value!r}")
+
+    try:
+        parsed = json.loads(
+            value.strip(),
+            object_pairs_hook=reject_duplicate_keys,
+            parse_constant=reject_constant,
+        )
+        return json.dumps(
+            parsed,
+            allow_nan=False,
+            ensure_ascii=False,
+            separators=(",", ":"),
+            sort_keys=True,
+        )
+    except (json.JSONDecodeError, TypeError, ValueError):
+        return None
 
 
 def _reject_unknown(raw: Mapping[str, Any], allowed: set[str], context: str) -> None:
