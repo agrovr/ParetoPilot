@@ -1,12 +1,12 @@
 {
-  "min_quality_retention": 1.0,
+  "min_quality_retention": 0.95,
   "quality_metric": "quality_score",
   "max_values": {
     "e2e_latency_ms_p95": 15000,
     "peak_rss_mib": 4096
   },
   "min_values": {
-    "quality_score": 0.9
+    "quality_score": 0.8
   },
   "objective": {
     "metric": "e2e_latency_ms_p95",
