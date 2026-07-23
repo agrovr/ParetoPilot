@@ -515,9 +515,9 @@ class CliTests(unittest.TestCase):
             self.assertEqual(overwrite_exit, 2)
             self.assertIn("refusing to overwrite", stderr.getvalue())
 
-    def test_published_bundle_to_report_is_one_verified_workflow(self) -> None:
+    def test_paired_fixture_to_report_is_one_verified_workflow(self) -> None:
         repository = Path(__file__).parents[1]
-        bundle = repository / "results" / "published" / "29940067201"
+        bundle = repository / "tests" / "fixtures" / "paired-study"
         with TemporaryDirectory() as directory:
             output_root = Path(directory)
             benchmarks = output_root / "benchmarks.json"
@@ -567,7 +567,7 @@ class CliTests(unittest.TestCase):
 
     def test_verify_study_does_not_write_files(self) -> None:
         repository = Path(__file__).parents[1]
-        bundle = repository / "results" / "published" / "29940067201"
+        bundle = repository / "tests" / "fixtures" / "paired-study"
         stdout = io.StringIO()
         with patch("sys.stdout", stdout):
             exit_code = cli.main(["verify-study", str(bundle)])

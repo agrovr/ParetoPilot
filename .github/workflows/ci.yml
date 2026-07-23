@@ -34,8 +34,8 @@ jobs:
         run: |
           paretopilot --version
           paretopilot validate examples/synthetic-results.json
+          paretopilot recommend examples/synthetic-results.json --constraints configs/constraints.example.json
           paretopilot validate-llama-bench tests/fixtures/llama_bench.synthetic.jsonl
-          paretopilot verify-study results/published/29940067201
 
   package:
     runs-on: ubuntu-latest
@@ -58,5 +58,8 @@ jobs:
           python -m venv "$RUNNER_TEMP/paretopilot-wheel-smoke"
           "$RUNNER_TEMP/paretopilot-wheel-smoke/bin/python" -m pip install --no-deps dist/*.whl
           "$RUNNER_TEMP/paretopilot-wheel-smoke/bin/paretopilot" --version
-          "$RUNNER_TEMP/paretopilot-wheel-smoke/bin/paretopilot" verify-study \
-            results/published/29940067201
+          "$RUNNER_TEMP/paretopilot-wheel-smoke/bin/paretopilot" validate \
+            examples/synthetic-results.json
+          "$RUNNER_TEMP/paretopilot-wheel-smoke/bin/paretopilot" recommend \
+            examples/synthetic-results.json \
+            --constraints configs/constraints.example.json

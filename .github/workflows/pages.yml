@@ -5,7 +5,7 @@ on:
     branches: [main]
     paths:
       - ".github/workflows/pages.yml"
-      - "docs/assets/**"
+      - "configs/constraints.candidate-study.json"
       - "results/published/**"
       - "src/paretopilot/**"
   workflow_dispatch:
@@ -21,7 +21,7 @@ concurrency:
 
 jobs:
   deploy:
-    name: Publish static evidence report
+    name: Verify evidence and publish report
     runs-on: ubuntu-24.04
     environment:
       name: github-pages
@@ -32,26 +32,131 @@ jobs:
         with:
           persist-credentials: false
 
+      - name: Set up Python
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.12"
+
       - name: Configure Pages
         uses: actions/configure-pages@45bfe0192ca1faeb007ade9deae92b16b8254a0d # v6.0.0
 
-      - name: Assemble static site
+      - name: Download and verify locked release evidence
         shell: bash
         run: |
           set -euo pipefail
-          mkdir -p _site/assets
-          PYTHONPATH=src python -m paretopilot assemble-study \
-            results/published/29940067201 \
-            --benchmarks-output _site/benchmark-set.json \
-            --constraints-output _site/constraints.json \
-            --assembly-output _site/assembly.json
+          python - <<'PY'
+          from __future__ import annotations
+
+          import hashlib
+          import json
+          from pathlib import Path, PurePosixPath
+          import re
+          from urllib.request import Request, urlopen
+          from zipfile import ZipFile
+
+          lock_path = Path("results/published/29973188507/evidence.json")
+          lock = json.loads(lock_path.read_text(encoding="utf-8"))
+          source = lock["source"]
+          archive = lock["archive"]
+          review = lock["review"]
+
+          if lock["schema_version"] != "1.0" or lock["classification"] != "canonical":
+              raise SystemExit("evidence lock is not canonical schema 1.0")
+          if archive["actions_digest"] != f"sha256:{archive['sha256']}":
+              raise SystemExit("Actions and release digest declarations disagree")
+
+          root = Path("output/pages")
+          archive_path = root / archive["release_asset_name"]
+          extracted = root / "evidence"
+          root.mkdir(parents=True)
+          request = Request(
+              archive["release_asset_url"],
+              headers={"User-Agent": "ParetoPilot-Pages-evidence-verifier"},
+          )
+          with urlopen(request, timeout=60) as response:
+              payload = response.read(archive["size_bytes"] + 1)
+          if len(payload) != archive["size_bytes"]:
+              raise SystemExit("release asset size does not match evidence lock")
+          digest = hashlib.sha256(payload).hexdigest()
+          if digest != archive["sha256"]:
+              raise SystemExit("release asset SHA-256 does not match evidence lock")
+          archive_path.write_bytes(payload)
+
+          with ZipFile(archive_path) as bundle:
+              members = bundle.infolist()
+              for member in members:
+                  path = PurePosixPath(member.filename)
+                  if path.is_absolute() or ".." in path.parts:
+                      raise SystemExit(f"unsafe ZIP member: {member.filename}")
+              bundle.extractall(extracted)
+
+          checksum_path = extracted / "SHA256SUMS"
+          checksum_pattern = re.compile(r"^([0-9a-f]{64})  \./(.+)$")
+          expected: dict[str, str] = {}
+          for line in checksum_path.read_text(encoding="utf-8").splitlines():
+              match = checksum_pattern.fullmatch(line)
+              if match is None or match.group(2) in expected:
+                  raise SystemExit("invalid or duplicate SHA256SUMS entry")
+              expected[match.group(2)] = match.group(1)
+          actual = {
+              path.relative_to(extracted).as_posix()
+              for path in extracted.rglob("*")
+              if path.is_file() and path != checksum_path
+          }
+          if set(expected) != actual or len(expected) != review["checksum_entries"]:
+              raise SystemExit("SHA256SUMS coverage does not exactly match the release bundle")
+          for relative, expected_digest in expected.items():
+              actual_digest = hashlib.sha256((extracted / relative).read_bytes()).hexdigest()
+              if actual_digest != expected_digest:
+                  raise SystemExit(f"checksum mismatch: {relative}")
+
+          status = json.loads((extracted / "status.json").read_text(encoding="utf-8"))
+          if status != {
+              "classification": "canonical",
+              "measurement_valid": True,
+              "reason": "all candidate, quality, latency, memory, integrity, selection, and report gates passed",
+              "schema_version": "1.0",
+              "status": "complete",
+              "valid_evidence": True,
+          }:
+              raise SystemExit("released status.json is not the reviewed canonical status")
+
+          manifest = json.loads(
+              (extracted / "experiment/manifest.json").read_text(encoding="utf-8")
+          )
+          if (
+              manifest["classification"] != "canonical"
+              or manifest["source"]["run_id"] != source["run_id"]
+              or manifest["source"]["run_attempt"] != source["run_attempt"]
+              or manifest["source"]["revision"] != source["head_sha"]
+              or manifest["source"]["workflow"] != source["workflow"]
+          ):
+              raise SystemExit("released manifest does not match the committed source identity")
+          PY
+
+      - name: Rebuild and compare the decision
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p output/pages/rebuilt _site
+          PYTHONPATH=src python -m paretopilot assemble-experiment \
+            output/pages/evidence/experiment/manifest.json \
+            --output output/pages/rebuilt/benchmark-set.json
+          cmp \
+            output/pages/rebuilt/benchmark-set.json \
+            output/pages/evidence/experiment/benchmark-set.json
+          cmp \
+            configs/constraints.candidate-study.json \
+            output/pages/evidence/experiment/constraints.json
           PYTHONPATH=src python -m paretopilot report \
-            _site/benchmark-set.json \
-            --constraints _site/constraints.json \
+            output/pages/rebuilt/benchmark-set.json \
+            --constraints output/pages/evidence/experiment/constraints.json \
             --output _site/index.html \
-            --recommendation-output _site/recommendation.json
-          cp _site/index.html _site/report.html
-          cp docs/assets/architecture.svg _site/assets/architecture.svg
+            --recommendation-output output/pages/rebuilt/recommendation.json
+          cmp \
+            output/pages/rebuilt/recommendation.json \
+            output/pages/evidence/experiment/recommendation.json
+          test "$(find _site -type f | wc -l)" -eq 1
 
       - name: Upload Pages artifact
         uses: actions/upload-pages-artifact@fc324d3547104276b827a68afc52ff2a11cc49c9 # v5.0.0

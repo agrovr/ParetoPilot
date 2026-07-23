@@ -15,7 +15,7 @@ from paretopilot.study import StudyAssemblyError, assemble_study
 
 
 REPOSITORY_ROOT = Path(__file__).resolve().parents[1]
-PUBLISHED_BUNDLE = REPOSITORY_ROOT / "results" / "published" / "29940067201"
+PAIRED_STUDY_FIXTURE = REPOSITORY_ROOT / "tests" / "fixtures" / "paired-study"
 REQUIRED_PATHS = {
     "status.json",
     "manifest.json",
@@ -75,7 +75,7 @@ def _rewrite_checksums(root: Path) -> None:
 def _minimal_bundle(destination: Path) -> Path:
     destination.mkdir(parents=True)
     for relative in sorted(REQUIRED_PATHS):
-        source = PUBLISHED_BUNDLE / relative
+        source = PAIRED_STUDY_FIXTURE / relative
         target = destination / relative
         target.parent.mkdir(parents=True, exist_ok=True)
         shutil.copy2(source, target)
@@ -122,8 +122,8 @@ def _make_consistent_two_percent_improvement(root: Path) -> None:
     _rewrite_checksums(root)
 
 
-class PublishedArm64StudyTests(unittest.TestCase):
-    def test_assembles_current_real_numbers_and_selects_safe_baseline(self) -> None:
+class PairedStudyFixtureTests(unittest.TestCase):
+    def test_assembles_measured_fixture_and_selects_safe_baseline(self) -> None:
         with TemporaryDirectory() as directory:
             root = _minimal_bundle(Path(directory) / "bundle")
             assembly = assemble_study(root)
