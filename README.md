@@ -7,7 +7,7 @@ exports a deployment recommendation without assuming that an "optimized" build m
 This is a **Cloud AI** project for the Arm AI Optimization Challenge. Arm Performix can add
 optional profiler context, but it is not required by the product or its evidence pipeline.
 
-[Open the checked-in decision report](demo/canonical-study/report.html) |
+[Open the live decision report](https://agrovr.github.io/ParetoPilot/) |
 [Review the canonical evidence](results/published/29940067201/README.md) |
 [Reproduce the result](docs/reproducibility.md)
 
@@ -147,21 +147,9 @@ src/paretopilot/                 validation, assembly, selection, and reporting
 evals/qwen-smoke-v1.json         fixed quality and latency smoke suite
 configs/                         declared decision constraints
 results/published/29940067201/   reviewed two-candidate Arm64 evidence
-demo/canonical-study/            report inputs and offline HTML generated from that evidence
 .github/workflows/               cross-platform CI and native Arm64 studies
-docs/                            methods, reproduction, and submission material
+docs/                            architecture, methods, and reproduction guides
 ```
-
-## Submission notes
-
-- Track: **Cloud AI**.
-- Video: optional under the current Devpost requirements; this project does not plan to include
-  one.
-- Arm Performix: optional enrichment only; its absence does not block a valid benchmark or report.
-- Source: public at [agrovr/ParetoPilot](https://github.com/agrovr/ParetoPilot).
-- Final submission state: use the [submission checklist](docs/submission-checklist.md). Arm
-  Developer Program enrollment and the signed-in Devpost submission still require user
-  confirmation.
 
 ## License
 

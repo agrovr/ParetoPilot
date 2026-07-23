@@ -5,8 +5,9 @@ on:
     branches: [main]
     paths:
       - ".github/workflows/pages.yml"
-      - "demo/canonical-study/**"
       - "docs/assets/**"
+      - "results/published/**"
+      - "src/paretopilot/**"
   workflow_dispatch:
 
 permissions:
@@ -39,13 +40,18 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p _site/assets
-          cp demo/canonical-study/report.html _site/index.html
-          cp demo/canonical-study/report.html _site/report.html
-          cp demo/canonical-study/benchmark-set.json _site/benchmark-set.json
-          cp demo/canonical-study/constraints.json _site/constraints.json
-          cp demo/canonical-study/recommendation.json _site/recommendation.json
+          PYTHONPATH=src python -m paretopilot assemble-study \
+            results/published/29940067201 \
+            --benchmarks-output _site/benchmark-set.json \
+            --constraints-output _site/constraints.json \
+            --assembly-output _site/assembly.json
+          PYTHONPATH=src python -m paretopilot report \
+            _site/benchmark-set.json \
+            --constraints _site/constraints.json \
+            --output _site/index.html \
+            --recommendation-output _site/recommendation.json
+          cp _site/index.html _site/report.html
           cp docs/assets/architecture.svg _site/assets/architecture.svg
-          cp docs/assets/architecture.png _site/assets/architecture.png
 
       - name: Upload Pages artifact
         uses: actions/upload-pages-artifact@fc324d3547104276b827a68afc52ff2a11cc49c9 # v5.0.0

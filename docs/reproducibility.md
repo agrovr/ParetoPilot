@@ -216,5 +216,4 @@ does not invalidate ParetoPilot evidence.
 - A workflow that fails after collecting some samples is still incomplete evidence.
 
 For the experimental design and interpretation rules, see
-[`docs/benchmark-methodology.md`](benchmark-methodology.md). For release readiness, use
-[`docs/submission-checklist.md`](submission-checklist.md).
+[`docs/benchmark-methodology.md`](benchmark-methodology.md).
