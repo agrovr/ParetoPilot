@@ -1,0 +1,112 @@
+{
+  "schema_version": "1.1",
+  "classification": "canonical",
+  "source": {
+    "run_id": "30055662526",
+    "run_attempt": 1,
+    "job_id": "89366649754",
+    "head_sha": "8a9ddce0afa2272c4a4097fe87ef6f06cb7689a9",
+    "workflow": ".github/workflows/candidate-study-arm64.yml",
+    "url": "https://github.com/agrovr/ParetoPilot/actions/runs/30055662526",
+    "generated_at_utc": "2026-07-24T00:46:28Z",
+    "runner": {
+      "os": "Ubuntu 24.04",
+      "architecture": "arm64",
+      "cpu": "Neoverse-N2",
+      "cpu_count": 4
+    }
+  },
+  "archive": {
+    "actions_artifact_id": 8583168905,
+    "actions_artifact_name": "arm64-candidate-study-30055662526-1",
+    "actions_digest": "sha256:b5586878ccd214667911390f417db0417111ac2c31d163a2f5f55c4469aefeb2",
+    "release_id": 359027209,
+    "release_tag": "v1.1.0",
+    "release_tag_object_sha": "9acc9031deddc4b93efed7361efdcc2668138386",
+    "release_asset_id": 487826578,
+    "release_asset_name": "paretopilot-v1.1.0-arm64-evidence-30055662526.zip",
+    "release_asset_url": "https://github.com/agrovr/ParetoPilot/releases/download/v1.1.0/paretopilot-v1.1.0-arm64-evidence-30055662526.zip",
+    "release_url": "https://github.com/agrovr/ParetoPilot/releases/tag/v1.1.0",
+    "size_bytes": 402899,
+    "sha256": "b5586878ccd214667911390f417db0417111ac2c31d163a2f5f55c4469aefeb2"
+  },
+  "review": {
+    "reviewed_at_utc": "2026-07-24T01:01:03Z",
+    "checksum_entries": 150,
+    "checksum_manifest_sha256": "b9c7789e804d4228ac016aa9ebee3726776a668491b6384a242c13284e720a4f",
+    "all_checksums_verified": true,
+    "exact_file_coverage": true,
+    "status_complete": true,
+    "measurement_valid": true,
+    "valid_evidence": true,
+    "dispatch_marker_counts": {
+      "q8-generic": {
+        "throughput_passes": [0, 0],
+        "server_passes": [0, 0],
+        "load_server": 0
+      },
+      "q4-generic": {
+        "throughput_passes": [0, 0],
+        "server_passes": [0, 0],
+        "load_server": 0
+      },
+      "q4-kleidiai": {
+        "throughput_passes": [1, 1],
+        "server_passes": [1, 1],
+        "load_server": 1
+      },
+      "q4-kleidiai-tuned": {
+        "throughput_passes": [1, 1],
+        "server_passes": [1, 1],
+        "load_server": 1
+      }
+    },
+    "artifacts_sha256": {
+      "manifest": "7a8760e2950b7cc0c34c9377a57bee8dc41b58a229866f07e5cf55ffc1c91c82",
+      "evaluation_suite": "e49c16fba32fd65c947264aef4141026ab68b1fd415ef09eeea6e8ade9a545c7",
+      "benchmark_set": "b95f2a2801069d1e1428faa7a3809583b26245ee7eb2e797d338cd7262d5267b",
+      "constraints": "f1f9fe6a3110857ef5c7fdd78df9cd99faa6d788acbcef1bb8d1af6aecf3ca9a",
+      "recommendation": "e23b50ddd02ed72200417ddb146215c3aa995fb9c8c1a98faa64ee6ba925c7a4",
+      "report": "7c924a20503c7bb69b54c458c7ccd641e588820961fc21a986fe83ac41ee52e5",
+      "policy_config": "7621b7ffaba32f1670821eaddb79b720dca9cb1e8753873a732c168110415a78",
+      "policy_profiles": "6fe9d423a5c41bd48c74fa255c19fb174c8d09e718ecd45d5ab9ff8d23508c37",
+      "load_plan": "b10f61b7093f58ad6d142deafd7d6befe600d1d54a433b59c101131dd8c2d9bb",
+      "load_evaluation": "923b3222440314644c5e87b326d7d7fb1a394b9d688262ffa636d6ef275e9dfd",
+      "benchmark_set_pass_1": "15a07f4bc3d26478dd2b099f0f3813c2bad676e468e70fe4115c9b35992b9adf",
+      "benchmark_set_pass_2": "e3ef23574b768a69b70835e45ef00c8acafee5e8125ae842c131d204b8025345",
+      "repeat_stability": "e3d1ee557005efb076ed1a34ba38fb52e3378b1eead8a8f745a85f25773712a3",
+      "report_v1_1": "e2cce9ce8ed56f98c40996476a35289229574e01f154a4089a3531aa64ee5399"
+    },
+    "replay": {
+      "replay_contract": "1.1",
+      "valid": true,
+      "decision_reproduced": true,
+      "fully_reproduced": true,
+      "report_matches_archive": true,
+      "selected_id": "q8-generic",
+      "differences": [],
+      "warnings": [],
+      "checksum_entry_count": 150,
+      "checksum_manifest_sha256": "b9c7789e804d4228ac016aa9ebee3726776a668491b6384a242c13284e720a4f",
+      "policy_profile_count": 5,
+      "policy_selected_ids": {
+        "canonical-latency": "q8-generic",
+        "decode-first": "q8-generic",
+        "first-token-first": "q4-kleidiai-tuned",
+        "memory-first": "q4-generic",
+        "prompt-ingest-first": "q4-kleidiai-tuned"
+      },
+      "authoritative_comparisons": [
+        "benchmark-set",
+        "benchmark-set-pass-1",
+        "benchmark-set-pass-2",
+        "load-evaluation",
+        "policy-profiles",
+        "recommendation",
+        "repeat-stability",
+        "report",
+        "report-v1.1"
+      ]
+    }
+  }
+}

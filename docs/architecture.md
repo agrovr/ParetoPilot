@@ -3,65 +3,43 @@
 ![ParetoPilot evidence-to-deployment architecture](assets/architecture.svg)
 
 ParetoPilot is an evidence-to-deployment decision pipeline. It does not sit in the inference
-request path. Instead, it runs controlled candidates on one native Arm64 runner, validates the
-resulting artifacts, applies declared quality and resource constraints, and exports a reproducible
+request path. Instead, it runs controlled candidates on one native Arm64 runner, validates their
+artifacts, applies declared quality and resource constraints, and exports a reproducible
 deployment recommendation with an offline report.
 
-The diagram shows the core candidate-study path completed by the published v1.0 run. The current
-code adds a v1.1 evidence lane after the same strict core; no canonical v1.1 measurement is
-published yet.
+Canonical v1.1 [run `30055662526`](../results/published/30055662526/README.md) completed the core
+path and the additive behavior, policy, load, and repeat-stability lane. The earlier
+[v1.0 result](../results/published/29973188507/README.md) remains preserved as a separate
+historical experiment.
 
 ## End-to-end flow
 
-1. **Pin the experiment.** The candidate-study workflow fixes the model revisions and hashes,
-   `llama.cpp` commit, KleidiAI release, evaluation suite, benchmark shape, and decision
-   constraints before measurement begins.
+1. **Pin the experiment.** The workflow fixes the model revisions and hashes, `llama.cpp` commit,
+   KleidiAI release, evaluation suite, benchmark shape, load plan, policies, and decision
+   constraints before measurement.
 2. **Build on native Arm64.** One `ubuntu-24.04-arm` job builds CPU-only generic and
    KleidiAI-enabled `llama.cpp` binaries and records the runner, operating system, compiler,
    build options, executable hashes, and exact launch arguments.
 3. **Run attributable candidates.** Four candidates separate the Q8 reference, Q4 quantization,
    Arm kernel dispatch, and one runtime micro-batch change. Throughput and server measurements use
-   the balanced order A-B-C-D-D-C-B-A on the same hosted runner.
-4. **Measure two evidence lanes.** `llama-bench` produces prompt and generation throughput.
-   `llama-server` runs the fixed evaluation suite and records exact-match quality, streamed TTFT,
-   end-to-end latency for fixed 64-token generations, and GNU `time -v` peak RSS. Two server
-   passes are pooled per candidate.
+   the balanced order `A-B-C-D-D-C-B-A` on the same hosted runner.
+4. **Measure authoritative producers.** `llama-bench` produces prompt and generation throughput.
+   `llama-server` records exact-match behavior, streamed TTFT, end-to-end latency for fixed
+   64-token generations, and bounded multi-client results. GNU `time -v` records peak RSS.
 5. **Assemble strictly.** `paretopilot assemble-experiment` verifies the closed manifest schema,
-   artifact SHA-256 digests, candidate identities, model and runtime pins, evaluation-suite
-   identity, exact throughput and deployment arguments, balanced aggregate recomputation, and
-   captured KleidiAI dispatch logs before producing a `BenchmarkSet`.
+   SHA-256 digests, candidate identities, model and runtime pins, evaluation-suite identity,
+   exact commands, balanced aggregate recomputation, and captured KleidiAI dispatch logs before
+   producing a `BenchmarkSet`.
 6. **Decide under declared constraints.** The recommendation engine rejects candidates that fail
    quality or resource gates, computes the Pareto frontier, and minimizes the declared objective.
-   A predeclared 1% objective tolerance and preference order retain the simpler candidate when the
-   numeric latency lead is too small to justify extra complexity.
-7. **Export reviewable outputs.** ParetoPilot writes `recommendation.json`, a self-contained
-   `report.html`, candidate and environment evidence, `status.json`, and a bundle-level
-   `SHA256SUMS` file.
-
-## Additive v1.1 evidence lane
-
-The v1.1 workflow extends the core without changing its `BenchmarkSet` or recommendation schema:
-
-1. **Bind the behavior contract.** A 24-case suite is copied into the experiment, identified in
-   the closed manifest, and verified by SHA-256. Assembly checks every case, answer, match mode,
-   generation length, and pooled server result against that exact file.
-2. **Measure bounded concurrency.** Each candidate runs the same declared 1/2/4-client load plan.
-   Per-candidate artifacts retain raw request samples, SLO results, the request origin, and both
-   the exact load and canonical server commands. Only host and port binding differences are
-   allowed.
-3. **Reconstruct each balanced pass.** `assemble-repeat-pass` follows the source references already
-   bound in the canonical benchmark, verifies the raw throughput, settings, server-evaluation,
-   and process-memory files, and recomputes one supplementary `BenchmarkSet` per pass.
-4. **Describe stability without overclaiming.** The two reconstructed passes are compared for
-   observed direction and relative spread. They are not used to claim statistical significance.
-5. **Precompute decision scenarios.** One canonical policy and four non-canonical profiles are
-   evaluated from the same benchmark set. The canonical profile must reproduce the core
-   recommendation.
-6. **Render, then support offline replay.** The measurement workflow renders
-   `report-v1.1.html` from the bound core and extension evidence. After a complete canonical
-   bundle is downloaded, the separate offline replay command rebuilds every core decision
-   artifact; report-only differences remain presentation warnings. Replay is not run inside the
-   measurement job.
+   A predeclared 1% tolerance prevents a practically tiny latency difference from being treated
+   as an optimization win.
+7. **Build supplementary views.** The workflow evaluates five deployment policies, assembles the
+   bounded load sweep, reconstructs both balanced passes from raw evidence, and summarizes
+   observed repeat stability.
+8. **Lock and replay.** A bundle-level `SHA256SUMS` covers 150 released payloads. Offline replay
+   verifies safe paths and checksums, rebuilds the core and extension outputs, and compares both
+   self-contained reports without rerunning inference.
 
 ## Candidate attribution
 
@@ -73,60 +51,104 @@ The v1.1 workflow extends the core without changing its `BenchmarkSet` or recomm
 | `q4-kleidiai-tuned` | Same KleidiAI candidate with micro-batch size 512 | Runtime tuning |
 
 The workflow hashes and re-verifies runtime logs: generic candidates must not report the
-`CPU_KLEIDIAI model buffer`, while both KleidiAI candidates must report it. That check proves the
+`CPU_KLEIDIAI model buffer`, while both KleidiAI candidates must report it. This proves the
 intended dispatch distinction without treating a build flag alone as runtime evidence.
+
+## V1.1 evidence lane
+
+### Behavior contract
+
+The 24-case suite is copied into the experiment, identified in the closed manifest, and verified
+by SHA-256. Assembly checks every case, accepted answer, match mode, generation length, and pooled
+server result against that exact file. The canonical run measured 21/24 passing cases for Q8 and
+20/24 for each Q4 candidate.
+
+### Bounded concurrency
+
+Each candidate runs the same declared 1/2/4-client load plan with eight measured requests per
+level. Per-candidate artifacts retain raw request samples, SLO results, the request origin, and
+both the exact load and canonical server commands. Only host and port binding differences are
+allowed. All candidates completed every request in the canonical run; concurrency 1 was the
+highest SLO-passing level for each.
+
+### Pass reconstruction
+
+`assemble-repeat-pass` follows the source references already bound in the canonical benchmark,
+verifies raw throughput, settings, server-evaluation, and process-memory files, and recomputes one
+supplementary `BenchmarkSet` per pass. It does not estimate pass values by splitting a pooled
+aggregate.
+
+The stability summary compares six metrics across the two reconstructed passes. Its direction and
+relative-spread labels describe only the observed passes and do not claim statistical
+significance.
+
+### Policy sensitivity
+
+One canonical and four non-canonical profiles are evaluated from the same validated benchmark
+set. `canonical-latency` must reproduce the core recommendation. The derived profiles expose how
+the measured decision changes under memory, TTFT, prompt-ingest, or decode objectives; they are
+not additional benchmark runs.
+
+### Self-contained reports
+
+`report.html` presents the core decision and `report-v1.1.html` combines the decision with policy,
+load, and stability evidence. Both are rendered from bound inputs. The canonical release replay
+matched all nine core and report comparisons and returned no differences or warnings.
 
 ## Evidence and decision boundaries
 
-- All candidate comparisons belong to one ephemeral Arm64 job. Results from different processor
-  identities or runner images are not pooled as if they were one controlled experiment.
-- Missing, malformed, mismatched, non-finite, or digest-invalid source data fails assembly; the
-  pipeline does not estimate absent measurements.
-- Quality, latency, throughput, and peak RSS have separate authoritative producers. For example,
-  TTFT is not inferred from `llama-bench` output.
-- A repeat-pass benchmark is reconstructed from raw pass files; it is not estimated by splitting
-  a pooled median or copying the final aggregate.
+- Every candidate comparison belongs to one ephemeral Arm64 job. Results from different processor
+  identities or runner images are not pooled as one experiment.
+- Missing, malformed, mismatched, non-finite, digest-invalid, or path-escaping source data fails
+  assembly; the pipeline does not estimate absent measurements.
+- Quality, latency, throughput, and peak RSS have separate authoritative producers. TTFT, for
+  example, is not inferred from `llama-bench`.
 - Load evidence must match its declared plan, request endpoint, candidate identity, and server
   commands. A successful HTTP response alone is not sufficient provenance.
-- The candidate workflow marks a run canonical only when it uses the default branch, the declared
-  ten repetitions, and every measurement, integrity, selection, and reporting gate passes.
-  Other successful runs remain explicitly exploratory.
-- Two balanced passes support an observed consistency description, not a significance or
-  confidence-interval claim.
-- Arm Performix is an optional follow-up for hotspot analysis when the target exposes the required
-  profiling capabilities. It is outside the required path and never blocks measurement,
-  selection, or report generation.
+- A run is canonical only when it uses the default branch, the declared ten repetitions, and
+  every measurement, integrity, selection, and reporting gate passes. Changed inputs remain
+  exploratory.
+- Arm Performix is an optional follow-up for hotspot analysis. It never blocks measurement,
+  selection, replay, or report generation.
 
 ## Implementation map
 
 | Component | Responsibility |
 | --- | --- |
 | [`.github/workflows/candidate-study-arm64.yml`](../.github/workflows/candidate-study-arm64.yml) | Native Arm64 build, measurement, provenance capture, integrity checks, and artifact upload |
-| [`evals/qwen-smoke-v1.json`](../evals/qwen-smoke-v1.json) | Published v1.0 fixed quality inputs |
+| [`evals/qwen-smoke-v1.json`](../evals/qwen-smoke-v1.json) | Historical v1.0 fixed quality inputs |
 | [`evals/qwen-behavior-v2.json`](../evals/qwen-behavior-v2.json) | V1.1 checksummed 24-case behavior and latency contract |
 | [`configs/load.arm64.json`](../configs/load.arm64.json) | Bounded load shape and SLO declaration |
 | [`configs/policies.arm64.json`](../configs/policies.arm64.json) | Canonical and derived deployment-policy profiles |
+| [`configs/constraints.candidate-study.json`](../configs/constraints.candidate-study.json) | Quality, latency, memory, frontier, and objective policy |
 | [`src/paretopilot/llama_summary.py`](../src/paretopilot/llama_summary.py) | Validated multi-pass throughput aggregation |
-| [`src/paretopilot/server_eval.py`](../src/paretopilot/server_eval.py) | Exact-match quality and streamed server-latency evaluation |
+| [`src/paretopilot/server_eval.py`](../src/paretopilot/server_eval.py) | Exact-match behavior and streamed latency evaluation |
 | [`src/paretopilot/experiment.py`](../src/paretopilot/experiment.py) | Strict multi-candidate manifest and artifact assembly |
 | [`src/paretopilot/analysis.py`](../src/paretopilot/analysis.py) | Constraint filtering, Pareto frontier, and deterministic selection |
-| [`configs/constraints.candidate-study.json`](../configs/constraints.candidate-study.json) | Declared quality, latency, memory, frontier, and objective policy |
-| [`src/paretopilot/report.py`](../src/paretopilot/report.py) | Deterministic, dependency-free HTML decision report |
 | [`src/paretopilot/pass_eval.py`](../src/paretopilot/pass_eval.py) | Raw repeat-pass verification and reconstruction |
 | [`src/paretopilot/load_eval.py`](../src/paretopilot/load_eval.py) | Bounded multi-client evaluation and command binding |
 | [`src/paretopilot/profiles.py`](../src/paretopilot/profiles.py) | Precomputed canonical and derived policy decisions |
 | [`src/paretopilot/stability.py`](../src/paretopilot/stability.py) | Pass direction and spread summary without significance claims |
-| [`src/paretopilot/replay.py`](../src/paretopilot/replay.py) | Checksummed core regeneration and comparison |
+| [`src/paretopilot/replay.py`](../src/paretopilot/replay.py) | Checksummed core and extension regeneration |
+| [`src/paretopilot/report.py`](../src/paretopilot/report.py) | Deterministic core HTML decision report |
 | [`src/paretopilot/report_v11.py`](../src/paretopilot/report_v11.py) | Deterministic additive evidence report |
+
+## Published identity
+
+The current evidence was produced by commit
+[`8a9ddce0afa2272c4a4097fe87ef6f06cb7689a9`](https://github.com/agrovr/ParetoPilot/commit/8a9ddce0afa2272c4a4097fe87ef6f06cb7689a9)
+on Ubuntu 24.04 Arm64 with a 4-vCPU Arm Neoverse-N2 CPU. It pins:
+
+- `llama.cpp` `67b9b0e7f6ce45d929a4411907d3c48ec719e81c`;
+- KleidiAI `1.24.0`;
+- Qwen2.5 1.5B Instruct revision `91cad51170dc346986eccefdc2dd33a9da36ead9`; and
+- evaluation-suite SHA-256
+  `e49c16fba32fd65c947264aef4141026ab68b1fd415ef09eeea6e8ade9a545c7`.
 
 ## Truthful interpretation
 
-The diagram documents the executable candidate-study path; it is not itself benchmark evidence.
-A run is publishable only after its `status.json`, raw measurements, provenance, dispatch logs,
-and checksums pass review. ParetoPilot reports measured software performance and does not claim
-energy savings or hardware-counter findings unless a separate source actually measures them.
-
-Canonical run [`29973188507`](../results/published/29973188507/README.md) completed this path and
-was rebuilt from its permanent release archive in a separate verification pass. It remains the
-authoritative measured result until a fresh v1.1 archive completes the added lane and receives the
-same review.
+The diagram documents the executable candidate-study path; it is not benchmark evidence by
+itself. Canonical run `30055662526` completed that path and was rebuilt from its permanent
+release archive in a separate verification pass. The result applies to this runner, model,
+workload, and bounded load plan. ParetoPilot does not claim general model quality, statistical
+significance, energy savings, cost savings, or hardware-counter findings that were not measured.
