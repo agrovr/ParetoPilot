@@ -3,7 +3,7 @@
 ParetoPilot supports three levels of reproduction:
 
 1. **Code verification** runs the software checks on any supported development host.
-2. **Decision reproduction** audits the permanent canonical archive and regenerates its core,
+2. **Decision reproduction** audits the pinned canonical archive and regenerates its core,
    policy, load, stability, and report outputs.
 3. **Measurement reproduction** dispatches a fresh native Arm64 experiment. A new hosted runner is
    new evidence, not an exact hardware replay.
@@ -52,7 +52,7 @@ separate Ubuntu x64 job installs the built wheel into an isolated environment.
 
 ## 2. Download and verify the canonical archive
 
-Download the permanent release asset:
+Download the pinned v1.1.0 release asset:
 
 ```bash
 curl -L \
@@ -142,6 +142,20 @@ Inspect `output/replay-v1.1/replay.json`. The canonical release must report:
 All nine comparisons must be present and match: `benchmark-set`, `recommendation`,
 `policy-profiles`, `load-evaluation`, both pass benchmark sets, `repeat-stability`, `report`, and
 `report-v1.1`.
+
+### Pages publication is downstream from replay
+
+The public [evidence showcase](https://agrovr.github.io/ParetoPilot/) is not part of the nine-item
+replay contract. The Pages workflow first completes the verification above and confirms the
+reviewed `report-v1.1.html` digest. It then:
+
+1. copies that exact replayed file to
+   [`evidence/report-v1.1.html`](https://agrovr.github.io/ParetoPilot/evidence/report-v1.1.html);
+2. supplies the reviewed evidence lock and exact report to `paretopilot showcase-v11`; and
+3. writes the separate judge-facing presentation to `index.html`.
+
+The showcase renderer refuses a canonical-report mismatch. It does not rerun inference, create
+new evidence, or change the archived recommendation.
 
 To inspect pass reconstruction independently, use fresh output paths:
 

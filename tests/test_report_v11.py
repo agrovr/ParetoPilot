@@ -334,6 +334,7 @@ def measured_load_sweep() -> dict[str, object]:
             )
             + "\n",
             encoding="utf-8",
+            newline="\n",
         )
         for index, (candidate_id, rss) in enumerate(
             (
@@ -350,12 +351,14 @@ def measured_load_sweep() -> dict[str, object]:
             canonical_command.write_text(
                 json.dumps({"schema_version": "1.0", "argv": base_argv}) + "\n",
                 encoding="utf-8",
+                newline="\n",
             )
             load_argv = list(base_argv)
             load_argv[-1] = str(18080 + index)
             load_command.write_text(
                 json.dumps({"schema_version": "1.0", "argv": load_argv}) + "\n",
                 encoding="utf-8",
+                newline="\n",
             )
             evaluations.append(
                 evaluate_load(

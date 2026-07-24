@@ -11,8 +11,6 @@ on:
 
 permissions:
   contents: read
-  pages: write
-  id-token: write
 
 concurrency:
   group: pages
@@ -22,13 +20,13 @@ env:
   EVIDENCE_LOCK: results/published/30055662526/evidence.json
 
 jobs:
-  deploy:
-    name: Verify evidence, replay, and publish report
+  build:
+    name: Verify evidence, replay, and build report
     if: github.ref_name == github.event.repository.default_branch
     runs-on: ubuntu-24.04
-    environment:
-      name: github-pages
-      url: ${{ steps.deployment.outputs.page_url }}
+    timeout-minutes: 15
+    permissions:
+      contents: read
     steps:
       - name: Check out repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -53,9 +51,12 @@ jobs:
           import hashlib
           import json
           import os
+          from http.client import IncompleteRead
           from pathlib import Path, PurePosixPath
           import re
           import stat
+          import time
+          from urllib.error import HTTPError, URLError
           from urllib.request import Request, urlopen
           from zipfile import ZipFile
 
@@ -125,8 +126,24 @@ jobs:
               archive["release_asset_url"],
               headers={"User-Agent": "ParetoPilot-Pages-evidence-verifier"},
           )
-          with urlopen(request, timeout=60) as response:
-              payload = response.read(archive["size_bytes"] + 1)
+          payload = None
+          for attempt in range(3):
+              try:
+                  with urlopen(request, timeout=60) as response:
+                      candidate = response.read(archive["size_bytes"] + 1)
+                  if len(candidate) < archive["size_bytes"]:
+                      raise IncompleteRead(candidate, archive["size_bytes"])
+                  if len(candidate) > archive["size_bytes"]:
+                      raise SystemExit("release asset is larger than the evidence lock")
+                  payload = candidate
+                  break
+              except (ConnectionError, HTTPError, IncompleteRead, TimeoutError, URLError) as exc:
+                  if attempt == 2:
+                      raise SystemExit(
+                          "could not download the locked release asset after 3 attempts"
+                      ) from exc
+                  time.sleep(2**attempt)
+          assert payload is not None
           if len(payload) != archive["size_bytes"]:
               raise SystemExit("release asset size does not match evidence lock")
           digest = hashlib.sha256(payload).hexdigest()
@@ -290,7 +307,7 @@ jobs:
                   raise SystemExit(f"dispatch marker mismatch: {candidate}")
           PY
 
-      - name: Rebuild and compare every v1.1 output
+      - name: Rebuild, compare, and present every v1.1 output
         shell: bash
         run: |
           set -euo pipefail
@@ -349,14 +366,39 @@ jobs:
           if digest != lock["review"]["artifacts_sha256"]["report_v1_1"]:
               raise SystemExit("replayed v1.1 report does not match the reviewed hash")
           PY
-          cp output/pages/replayed/report-v1.1.html _site/index.html
-          test "$(find _site -type f | wc -l)" -eq 1
+          mkdir -p _site/evidence
+          cp output/pages/replayed/report-v1.1.html _site/evidence/report-v1.1.html
+          PYTHONPATH=src python -m paretopilot showcase-v11 \
+            output/pages/evidence/experiment/benchmark-set.json \
+            --recommendation output/pages/evidence/experiment/recommendation.json \
+            --profiles output/pages/evidence/extensions/policy-profiles.json \
+            --load output/pages/evidence/extensions/load-evaluation.json \
+            --stability output/pages/evidence/extensions/repeat-stability.json \
+            --evidence-lock "$EVIDENCE_LOCK" \
+            --canonical-report output/pages/replayed/report-v1.1.html \
+            --canonical-report-href evidence/report-v1.1.html \
+            --output _site/index.html
+          test "$(find _site -type f | wc -l)" -eq 2
 
       - name: Upload Pages artifact
         uses: actions/upload-pages-artifact@fc324d3547104276b827a68afc52ff2a11cc49c9 # v5.0.0
         with:
           path: _site
 
+  deploy:
+    name: Deploy verified report
+    if: github.ref_name == github.event.repository.default_branch
+    needs: build
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
       - name: Deploy Pages
         id: deployment
         uses: actions/deploy-pages@cd2ce8fcbc39b97be8ca5fce6e763baed58fa128 # v5.0.0

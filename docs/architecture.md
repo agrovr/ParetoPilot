@@ -89,11 +89,18 @@ set. `canonical-latency` must reproduce the core recommendation. The derived pro
 the measured decision changes under memory, TTFT, prompt-ingest, or decode objectives; they are
 not additional benchmark runs.
 
-### Self-contained reports
+### Canonical reports and Pages presentation
 
 `report.html` presents the core decision and `report-v1.1.html` combines the decision with policy,
 load, and stability evidence. Both are rendered from bound inputs. The canonical release replay
 matched all nine core and report comparisons and returned no differences or warnings.
+
+The public Pages homepage is a separate presentation view generated from those same verified
+inputs. The deploy workflow first verifies the pinned v1.1.0 release, replays all nine authoritative
+outputs, and checks the exact `report-v1.1.html` digest. Only then does it generate the showcase.
+Pages preserves the byte-identical canonical report at `evidence/report-v1.1.html`, so visual
+presentation changes cannot silently rewrite the evidence artifact. The presentation's persistent
+light/dark preference changes semantic color tokens only; it never alters the bound evidence.
 
 ## Evidence and decision boundaries
 
@@ -132,6 +139,8 @@ matched all nine core and report comparisons and returned no differences or warn
 | [`src/paretopilot/replay.py`](../src/paretopilot/replay.py) | Checksummed core and extension regeneration |
 | [`src/paretopilot/report.py`](../src/paretopilot/report.py) | Deterministic core HTML decision report |
 | [`src/paretopilot/report_v11.py`](../src/paretopilot/report_v11.py) | Deterministic additive evidence report |
+| [`src/paretopilot/showcase.py`](../src/paretopilot/showcase.py) | Judge-facing presentation generated from verified v1.1 inputs without changing the canonical report |
+| [`.github/workflows/pages.yml`](../.github/workflows/pages.yml) | Release verification, exact replay, canonical-report preservation, and showcase publication |
 
 ## Published identity
 
@@ -148,7 +157,7 @@ on Ubuntu 24.04 Arm64 with a 4-vCPU Arm Neoverse-N2 CPU. It pins:
 ## Truthful interpretation
 
 The diagram documents the executable candidate-study path; it is not benchmark evidence by
-itself. Canonical run `30055662526` completed that path and was rebuilt from its permanent
+itself. Canonical run `30055662526` completed that path and was rebuilt from its pinned
 release archive in a separate verification pass. The result applies to this runner, model,
 workload, and bounded load plan. ParetoPilot does not claim general model quality, statistical
 significance, energy savings, cost savings, or hardware-counter findings that were not measured.

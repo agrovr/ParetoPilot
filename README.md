@@ -8,10 +8,17 @@ I designed and built ParetoPilot as a solo Cloud AI entry for the Arm AI Optimiz
 Arm Performix is an optional profiling enhancement; it is not required by the product or its
 evidence pipeline.
 
-[Live decision report](https://agrovr.github.io/ParetoPilot/) |
+[Live evidence showcase](https://agrovr.github.io/ParetoPilot/) |
+[Exact canonical v1.1 report](https://agrovr.github.io/ParetoPilot/evidence/report-v1.1.html) |
 [Canonical v1.1 result](results/published/30055662526/README.md) |
 [Complete v1.1 evidence](https://github.com/agrovr/ParetoPilot/releases/tag/v1.1.0) |
 [Reproduction guide](docs/reproducibility.md)
+
+The Pages homepage is a judge-facing presentation of the locked v1.1 inputs. Pages generates it
+only after verifying the pinned v1.1.0 release, replaying every authoritative output, and matching
+the archived `report-v1.1.html` byte for byte. That exact canonical report remains available
+separately; the showcase does not replace or modify the evidence artifact. Its accessible light
+and dark themes remember only the reader's display preference and do not change the report data.
 
 ## What it does
 
@@ -48,7 +55,7 @@ candidates entered the canonical shortlist. The result is a useful no-change dec
 measured optimization alternatives had real resource advantages, but they did not beat the
 declared latency objective.
 
-The tuned Q4 + KleidiAI configuration is the strongest measured resource alternative. Compared
+The tuned Q4 + KleidiAI configuration is a measured resource alternative. Compared
 with Q8, it used a 43.72% smaller model and 42.79% less peak RSS, reduced p95 TTFT by 13.83%, and
 raised prompt throughput by 28.10%. The tradeoff was 3.40% slower p95 end-to-end latency, 9.37%
 lower generation throughput, and one fewer passing behavior case.
