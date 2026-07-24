@@ -171,9 +171,11 @@ class ShowcaseV11Tests(unittest.TestCase):
         self.assertIn("<title>ParetoPilot | Arm64 measured flight log</title>", first)
         self.assertIn('class="showcase is-verified"', first)
         self.assertIn(
-            '<span class="hero-selection">Q8 generic reference</span> stays the deployment choice.',
+            "Choose the Arm64 deployment that "
+            '<span class="hero-selection">survives the evidence.</span>',
             first,
         )
+        self.assertIn("retained Q8 generic reference after quality", first)
         self.assertIn("1.00% objective tolerance", first)
         self.assertIn("150 files verified", first)
         self.assertIn("9 authoritative comparisons", first)
@@ -220,12 +222,23 @@ class ShowcaseV11Tests(unittest.TestCase):
             '<main id="main-content" class="report-main" tabindex="-1">',
             showcase,
         )
+        self.assertIn(
+            "Choose the Arm64 deployment that "
+            '<span class="hero-selection">survives the evidence.</span>',
+            showcase,
+        )
+        self.assertIn("Use the GitHub Action", showcase)
+        self.assertIn(
+            "https://github.com/agrovr/ParetoPilot/blob/main/docs/github-action.md",
+            showcase,
+        )
+        self.assertIn('aria-label="Project links"', showcase)
         self.assertIn('role="tablist"', showcase)
         self.assertLessEqual(canonical_tab_controls, showcase_tab_controls)
         self.assertLessEqual(canonical_tab_controls, showcase_ids)
         self.assertNotEqual(canonical.encode(), showcase.encode())
 
-    def test_policy_tabs_reset_inherited_bottom_padding(self) -> None:
+    def test_policy_tabs_do_not_reserve_a_desktop_scrollbar_gutter(self) -> None:
         report = rendered_showcase()
 
         self.assertIn(
@@ -234,7 +247,11 @@ class ShowcaseV11Tests(unittest.TestCase):
             "  grid-auto-columns: minmax(10.5rem, 1fr);\n"
             "  grid-auto-flow: column;\n"
             "  gap: 0;\n"
-            "  padding-bottom: 0;",
+            "  padding: 0;",
+            report,
+        )
+        self.assertIn(
+            "@media (min-width: 68rem) {\n  .showcase .profile-tabs {\n    overflow-x: clip;\n  }",
             report,
         )
 

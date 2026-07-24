@@ -1,0 +1,163 @@
+name: ParetoPilot decision gate
+description: Validate benchmark evidence, select a deployment candidate, and publish a CI receipt.
+author: Ashmit Grover
+
+branding:
+  icon: check-circle
+  color: blue
+
+inputs:
+  benchmarks:
+    description: Path to a ParetoPilot benchmark-set JSON file.
+    required: true
+  constraints:
+    description: Path to a ParetoPilot constraints JSON file.
+    required: true
+  output-dir:
+    description: New or empty directory for the recommendation, report, and gate receipt.
+    required: false
+    default: paretopilot-output
+  require-measured:
+    description: Reject explicitly synthetic benchmark inputs when true.
+    required: false
+    default: "true"
+  expected-selected-id:
+    description: Optional candidate ID that must remain selected for the gate to pass.
+    required: false
+    default: ""
+
+outputs:
+  selected-id:
+    description: Candidate selected by ParetoPilot.
+    value: ${{ steps.receipt.outputs.selected-id }}
+  synthetic-source:
+    description: Whether the input benchmark set was explicitly synthetic.
+    value: ${{ steps.receipt.outputs.synthetic-source }}
+  recommendation:
+    description: Path to the generated machine-readable recommendation.
+    value: ${{ steps.receipt.outputs.recommendation }}
+  report:
+    description: Path to the generated self-contained HTML report.
+    value: ${{ steps.receipt.outputs.report }}
+  receipt:
+    description: Path to the generated CI gate receipt.
+    value: ${{ steps.receipt.outputs.receipt }}
+  recommendation-sha256:
+    description: SHA-256 of the recommendation JSON.
+    value: ${{ steps.receipt.outputs.recommendation-sha256 }}
+  report-sha256:
+    description: SHA-256 of the HTML report.
+    value: ${{ steps.receipt.outputs.report-sha256 }}
+  receipt-sha256:
+    description: SHA-256 of the gate receipt.
+    value: ${{ steps.receipt.outputs.receipt-sha256 }}
+
+runs:
+  using: composite
+  steps:
+    - name: Install ParetoPilot
+      shell: bash
+      run: python -m pip install --disable-pip-version-check --no-deps "$GITHUB_ACTION_PATH"
+
+    - name: Evaluate deployment decision
+      shell: bash
+      env:
+        PARETOPILOT_BENCHMARKS: ${{ inputs.benchmarks }}
+        PARETOPILOT_CONSTRAINTS: ${{ inputs.constraints }}
+        PARETOPILOT_OUTPUT_DIR: ${{ inputs.output-dir }}
+        PARETOPILOT_REQUIRE_MEASURED: ${{ inputs.require-measured }}
+        PARETOPILOT_EXPECTED_SELECTED_ID: ${{ inputs.expected-selected-id }}
+      run: |
+        set -euo pipefail
+        args=(
+          ci-gate
+          "$PARETOPILOT_BENCHMARKS"
+          --constraints "$PARETOPILOT_CONSTRAINTS"
+          --output-dir "$PARETOPILOT_OUTPUT_DIR"
+        )
+        case "$PARETOPILOT_REQUIRE_MEASURED" in
+          true) ;;
+          false) args+=(--allow-synthetic) ;;
+          *)
+            echo "require-measured must be true or false" >&2
+            exit 2
+            ;;
+        esac
+        if [[ -n "$PARETOPILOT_EXPECTED_SELECTED_ID" ]]; then
+          args+=(--expect-selected-id "$PARETOPILOT_EXPECTED_SELECTED_ID")
+        fi
+        python -m paretopilot "${args[@]}"
+
+    - name: Publish decision receipt
+      id: receipt
+      shell: bash
+      env:
+        PARETOPILOT_OUTPUT_DIR: ${{ inputs.output-dir }}
+      run: |
+        set -euo pipefail
+        python - <<'PY'
+        from __future__ import annotations
+
+        import hashlib
+        import json
+        import os
+        from pathlib import Path
+        import secrets
+
+        output_dir = Path(os.environ["PARETOPILOT_OUTPUT_DIR"])
+        receipt_path = output_dir / "gate.json"
+        recommendation_path = output_dir / "recommendation.json"
+        receipt = json.loads(receipt_path.read_text(encoding="utf-8"))
+        recommendation = json.loads(recommendation_path.read_text(encoding="utf-8"))
+
+        def emit(name: str, value: object) -> None:
+            text = str(value).lower() if isinstance(value, bool) else str(value)
+            delimiter = f"PARETOPILOT_{secrets.token_hex(12)}"
+            with Path(os.environ["GITHUB_OUTPUT"]).open("a", encoding="utf-8") as handle:
+                handle.write(f"{name}<<{delimiter}\n{text}\n{delimiter}\n")
+
+        emit("selected-id", receipt["selected_id"])
+        emit("synthetic-source", receipt["synthetic_source"])
+        emit("recommendation", receipt["recommendation"])
+        emit("report", receipt["report"])
+        emit("receipt", receipt_path)
+        emit("recommendation-sha256", receipt["recommendation_sha256"])
+        emit("report-sha256", receipt["report_sha256"])
+
+        receipt_digest = hashlib.sha256(receipt_path.read_bytes()).hexdigest()
+        emit("receipt-sha256", receipt_digest)
+
+        def cell(value: object) -> str:
+            return str(value).replace("|", r"\|").replace("\r", " ").replace("\n", " ")
+
+        summary_path = os.environ.get("GITHUB_STEP_SUMMARY")
+        if summary_path:
+            selected = recommendation["selected"]
+            selection = recommendation["selection"]
+            evidence_class = (
+                "Synthetic smoke test" if receipt["synthetic_source"] else "Measured evidence"
+            )
+            rows = (
+                ("Gate", "Passed"),
+                ("Selected candidate", selected["label"]),
+                ("Selected ID", receipt["selected_id"]),
+                ("Evidence class", evidence_class),
+                ("Eligible candidates", receipt["eligible_count"]),
+                ("Pareto-frontier candidates", receipt["frontier_count"]),
+                ("Decision reason", selection["reason"]),
+            )
+            lines = [
+                "## ParetoPilot decision gate",
+                "",
+                "| Check | Result |",
+                "| --- | --- |",
+                *(f"| {cell(label)} | {cell(value)} |" for label, value in rows),
+                "",
+                f"Recommendation SHA-256: `{receipt['recommendation_sha256']}`",
+                "",
+                f"Report SHA-256: `{receipt['report_sha256']}`",
+                "",
+            ]
+            with Path(summary_path).open("a", encoding="utf-8", newline="\n") as handle:
+                handle.write("\n".join(lines))
+        PY

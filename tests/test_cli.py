@@ -219,6 +219,92 @@ class CliTests(unittest.TestCase):
 
         self.assertEqual(exit_code, 3)
 
+    def test_ci_gate_generates_a_hashed_receipt_for_an_explicit_smoke_test(self) -> None:
+        with TemporaryDirectory() as directory:
+            output_dir = Path(directory) / "gate"
+            stdout = io.StringIO()
+            with patch("sys.stdout", stdout):
+                exit_code = cli.main(
+                    [
+                        "ci-gate",
+                        "examples/synthetic-results.json",
+                        "--constraints",
+                        "configs/constraints.example.json",
+                        "--output-dir",
+                        str(output_dir),
+                        "--allow-synthetic",
+                        "--expect-selected-id",
+                        "q4-kleidiai",
+                    ]
+                )
+
+            payload = json.loads(stdout.getvalue())
+            recommendation_path = output_dir / "recommendation.json"
+            report_path = output_dir / "report.html"
+            receipt_path = output_dir / "gate.json"
+            recommendation = json.loads(recommendation_path.read_text(encoding="utf-8"))
+            receipt = json.loads(receipt_path.read_text(encoding="utf-8"))
+
+            self.assertEqual(exit_code, 0)
+            self.assertEqual(payload["selected_id"], "q4-kleidiai")
+            self.assertTrue(payload["expectation_matched"])
+            self.assertTrue(payload["synthetic_source"])
+            self.assertEqual(recommendation["selected_id"], "q4-kleidiai")
+            self.assertEqual(receipt["selected_id"], "q4-kleidiai")
+            self.assertEqual(
+                receipt["recommendation_sha256"],
+                cli.sha256_file(recommendation_path),
+            )
+            self.assertEqual(receipt["report_sha256"], cli.sha256_file(report_path))
+            self.assertEqual(payload["receipt_sha256"], cli.sha256_file(receipt_path))
+
+    def test_ci_gate_rejects_synthetic_evidence_by_default_without_outputs(self) -> None:
+        with TemporaryDirectory() as directory:
+            output_dir = Path(directory) / "must-not-exist"
+            stdout = io.StringIO()
+            stderr = io.StringIO()
+            with patch("sys.stdout", stdout), patch("sys.stderr", stderr):
+                exit_code = cli.main(
+                    [
+                        "ci-gate",
+                        "examples/synthetic-results.json",
+                        "--constraints",
+                        "configs/constraints.example.json",
+                        "--output-dir",
+                        str(output_dir),
+                    ]
+                )
+
+            self.assertEqual(exit_code, 2)
+            self.assertEqual(stdout.getvalue(), "")
+            self.assertIn("requires measured evidence", stderr.getvalue())
+            self.assertFalse(output_dir.exists())
+
+    def test_ci_gate_rejects_an_unexpected_selection_without_outputs(self) -> None:
+        with TemporaryDirectory() as directory:
+            output_dir = Path(directory) / "must-not-exist"
+            stdout = io.StringIO()
+            stderr = io.StringIO()
+            with patch("sys.stdout", stdout), patch("sys.stderr", stderr):
+                exit_code = cli.main(
+                    [
+                        "ci-gate",
+                        "examples/synthetic-results.json",
+                        "--constraints",
+                        "configs/constraints.example.json",
+                        "--output-dir",
+                        str(output_dir),
+                        "--allow-synthetic",
+                        "--expect-selected-id",
+                        "baseline-q8",
+                    ]
+                )
+
+            self.assertEqual(exit_code, 2)
+            self.assertEqual(stdout.getvalue(), "")
+            self.assertIn("does not match the CI expectation", stderr.getvalue())
+            self.assertFalse(output_dir.exists())
+
     def test_validate_llama_bench_summarizes_fixture(self) -> None:
         fixture = Path(__file__).parent / "fixtures" / "llama_bench.synthetic.jsonl"
         output = io.StringIO()

@@ -12,6 +12,7 @@ evidence pipeline.
 [Exact canonical v1.1 report](https://agrovr.github.io/ParetoPilot/evidence/report-v1.1.html) |
 [Canonical v1.1 result](results/published/30055662526/README.md) |
 [Complete v1.1 evidence](https://github.com/agrovr/ParetoPilot/releases/tag/v1.1.0) |
+[CI decision gate](docs/github-action.md) |
 [Reproduction guide](docs/reproducibility.md)
 
 The Pages homepage is a judge-facing presentation of the locked v1.1 inputs. Pages generates it
@@ -125,6 +126,29 @@ python -m paretopilot recommend examples/synthetic-results.json --constraints co
 The example is explicitly synthetic and exists only to exercise the engine. It is not presented
 as Arm64 benchmark evidence.
 
+## Use it as a CI decision gate
+
+ParetoPilot includes a composite GitHub Action that validates inputs, generates a machine-readable
+recommendation and self-contained report, publishes SHA-256 receipts, and can fail a deployment
+job when the selected candidate changes unexpectedly:
+
+```yaml
+- uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+  with:
+    python-version: "3.12"
+- id: decision
+  uses: agrovr/ParetoPilot@main
+  with:
+    benchmarks: benchmarks/benchmark-set.json
+    constraints: constraints/deployment.json
+    expected-selected-id: q4-kleidiai
+```
+
+Measured evidence is required by default. Synthetic inputs must be explicitly allowed for smoke
+testing, so a fixture cannot silently pass as deployment proof. See the
+[GitHub Action guide](docs/github-action.md) for every input, output, artifact, and a native
+Arm64 workflow example. Pin the Action to a reviewed commit SHA in production.
+
 ## Reproduce the canonical decision
 
 Download
@@ -188,6 +212,7 @@ results/published/29973188507/   preserved v1.0 historical summary and release l
 .github/workflows/               cross-platform CI, Arm64 study, and verified Pages deploy
 docs/                            architecture, methodology, contracts, and reproduction
 tests/                           deterministic behavior and failure-path coverage
+action.yml                       reusable GitHub Actions deployment-decision gate
 ```
 
 ## License

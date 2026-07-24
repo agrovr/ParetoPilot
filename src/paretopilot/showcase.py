@@ -867,8 +867,8 @@ def _hero_markup(
     )
 
     headline = (
-        f'<h1><span class="hero-selection">{_escape(selected.label)}</span> '
-        "stays the deployment choice.</h1>\n"
+        "<h1>Choose the Arm64 deployment that "
+        '<span class="hero-selection">survives the evidence.</span></h1>\n'
     )
     evidence_copy = (
         "This presentation view is derived from the byte-verified, locked v1.1 evidence."
@@ -879,8 +879,9 @@ def _hero_markup(
         )
     )
     lede = (
-        '<p class="report-lede">One measured Arm64 study, '
-        f"{len(benchmarks.candidates)} candidates, and the tradeoffs behind the decision. "
+        f'<p class="report-lede">ParetoPilot measured {len(benchmarks.candidates)} Arm64 '
+        f"configurations and retained {_escape(selected.label)} after quality, Pareto-frontier, "
+        f"and {_escape(_metric_label(metric))} checks. "
         f"{_escape(evidence_copy)}</p>\n"
     )
     decision_rail = (
@@ -892,6 +893,11 @@ def _hero_markup(
         "</dl>\n"
     )
     actions = [
+        (
+            "https://github.com/agrovr/ParetoPilot/blob/main/docs/github-action.md",
+            "Use the GitHub Action",
+            "secondary",
+        ),
         (
             "https://github.com/agrovr/ParetoPilot",
             "View source on GitHub",
@@ -912,7 +918,7 @@ def _hero_markup(
             ),
         )
     action_markup = (
-        '<nav class="hero-actions" aria-label="Evidence links">'
+        '<nav class="hero-actions" aria-label="Project links">'
         + "".join(
             f'<a class="action-{kind}" href="{_escape(href)}">{_escape(label)}</a>'
             for href, label, kind in actions
@@ -1539,7 +1545,7 @@ html[data-theme="dark"] .showcase {
   grid-auto-columns: minmax(10.5rem, 1fr);
   grid-auto-flow: column;
   gap: 0;
-  padding-bottom: 0;
+  padding: 0;
   max-width: 100%;
   overflow-x: auto;
   border: 2px solid var(--flight-ink);
@@ -1841,6 +1847,9 @@ html[data-theme="dark"] .showcase {
   }
 }
 @media (min-width: 68rem) {
+  .showcase .profile-tabs {
+    overflow-x: clip;
+  }
   .showcase .load-context-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }

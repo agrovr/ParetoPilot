@@ -40,6 +40,9 @@ historical experiment.
 8. **Lock and replay.** A bundle-level `SHA256SUMS` covers 150 released payloads. Offline replay
    verifies safe paths and checksums, rebuilds the core and extension outputs, and compares both
    self-contained reports without rerunning inference.
+9. **Gate downstream deployment.** The reusable GitHub Action consumes any validated benchmark
+   set and constraints, rejects synthetic inputs by default, writes a recommendation and
+   self-contained report, and can fail CI when the selected candidate changes unexpectedly.
 
 ## Candidate attribution
 
@@ -140,6 +143,7 @@ light/dark preference changes semantic color tokens only; it never alters the bo
 | [`src/paretopilot/report.py`](../src/paretopilot/report.py) | Deterministic core HTML decision report |
 | [`src/paretopilot/report_v11.py`](../src/paretopilot/report_v11.py) | Deterministic additive evidence report |
 | [`src/paretopilot/showcase.py`](../src/paretopilot/showcase.py) | Judge-facing presentation generated from verified v1.1 inputs without changing the canonical report |
+| [`action.yml`](../action.yml) | Reusable CI decision gate with measured-evidence protection, expected-selection enforcement, and hashed receipts |
 | [`.github/workflows/pages.yml`](../.github/workflows/pages.yml) | Release verification, exact replay, canonical-report preservation, and showcase publication |
 
 ## Published identity

@@ -63,3 +63,62 @@ jobs:
           "$RUNNER_TEMP/paretopilot-wheel-smoke/bin/paretopilot" recommend \
             examples/synthetic-results.json \
             --constraints configs/constraints.example.json
+
+  action-smoke:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.12"
+      - name: Run the local Action with an explicit synthetic smoke fixture
+        id: decision
+        uses: ./
+        with:
+          benchmarks: examples/synthetic-results.json
+          constraints: configs/constraints.example.json
+          output-dir: action-smoke-output
+          require-measured: "false"
+          expected-selected-id: q4-kleidiai
+      - name: Verify Action outputs
+        shell: bash
+        env:
+          SELECTED_ID: ${{ steps.decision.outputs.selected-id }}
+          SYNTHETIC_SOURCE: ${{ steps.decision.outputs.synthetic-source }}
+          RECOMMENDATION: ${{ steps.decision.outputs.recommendation }}
+          REPORT: ${{ steps.decision.outputs.report }}
+          RECEIPT: ${{ steps.decision.outputs.receipt }}
+        run: |
+          set -euo pipefail
+          test "$SELECTED_ID" = "q4-kleidiai"
+          test "$SYNTHETIC_SOURCE" = "true"
+          test -f "$RECOMMENDATION"
+          test -f "$REPORT"
+          test -f "$RECEIPT"
+          python - <<'PY'
+          import json
+          import os
+          from pathlib import Path
+
+          recommendation = json.loads(Path(os.environ["RECOMMENDATION"]).read_text())
+          receipt = json.loads(Path(os.environ["RECEIPT"]).read_text())
+          assert recommendation["selected_id"] == "q4-kleidiai"
+          assert receipt["expectation_matched"] is True
+          assert receipt["synthetic_source"] is True
+          PY
+      - name: Confirm measured-evidence protection fails closed
+        id: synthetic-guard
+        continue-on-error: true
+        uses: ./
+        with:
+          benchmarks: examples/synthetic-results.json
+          constraints: configs/constraints.example.json
+          output-dir: action-guard-output
+      - name: Verify the synthetic guard
+        if: always()
+        shell: bash
+        env:
+          GUARD_OUTCOME: ${{ steps.synthetic-guard.outcome }}
+        run: test "$GUARD_OUTCOME" = "failure"

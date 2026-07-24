@@ -7,7 +7,7 @@ from collections import Counter
 import json
 from pathlib import Path
 import sys
-from typing import Mapping, Sequence
+from typing import Any, Mapping, Sequence
 
 from paretopilot import __version__
 from paretopilot.analysis import recommend
@@ -69,6 +69,23 @@ def _parser() -> argparse.ArgumentParser:
         help="return a nonzero status unless this is a native Arm64 Linux host",
     )
     doctor_parser.add_argument("--output", type=Path)
+
+    ci_gate_parser = subparsers.add_parser(
+        "ci-gate",
+        help="generate a decision receipt and enforce it in continuous integration",
+    )
+    ci_gate_parser.add_argument("results", type=Path)
+    ci_gate_parser.add_argument("--constraints", required=True, type=Path)
+    ci_gate_parser.add_argument("--output-dir", required=True, type=Path)
+    ci_gate_parser.add_argument(
+        "--allow-synthetic",
+        action="store_true",
+        help="allow explicitly synthetic benchmark inputs for smoke testing",
+    )
+    ci_gate_parser.add_argument(
+        "--expect-selected-id",
+        help="return a nonzero status unless this candidate is selected",
+    )
 
     validate_parser = subparsers.add_parser("validate", help="validate a benchmark result file")
     validate_parser.add_argument("results", type=Path)
@@ -325,6 +342,29 @@ def _parser() -> argparse.ArgumentParser:
     return parser
 
 
+def _build_decision_artifacts(
+    results_path: Path,
+    constraints_path: Path,
+) -> tuple[BenchmarkSet, dict[str, Any], str]:
+    """Build one recommendation and report from the same validated inputs."""
+
+    benchmarks = load_benchmarks(results_path)
+    constraints = load_constraints(constraints_path)
+    recommendation = dict(recommend(benchmarks, constraints))
+    recommendation["input_fingerprints"] = {
+        "benchmarks_sha256": sha256_file(results_path),
+        "constraints_sha256": sha256_file(constraints_path),
+    }
+    report_html = render_report(
+        benchmarks,
+        constraints,
+        recommendation,
+        benchmarks_sha256=recommendation["input_fingerprints"]["benchmarks_sha256"],
+        constraints_sha256=recommendation["input_fingerprints"]["constraints_sha256"],
+    )
+    return benchmarks, recommendation, report_html
+
+
 def main(argv: Sequence[str] | None = None) -> int:
     args = _parser().parse_args(argv)
     try:
@@ -334,6 +374,63 @@ def main(argv: Sequence[str] | None = None) -> int:
             if args.output:
                 write_json(args.output, payload)
             exit_code = 3 if args.require_evidence_host and not report.evidence_eligible else 0
+        elif args.command == "ci-gate":
+            benchmarks, recommendation, report_html = _build_decision_artifacts(
+                args.results,
+                args.constraints,
+            )
+            if benchmarks.synthetic and not args.allow_synthetic:
+                raise ValidationError(
+                    "ci-gate requires measured evidence; use --allow-synthetic only "
+                    "for an explicit smoke test"
+                )
+            expected_selected_id = args.expect_selected_id
+            if expected_selected_id is not None:
+                if not expected_selected_id.strip():
+                    raise ValidationError("expect-selected-id must be a non-empty candidate id")
+                if recommendation["selected_id"] != expected_selected_id:
+                    raise ValidationError(
+                        "selected candidate does not match the CI expectation: "
+                        f"expected {expected_selected_id!r}, "
+                        f"got {recommendation['selected_id']!r}"
+                    )
+
+            output_dir = args.output_dir
+            recommendation_path = output_dir / "recommendation.json"
+            report_path = output_dir / "report.html"
+            receipt_path = output_dir / "gate.json"
+            destinations = [recommendation_path, report_path, receipt_path]
+            _require_new_distinct_outputs(destinations)
+            _require_new_or_empty_directory(output_dir)
+
+            write_json(recommendation_path, recommendation)
+            write_text(report_path, report_html)
+            receipt = {
+                "schema_version": "1.0",
+                "valid": True,
+                "selected_id": recommendation["selected_id"],
+                "baseline_id": recommendation["baseline_id"],
+                "expected_selected_id": expected_selected_id,
+                "expectation_matched": (
+                    expected_selected_id is None
+                    or recommendation["selected_id"] == expected_selected_id
+                ),
+                "synthetic_source": benchmarks.synthetic,
+                "candidate_count": len(benchmarks.candidates),
+                "eligible_count": len(recommendation["eligible_ids"]),
+                "frontier_count": len(recommendation["frontier_ids"]),
+                "recommendation": str(recommendation_path),
+                "recommendation_sha256": sha256_file(recommendation_path),
+                "report": str(report_path),
+                "report_sha256": sha256_file(report_path),
+            }
+            write_json(receipt_path, receipt)
+            payload = {
+                **receipt,
+                "receipt": str(receipt_path),
+                "receipt_sha256": sha256_file(receipt_path),
+            }
+            exit_code = 0
         elif args.command == "validate":
             benchmarks = load_benchmarks(args.results)
             payload = {
@@ -513,19 +610,9 @@ def main(argv: Sequence[str] | None = None) -> int:
             if args.recommendation_output is not None:
                 destinations.append(args.recommendation_output)
             _require_new_distinct_outputs(destinations)
-            benchmarks = load_benchmarks(args.results)
-            constraints = load_constraints(args.constraints)
-            recommendation = dict(recommend(benchmarks, constraints))
-            recommendation["input_fingerprints"] = {
-                "benchmarks_sha256": sha256_file(args.results),
-                "constraints_sha256": sha256_file(args.constraints),
-            }
-            report_html = render_report(
-                benchmarks,
-                constraints,
-                recommendation,
-                benchmarks_sha256=recommendation["input_fingerprints"]["benchmarks_sha256"],
-                constraints_sha256=recommendation["input_fingerprints"]["constraints_sha256"],
+            benchmarks, recommendation, report_html = _build_decision_artifacts(
+                args.results,
+                args.constraints,
             )
             write_text(args.output, report_html)
             if args.recommendation_output is not None:
@@ -737,6 +824,20 @@ def _require_new_distinct_outputs(paths: Sequence[Path]) -> None:
         raise ValidationError(
             "refusing to overwrite existing output file(s): " + ", ".join(existing)
         )
+
+
+def _require_new_or_empty_directory(path: Path) -> None:
+    """Require a new or empty real directory for one atomic-looking output set."""
+
+    try:
+        if not path.exists():
+            return
+        if path.is_symlink() or not path.is_dir() or any(path.iterdir()):
+            raise ValidationError("ci-gate output directory must be new or empty")
+    except ValidationError:
+        raise
+    except OSError as exc:
+        raise ValidationError(f"could not inspect ci-gate output directory {path}: {exc}") from exc
 
 
 def _positive_cli_int(value: str) -> int:
