@@ -11,7 +11,7 @@ The complete raw and generated evidence is preserved in the
 | GitHub Actions run | [`30055662526`](https://github.com/agrovr/ParetoPilot/actions/runs/30055662526) |
 | Classification | `canonical` |
 | Source commit | [`8a9ddce0afa2272c4a4097fe87ef6f06cb7689a9`](https://github.com/agrovr/ParetoPilot/commit/8a9ddce0afa2272c4a4097fe87ef6f06cb7689a9) |
-| Runner | Ubuntu 24.04 Arm64, Arm Neoverse-N2, 4 CPUs |
+| Runner | Ubuntu 24.04 Arm64, Arm Neoverse-N2, 4 vCPUs |
 | Release | [`v1.1.0`](https://github.com/agrovr/ParetoPilot/releases/tag/v1.1.0) |
 | Asset | [`paretopilot-v1.1.0-arm64-evidence-30055662526.zip`](https://github.com/agrovr/ParetoPilot/releases/download/v1.1.0/paretopilot-v1.1.0-arm64-evidence-30055662526.zip) |
 | Asset size | 402,899 bytes |
