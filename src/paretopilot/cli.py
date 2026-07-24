@@ -41,6 +41,7 @@ from paretopilot.server_eval import (
     parse_gnu_time_peak_rss,
     pool_server_evaluations,
 )
+from paretopilot.showcase import render_showcase_v11
 from paretopilot.stability import summarize_stability
 from paretopilot.study import assemble_study
 
@@ -268,6 +269,23 @@ def _parser() -> argparse.ArgumentParser:
     report_v11_parser.add_argument("--load", type=Path)
     report_v11_parser.add_argument("--stability", type=Path)
     report_v11_parser.add_argument("--output", required=True, type=Path)
+
+    showcase_v11_parser = subparsers.add_parser(
+        "showcase-v11",
+        help="render a judge-facing v1.1 presentation, locked when proof inputs are supplied",
+    )
+    showcase_v11_parser.add_argument("results", type=Path)
+    showcase_v11_parser.add_argument("--recommendation", required=True, type=Path)
+    showcase_v11_parser.add_argument("--profiles", type=Path)
+    showcase_v11_parser.add_argument("--load", type=Path)
+    showcase_v11_parser.add_argument("--stability", type=Path)
+    showcase_v11_parser.add_argument("--evidence-lock", type=Path)
+    showcase_v11_parser.add_argument("--canonical-report", type=Path)
+    showcase_v11_parser.add_argument(
+        "--canonical-report-href",
+        default="evidence/report-v1.1.html",
+    )
+    showcase_v11_parser.add_argument("--output", required=True, type=Path)
 
     profiles_parser = subparsers.add_parser(
         "profiles",
@@ -558,6 +576,58 @@ def main(argv: Sequence[str] | None = None) -> int:
                 "policy_profiles_supplied": policy_profiles is not None,
                 "load_sweep_supplied": load_sweep is not None,
                 "stability_summary_supplied": stability_summary is not None,
+                "report": str(args.output),
+                "report_sha256": sha256_file(args.output),
+            }
+            exit_code = 0
+        elif args.command == "showcase-v11":
+            _require_new_distinct_outputs([args.output])
+            benchmarks = load_benchmarks(args.results)
+            recommendation = load_json_object(args.recommendation)
+            policy_profiles = load_json_object(args.profiles) if args.profiles is not None else None
+            load_sweep = load_json_object(args.load) if args.load is not None else None
+            stability_summary = (
+                load_json_object(args.stability) if args.stability is not None else None
+            )
+            evidence_lock = (
+                load_json_object(args.evidence_lock) if args.evidence_lock is not None else None
+            )
+            canonical_html = None
+            if args.canonical_report is not None:
+                try:
+                    canonical_bytes = args.canonical_report.read_bytes()
+                    canonical_html = canonical_bytes.decode("utf-8")
+                except OSError as exc:
+                    raise ValidationError(
+                        f"could not read canonical report: {args.canonical_report}"
+                    ) from exc
+                except UnicodeDecodeError as exc:
+                    raise ValidationError("canonical report must be valid UTF-8") from exc
+            report_html = render_showcase_v11(
+                benchmarks,
+                recommendation,
+                policy_profiles=policy_profiles,
+                load_sweep=load_sweep,
+                stability_summary=stability_summary,
+                evidence_lock=evidence_lock,
+                canonical_html=canonical_html,
+                canonical_report_href=args.canonical_report_href,
+                benchmarks_sha256=sha256_file(args.results),
+                recommendation_sha256=sha256_file(args.recommendation),
+                profiles_sha256=sha256_file(args.profiles) if args.profiles is not None else "",
+                load_sha256=sha256_file(args.load) if args.load is not None else "",
+                stability_sha256=(
+                    sha256_file(args.stability) if args.stability is not None else ""
+                ),
+            )
+            write_text(args.output, report_html)
+            payload = {
+                "valid": True,
+                "presentation_view": True,
+                "selected_id": recommendation.get("selected_id"),
+                "baseline_id": benchmarks.baseline_id,
+                "canonical_report_verified": canonical_html is not None,
+                "evidence_lock_supplied": evidence_lock is not None,
                 "report": str(args.output),
                 "report_sha256": sha256_file(args.output),
             }

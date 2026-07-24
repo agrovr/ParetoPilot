@@ -2,14 +2,23 @@ from __future__ import annotations
 
 import io
 import json
-import unittest
-from unittest.mock import patch
 from pathlib import Path
 from tempfile import TemporaryDirectory
+import unittest
+from unittest.mock import patch
 
 from paretopilot import cli
 from paretopilot.doctor import EnvironmentReport
 from paretopilot.domain import ValidationError
+from paretopilot.report_v11 import render_report_v11
+from test_report_v11 import (
+    canonical_benchmarks,
+    canonical_recommendation,
+    derived_profiles,
+    measured_load_sweep,
+    measured_stability,
+)
+from test_showcase import evidence_lock
 
 
 def _server_evaluation_payload(latency_ms: float) -> dict[str, object]:
@@ -63,6 +72,97 @@ def _server_evaluation_payload(latency_ms: float) -> dict[str, object]:
             ],
         },
     }
+
+
+def _benchmark_payload() -> dict[str, object]:
+    benchmarks = canonical_benchmarks()
+    return {
+        "schema_version": benchmarks.schema_version,
+        "baseline_id": benchmarks.baseline_id,
+        "synthetic": benchmarks.synthetic,
+        "metadata": dict(benchmarks.metadata),
+        "candidates": [
+            {
+                "id": candidate.candidate_id,
+                "label": candidate.label,
+                "parameters": dict(candidate.parameters),
+                "metrics": dict(candidate.metrics),
+            }
+            for candidate in benchmarks.candidates
+        ],
+    }
+
+
+def _write_json_fixture(path: Path, payload: object) -> None:
+    path.write_text(
+        json.dumps(payload, ensure_ascii=False, indent=2, sort_keys=True) + "\n",
+        encoding="utf-8",
+    )
+
+
+def _write_showcase_fixture_bundle(root: Path) -> dict[str, Path]:
+    paths = {
+        "results": root / "benchmark-set.json",
+        "recommendation": root / "recommendation.json",
+        "profiles": root / "policy-profiles.json",
+        "load": root / "load-evaluation.json",
+        "stability": root / "repeat-stability.json",
+        "evidence_lock": root / "evidence-lock.json",
+        "canonical": root / "report-v1.1.html",
+    }
+    benchmarks = canonical_benchmarks()
+    _write_json_fixture(paths["results"], _benchmark_payload())
+    benchmarks_sha256 = cli.sha256_file(paths["results"])
+
+    recommendation = canonical_recommendation(benchmarks)
+    recommendation["input_fingerprints"]["benchmarks_sha256"] = benchmarks_sha256
+    profiles = derived_profiles(benchmarks)
+    profiles["input_fingerprints"]["benchmarks_sha256"] = benchmarks_sha256
+    for profile in profiles["profiles"]:
+        fingerprints = profile["recommendation"].get("input_fingerprints")
+        if isinstance(fingerprints, dict):
+            fingerprints["benchmarks_sha256"] = benchmarks_sha256
+    fixtures = {
+        "recommendation": recommendation,
+        "profiles": profiles,
+        "load": measured_load_sweep(),
+        "stability": measured_stability(benchmarks),
+    }
+    for name, payload in fixtures.items():
+        _write_json_fixture(paths[name], payload)
+
+    loaded_benchmarks = cli.load_benchmarks(paths["results"])
+    loaded_recommendation = cli.load_json_object(paths["recommendation"])
+    loaded_profiles = cli.load_json_object(paths["profiles"])
+    loaded_load = cli.load_json_object(paths["load"])
+    loaded_stability = cli.load_json_object(paths["stability"])
+    canonical = render_report_v11(
+        loaded_benchmarks,
+        loaded_recommendation,
+        policy_profiles=loaded_profiles,
+        load_sweep=loaded_load,
+        stability_summary=loaded_stability,
+        benchmarks_sha256=cli.sha256_file(paths["results"]),
+        recommendation_sha256=cli.sha256_file(paths["recommendation"]),
+        profiles_sha256=cli.sha256_file(paths["profiles"]),
+        load_sha256=cli.sha256_file(paths["load"]),
+        stability_sha256=cli.sha256_file(paths["stability"]),
+    )
+    paths["canonical"].write_text(canonical, encoding="utf-8", newline="\n")
+    _write_json_fixture(
+        paths["evidence_lock"],
+        evidence_lock(
+            artifacts_sha256={
+                "benchmark_set": cli.sha256_file(paths["results"]),
+                "recommendation": cli.sha256_file(paths["recommendation"]),
+                "policy_profiles": cli.sha256_file(paths["profiles"]),
+                "load_evaluation": cli.sha256_file(paths["load"]),
+                "repeat_stability": cli.sha256_file(paths["stability"]),
+                "report_v1_1": cli.sha256_file(paths["canonical"]),
+            }
+        ),
+    )
+    return paths
 
 
 class CliTests(unittest.TestCase):
@@ -749,6 +849,230 @@ class CliTests(unittest.TestCase):
                 )
             self.assertEqual(overwrite_exit, 2)
             self.assertIn("refusing to overwrite", stderr.getvalue())
+
+    def test_showcase_v11_cli_renders_locked_fixtures_deterministically(self) -> None:
+        with TemporaryDirectory() as directory:
+            root = Path(directory)
+            paths = _write_showcase_fixture_bundle(root)
+            canonical_before = paths["canonical"].read_bytes()
+            base_args = [
+                "showcase-v11",
+                str(paths["results"]),
+                "--recommendation",
+                str(paths["recommendation"]),
+                "--profiles",
+                str(paths["profiles"]),
+                "--load",
+                str(paths["load"]),
+                "--stability",
+                str(paths["stability"]),
+            ]
+            locked_outputs = [root / "showcase-a.html", root / "showcase-b.html"]
+            locked_payloads: list[dict[str, object]] = []
+
+            for output in locked_outputs:
+                stdout = io.StringIO()
+                with patch("sys.stdout", stdout):
+                    exit_code = cli.main(
+                        [
+                            *base_args,
+                            "--evidence-lock",
+                            str(paths["evidence_lock"]),
+                            "--canonical-report",
+                            str(paths["canonical"]),
+                            "--canonical-report-href",
+                            "proof/report-v1.1.html",
+                            "--output",
+                            str(output),
+                        ]
+                    )
+                self.assertEqual(exit_code, 0)
+                locked_payloads.append(json.loads(stdout.getvalue()))
+
+            first_html = locked_outputs[0].read_text(encoding="utf-8")
+            self.assertEqual(locked_outputs[0].read_bytes(), locked_outputs[1].read_bytes())
+            self.assertEqual(
+                locked_payloads[0]["report_sha256"],
+                locked_payloads[1]["report_sha256"],
+            )
+            for payload, output in zip(locked_payloads, locked_outputs, strict=True):
+                self.assertTrue(payload["valid"])
+                self.assertTrue(payload["presentation_view"])
+                self.assertTrue(payload["canonical_report_verified"])
+                self.assertTrue(payload["evidence_lock_supplied"])
+                self.assertEqual(payload["selected_id"], "q8-generic")
+                self.assertEqual(payload["baseline_id"], "q8-generic")
+                self.assertEqual(payload["report"], str(output))
+
+            self.assertIn('class="showcase is-verified"', first_html)
+            self.assertIn("<title>ParetoPilot | Arm64 measured flight log</title>", first_html)
+            self.assertIn('href="proof/report-v1.1.html"', first_html)
+            self.assertIn("150 files verified", first_html)
+            self.assertIn("Locked canonical", first_html)
+            self.assertIn("Open exact canonical report", first_html)
+            self.assertNotEqual(first_html.encode(), canonical_before)
+            self.assertNotIn(b'class="showcase', canonical_before)
+            self.assertIn(
+                b"<title>ParetoPilot v1.1 deployment decision report</title>",
+                canonical_before,
+            )
+            self.assertEqual(paths["canonical"].read_bytes(), canonical_before)
+
+            unlocked_output = root / "showcase-without-lock.html"
+            unlocked_stdout = io.StringIO()
+            with patch("sys.stdout", unlocked_stdout):
+                unlocked_exit = cli.main(
+                    [
+                        *base_args,
+                        "--output",
+                        str(unlocked_output),
+                    ]
+                )
+            unlocked_payload = json.loads(unlocked_stdout.getvalue())
+            self.assertEqual(unlocked_exit, 0)
+            self.assertTrue(unlocked_payload["presentation_view"])
+            self.assertFalse(unlocked_payload["canonical_report_verified"])
+            self.assertFalse(unlocked_payload["evidence_lock_supplied"])
+            unlocked_html = unlocked_output.read_text(encoding="utf-8")
+            self.assertIn('class="showcase is-preview"', unlocked_html)
+            self.assertIn("Unverified preview", unlocked_html)
+            self.assertNotIn("Open exact canonical report", unlocked_html)
+
+    def test_showcase_v11_cli_rejects_canonical_report_drift_without_output(self) -> None:
+        with TemporaryDirectory() as directory:
+            root = Path(directory)
+            paths = _write_showcase_fixture_bundle(root)
+            paths["canonical"].write_text(
+                paths["canonical"].read_text(encoding="utf-8") + "\n<!-- drift -->\n",
+                encoding="utf-8",
+            )
+            output = root / "must-not-exist.html"
+            stdout = io.StringIO()
+            stderr = io.StringIO()
+
+            with patch("sys.stdout", stdout), patch("sys.stderr", stderr):
+                exit_code = cli.main(
+                    [
+                        "showcase-v11",
+                        str(paths["results"]),
+                        "--recommendation",
+                        str(paths["recommendation"]),
+                        "--profiles",
+                        str(paths["profiles"]),
+                        "--load",
+                        str(paths["load"]),
+                        "--stability",
+                        str(paths["stability"]),
+                        "--evidence-lock",
+                        str(paths["evidence_lock"]),
+                        "--canonical-report",
+                        str(paths["canonical"]),
+                        "--output",
+                        str(output),
+                    ]
+                )
+
+            self.assertEqual(exit_code, 2)
+            self.assertEqual(stdout.getvalue(), "")
+            self.assertIn("canonical_html does not match", stderr.getvalue())
+            self.assertFalse(output.exists())
+
+    def test_showcase_v11_cli_rejects_line_ending_byte_drift(self) -> None:
+        with TemporaryDirectory() as directory:
+            root = Path(directory)
+            paths = _write_showcase_fixture_bundle(root)
+            original = paths["canonical"].read_bytes()
+            self.assertIn(b"\n", original)
+            paths["canonical"].write_bytes(original.replace(b"\n", b"\r\n"))
+            output = root / "must-not-exist.html"
+            stderr = io.StringIO()
+
+            with patch("sys.stdout", io.StringIO()), patch("sys.stderr", stderr):
+                exit_code = cli.main(
+                    [
+                        "showcase-v11",
+                        str(paths["results"]),
+                        "--recommendation",
+                        str(paths["recommendation"]),
+                        "--profiles",
+                        str(paths["profiles"]),
+                        "--load",
+                        str(paths["load"]),
+                        "--stability",
+                        str(paths["stability"]),
+                        "--evidence-lock",
+                        str(paths["evidence_lock"]),
+                        "--canonical-report",
+                        str(paths["canonical"]),
+                        "--output",
+                        str(output),
+                    ]
+                )
+
+            self.assertEqual(exit_code, 2)
+            self.assertIn("canonical_html does not match", stderr.getvalue())
+            self.assertFalse(output.exists())
+
+    def test_showcase_v11_cli_rejects_missing_canonical_report_without_output(self) -> None:
+        with TemporaryDirectory() as directory:
+            root = Path(directory)
+            paths = _write_showcase_fixture_bundle(root)
+            output = root / "must-not-exist.html"
+            stdout = io.StringIO()
+            stderr = io.StringIO()
+
+            with patch("sys.stdout", stdout), patch("sys.stderr", stderr):
+                exit_code = cli.main(
+                    [
+                        "showcase-v11",
+                        str(paths["results"]),
+                        "--recommendation",
+                        str(paths["recommendation"]),
+                        "--evidence-lock",
+                        str(paths["evidence_lock"]),
+                        "--canonical-report",
+                        str(root / "missing-report.html"),
+                        "--output",
+                        str(output),
+                    ]
+                )
+
+            self.assertEqual(exit_code, 2)
+            self.assertEqual(stdout.getvalue(), "")
+            self.assertIn("could not read canonical report", stderr.getvalue())
+            self.assertFalse(output.exists())
+
+    def test_showcase_v11_cli_rejects_invalid_utf8_canonical_report_without_output(
+        self,
+    ) -> None:
+        with TemporaryDirectory() as directory:
+            root = Path(directory)
+            paths = _write_showcase_fixture_bundle(root)
+            paths["canonical"].write_bytes(b"\xff\xfe\xfa")
+            output = root / "must-not-exist.html"
+            stdout = io.StringIO()
+            stderr = io.StringIO()
+
+            with patch("sys.stdout", stdout), patch("sys.stderr", stderr):
+                exit_code = cli.main(
+                    [
+                        "showcase-v11",
+                        str(paths["results"]),
+                        "--recommendation",
+                        str(paths["recommendation"]),
+                        "--evidence-lock",
+                        str(paths["evidence_lock"]),
+                        "--canonical-report",
+                        str(paths["canonical"]),
+                        "--output",
+                        str(output),
+                    ]
+                )
+
+            self.assertEqual(exit_code, 2)
+            self.assertEqual(stdout.getvalue(), "")
+            self.assertIn("canonical report must be valid UTF-8", stderr.getvalue())
+            self.assertFalse(output.exists())
 
     def test_paired_fixture_to_report_is_one_verified_workflow(self) -> None:
         repository = Path(__file__).parents[1]

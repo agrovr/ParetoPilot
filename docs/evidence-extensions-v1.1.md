@@ -9,7 +9,7 @@ recommendation boundary introduced in v1.0.
 
 Canonical [run `30055662526`](https://github.com/agrovr/ParetoPilot/actions/runs/30055662526)
 completed the full v1.1 contract on Ubuntu 24.04 Arm64 with a 4-vCPU Arm Neoverse-N2 CPU. Its
-permanent archive is release
+pinned archive is release
 [`v1.1.0`](https://github.com/agrovr/ParetoPilot/releases/tag/v1.1.0), produced from commit
 [`8a9ddce0afa2272c4a4097fe87ef6f06cb7689a9`](https://github.com/agrovr/ParetoPilot/commit/8a9ddce0afa2272c4a4097fe87ef6f06cb7689a9).
 
@@ -137,6 +137,19 @@ The report keeps the primary finding honest: Q8 was the numeric p95 end-to-end w
 only candidate within the declared 1% cutoff. Tuned Q4 + KleidiAI is shown as a resource
 alternative with lower model size, RSS, and TTFT rather than being mislabeled as the canonical
 winner.
+
+### Pages showcase
+
+The public Pages homepage is a presentation view, not a tenth authoritative replay artifact.
+Before rendering it, the deploy workflow downloads and verifies the locked release, reproduces
+all nine comparisons, and confirms the exact canonical `report-v1.1.html` hash. The showcase
+renderer also requires the reviewed evidence lock and refuses a supplied canonical report that
+does not match a fresh deterministic render from the same inputs.
+
+Pages publishes the presentation as `index.html` and preserves the byte-identical canonical
+report at `evidence/report-v1.1.html`. The showcase can improve navigation and visual
+communication, but it cannot add measurements, change the selected candidate, or substitute for
+the checksummed release.
 
 ## Replay semantics
 

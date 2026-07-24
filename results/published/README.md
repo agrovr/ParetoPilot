@@ -1,7 +1,7 @@
 # Published evidence
 
 The repository keeps compact, human-reviewed pointers to released results. Complete raw samples,
-commands, logs, build records, environment captures, and generated outputs live in permanent
+commands, logs, build records, environment captures, and generated outputs live in versioned
 release archives instead of cluttering the source tree.
 
 | Run | Status | Host | Decision | Complete evidence |
