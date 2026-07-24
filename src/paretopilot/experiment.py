@@ -30,7 +30,14 @@ from typing import Any, Mapping, Sequence
 from paretopilot.domain import BenchmarkSet, ValidationError
 from paretopilot.io import load_json_object, sha256_file
 from paretopilot.llama_summary import summarize_llama_bench_paths
-from paretopilot.server_eval import parse_gnu_time_peak_rss, pool_server_evaluations
+from paretopilot.server_eval import (
+    EvaluationSuite,
+    load_evaluation_suite,
+    parse_gnu_time_peak_rss,
+    pool_server_evaluations,
+    quality_answer_matches,
+    validate_server_evaluation,
+)
 
 
 _SHA256 = re.compile(r"^[0-9a-f]{64}$")
@@ -129,21 +136,24 @@ def assemble_experiment(manifest_path: Path) -> Mapping[str, Any]:
     except ValidationError as exc:
         raise _error(f"invalid experiment manifest: {exc}") from exc
 
+    manifest_fields = {
+        "schema_version",
+        "experiment_id",
+        "baseline_id",
+        "classification",
+        "synthetic",
+        "source",
+        "model_family",
+        "runtime",
+        "optimization_library",
+        "evaluation_suite",
+        "candidates",
+    }
+    if "evaluation_suite_path" in manifest:
+        manifest_fields.add("evaluation_suite_path")
     _exact_fields(
         manifest,
-        {
-            "schema_version",
-            "experiment_id",
-            "baseline_id",
-            "classification",
-            "synthetic",
-            "source",
-            "model_family",
-            "runtime",
-            "optimization_library",
-            "evaluation_suite",
-            "candidates",
-        },
+        manifest_fields,
         "experiment manifest",
     )
     if manifest.get("schema_version") != "1.0":
@@ -162,10 +172,29 @@ def assemble_experiment(manifest_path: Path) -> Mapping[str, Any]:
     optimization_library = _validate_optimization_library(
         _object(manifest.get("optimization_library"), "optimization_library")
     )
+    root = resolved_manifest.parent
     evaluation_suite = _validate_evaluation_identity(
         _object(manifest.get("evaluation_suite"), "evaluation_suite"),
         "evaluation_suite",
     )
+    evaluation_suite_contract: EvaluationSuite | None = None
+    evaluation_suite_path_text: str | None = None
+    if "evaluation_suite_path" in manifest:
+        evaluation_suite_path_text = _safe_relative_path(
+            manifest.get("evaluation_suite_path"),
+            "evaluation_suite_path",
+        )
+        evaluation_suite_path = _resolve_verified_artifact(
+            root,
+            path_text=evaluation_suite_path_text,
+            expected_sha256=evaluation_suite["sha256"],
+            context="evaluation suite",
+        )
+        evaluation_suite_contract = load_evaluation_suite(evaluation_suite_path)
+        if evaluation_suite_contract.suite_id != evaluation_suite["id"]:
+            raise _error("evaluation suite file id does not match declared evaluation_suite.id")
+    elif evaluation_suite["id"] == "paretopilot-qwen-behavior-v2":
+        raise _error("paretopilot-qwen-behavior-v2 requires a checksummed evaluation_suite_path")
 
     raw_candidates = manifest.get("candidates")
     if not isinstance(raw_candidates, list):
@@ -173,10 +202,11 @@ def assemble_experiment(manifest_path: Path) -> Mapping[str, Any]:
     if len(raw_candidates) < 3:
         raise _error("candidates must contain at least three candidates")
 
-    root = resolved_manifest.parent
     seen_ids: set[str] = set()
     seen_ids_casefold: set[str] = set()
-    seen_paths: set[str] = set()
+    seen_paths: set[str] = (
+        {evaluation_suite_path_text.casefold()} if evaluation_suite_path_text is not None else set()
+    )
     candidates: list[Mapping[str, Any]] = []
     evidence: dict[str, Any] = {}
     for index, raw_candidate in enumerate(raw_candidates):
@@ -264,6 +294,7 @@ def assemble_experiment(manifest_path: Path) -> Mapping[str, Any]:
             loaded["server_evaluation"],
             candidate_id=candidate_id,
             evaluation_suite=evaluation_suite,
+            evaluation_suite_contract=evaluation_suite_contract,
         )
         peak_rss_mib = _validate_resource_measurement(
             loaded["resource_measurement"],
@@ -1230,8 +1261,13 @@ def _validate_server_evaluation(
     *,
     candidate_id: str,
     evaluation_suite: Mapping[str, str],
+    evaluation_suite_contract: EvaluationSuite | None = None,
 ) -> tuple[float, float, float]:
     context = f"candidate {candidate_id!r} server evaluation"
+    try:
+        validate_server_evaluation(raw)
+    except ValidationError as exc:
+        raise _error(f"{context} failed central validation: {exc}") from exc
     _exact_fields(
         raw,
         {"schema_version", "candidate_id", "synthetic", "suite", "quality", "latency"},
@@ -1265,21 +1301,49 @@ def _validate_server_evaluation(
         raise _error(f"{context} suite id does not match declared evaluation suite")
     if _sha256(suite.get("sha256"), f"{context}.suite.sha256") != evaluation_suite["sha256"]:
         raise _error(f"{context} suite sha256 does not match declared evaluation suite")
-    _string(suite.get("license"), f"{context}.suite.license")
+    license_name = _string(suite.get("license"), f"{context}.suite.license")
+    if evaluation_suite_contract is not None and license_name != evaluation_suite_contract.license:
+        raise _error(f"{context}.suite.license does not match the evaluation suite file")
     case_count = _integer(
         suite.get("quality_case_count"), f"{context}.suite.quality_case_count", minimum=1
     )
+    if evaluation_suite_contract is not None and case_count != len(
+        evaluation_suite_contract.quality_cases
+    ):
+        raise _error(f"{context}.suite.quality_case_count does not match the evaluation suite file")
     repetitions = _integer(
         suite.get("performance_repetitions"),
         f"{context}.suite.performance_repetitions",
         minimum=1,
     )
-    _integer(
+    warmups = _integer(
         suite.get("performance_warmups"),
         f"{context}.suite.performance_warmups",
         minimum=1,
     )
-    _integer(suite.get("generation_tokens"), f"{context}.suite.generation_tokens", minimum=1)
+    if (
+        evaluation_suite_contract is not None
+        and repetitions != evaluation_suite_contract.repetitions * 2
+    ):
+        raise _error(
+            f"{context}.suite.performance_repetitions does not match the "
+            "two balanced passes declared by the evaluation suite file"
+        )
+    if evaluation_suite_contract is not None and warmups != evaluation_suite_contract.warmups * 2:
+        raise _error(
+            f"{context}.suite.performance_warmups does not match the "
+            "two balanced passes declared by the evaluation suite file"
+        )
+    generation_tokens = _integer(
+        suite.get("generation_tokens"),
+        f"{context}.suite.generation_tokens",
+        minimum=1,
+    )
+    if (
+        evaluation_suite_contract is not None
+        and generation_tokens != evaluation_suite_contract.generation_tokens
+    ):
+        raise _error(f"{context}.suite.generation_tokens does not match the evaluation suite file")
     if suite.get("cache_prompt") is not False:
         raise _error(f"{context}.suite.cache_prompt must be false")
     _integer(suite.get("seed"), f"{context}.suite.seed")
@@ -1303,20 +1367,44 @@ def _validate_server_evaluation(
     case_ids: set[str] = set()
     for index, case_value in enumerate(cases):
         case = _object(case_value, f"{context}.quality.cases[{index}]")
-        _exact_fields(
-            case,
-            {"id", "prompt", "accepted_answers", "response", "matched", "matched_answer"},
-            f"{context}.quality.cases[{index}]",
-        )
+        required_fields = {
+            "id",
+            "prompt",
+            "accepted_answers",
+            "response",
+            "matched",
+            "matched_answer",
+        }
+        allowed_fields = required_fields | {"match_mode"}
+        if not required_fields.issubset(case) or not set(case).issubset(allowed_fields):
+            raise _error(f"{context}.quality.cases[{index}] has an invalid schema")
         case_id = _string(case.get("id"), f"{context}.quality.cases[{index}].id")
         if case_id in case_ids:
             raise _error(f"{context}.quality.cases contains duplicate id {case_id!r}")
         case_ids.add(case_id)
-        _string(case.get("prompt"), f"{context}.quality.cases[{index}].prompt")
+        prompt = _string(
+            case.get("prompt"),
+            f"{context}.quality.cases[{index}].prompt",
+        )
         accepted_answers = _string_list(
             case.get("accepted_answers"),
             f"{context}.quality.cases[{index}].accepted_answers",
         )
+        match_mode = case.get("match_mode", "normalized-text")
+        if not isinstance(match_mode, str):
+            raise _error(f"{context}.quality.cases[{index}].match_mode must be a string")
+        if evaluation_suite_contract is not None:
+            expected_case = evaluation_suite_contract.quality_cases[index]
+            if (
+                case_id != expected_case.case_id
+                or prompt != expected_case.prompt
+                or tuple(accepted_answers) != expected_case.accepted_answers
+                or match_mode != expected_case.match_mode
+            ):
+                raise _error(
+                    f"{context}.quality.cases[{index}] does not match the "
+                    "checksummed evaluation suite file"
+                )
         response = case.get("response")
         if not isinstance(response, str):
             raise _error(f"{context}.quality.cases[{index}].response must be a string")
@@ -1332,12 +1420,11 @@ def _validate_server_evaluation(
             raise _error(
                 f"{context}.quality.cases[{index}].matched_answer must be null when unmatched"
             )
-        normalized_response = _normalize_quality_answer(response)
         computed_answer = next(
             (
                 answer
                 for answer in accepted_answers
-                if normalized_response == _normalize_quality_answer(answer)
+                if quality_answer_matches(response, answer, match_mode)
             ),
             None,
         )
@@ -1515,7 +1602,3 @@ def _validate_resource_measurement(
         maximum=2**63 - 1,
     )
     return maximum_kib / 1024.0
-
-
-def _normalize_quality_answer(value: str) -> str:
-    return re.sub(r"[^a-z0-9]+", "", value.casefold())

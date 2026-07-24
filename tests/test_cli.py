@@ -9,6 +9,7 @@ from tempfile import TemporaryDirectory
 
 from paretopilot import cli
 from paretopilot.doctor import EnvironmentReport
+from paretopilot.domain import ValidationError
 
 
 def _server_evaluation_payload(latency_ms: float) -> dict[str, object]:
@@ -510,6 +511,240 @@ class CliTests(unittest.TestCase):
                         str(second),
                         "--output",
                         str(destination),
+                    ]
+                )
+            self.assertEqual(overwrite_exit, 2)
+            self.assertIn("refusing to overwrite", stderr.getvalue())
+
+    def test_evaluate_load_cli_uses_strict_plan_and_live_runner(self) -> None:
+        with TemporaryDirectory() as directory:
+            root = Path(directory)
+            plan_path = root / "plan.json"
+            plan_path.write_text('{"schema_version":"1.0"}', encoding="utf-8")
+            server_command = root / "server-command.json"
+            canonical_server_command = root / "canonical-server-command.json"
+            server_command.write_text('{"schema_version":"1.0"}', encoding="utf-8")
+            canonical_server_command.write_text('{"schema_version":"1.0"}', encoding="utf-8")
+            output_path = root / "load.json"
+            artifact = {
+                "schema_version": "1.0",
+                "candidate_id": "candidate-a",
+                "rows": [],
+            }
+            sentinel_plan = object()
+            sentinel_binding = {"plan_sha256": "a" * 64}
+            stdout = io.StringIO()
+            with (
+                patch.object(cli, "load_load_plan", return_value=sentinel_plan) as load_plan,
+                patch.object(
+                    cli,
+                    "build_load_evidence_binding",
+                    return_value=sentinel_binding,
+                ) as build_binding,
+                patch.object(
+                    cli,
+                    "evaluate_llama_server_load",
+                    return_value=artifact,
+                ) as evaluate,
+                patch("sys.stdout", stdout),
+            ):
+                exit_code = cli.main(
+                    [
+                        "evaluate-load",
+                        "--base-url",
+                        "http://127.0.0.1:8080",
+                        "--candidate-id",
+                        "candidate-a",
+                        "--plan",
+                        str(plan_path),
+                        "--server-command",
+                        str(server_command),
+                        "--canonical-server-command",
+                        str(canonical_server_command),
+                        "--output",
+                        str(output_path),
+                    ]
+                )
+
+            self.assertEqual(exit_code, 0)
+            load_plan.assert_called_once_with(plan_path)
+            build_binding.assert_called_once_with(
+                base_url="http://127.0.0.1:8080",
+                plan_path=plan_path,
+                server_command_path=server_command,
+                canonical_server_command_path=canonical_server_command,
+            )
+            evaluate.assert_called_once_with(
+                "http://127.0.0.1:8080",
+                sentinel_plan,
+                candidate_id="candidate-a",
+                evidence_binding=sentinel_binding,
+            )
+            self.assertEqual(
+                json.loads(output_path.read_text(encoding="utf-8")),
+                artifact,
+            )
+            self.assertEqual(json.loads(stdout.getvalue()), artifact)
+
+    def test_combine_load_cli_reads_inputs_and_writes_combined_artifact(self) -> None:
+        with TemporaryDirectory() as directory:
+            root = Path(directory)
+            first = root / "a.json"
+            second = root / "b.json"
+            first.write_text('{"candidate_id":"a"}', encoding="utf-8")
+            second.write_text('{"candidate_id":"b"}', encoding="utf-8")
+            output_path = root / "combined.json"
+            combined = {
+                "schema_version": "1.0",
+                "rows": [{"candidate_id": "a"}, {"candidate_id": "b"}],
+            }
+            with (
+                patch.object(
+                    cli,
+                    "combine_load_evaluations",
+                    return_value=combined,
+                ) as combine,
+                patch("sys.stdout", io.StringIO()),
+            ):
+                exit_code = cli.main(
+                    [
+                        "combine-load",
+                        "--input",
+                        str(first),
+                        "--input",
+                        str(second),
+                        "--output",
+                        str(output_path),
+                    ]
+                )
+
+            self.assertEqual(exit_code, 0)
+            combine.assert_called_once_with(
+                [{"candidate_id": "a"}, {"candidate_id": "b"}],
+                require_evidence_bindings=True,
+            )
+            self.assertEqual(
+                json.loads(output_path.read_text(encoding="utf-8")),
+                combined,
+            )
+
+    def test_stability_cli_parses_labeled_inputs_and_metric_directions(self) -> None:
+        repository = Path(__file__).parents[1]
+        source = repository / "examples" / "synthetic-results.json"
+        with TemporaryDirectory() as directory:
+            output_path = Path(directory) / "stability.json"
+            summary = {
+                "schema_version": "1.0",
+                "baseline_id": "baseline",
+                "rows": [],
+            }
+            stdout = io.StringIO()
+            with (
+                patch.object(
+                    cli,
+                    "summarize_stability",
+                    return_value=summary,
+                ) as summarize,
+                patch("sys.stdout", stdout),
+            ):
+                exit_code = cli.main(
+                    [
+                        "summarize-stability",
+                        "--input",
+                        f"A={source}",
+                        "--input",
+                        f"B={source}",
+                        "--metric",
+                        "latency_ms=min",
+                        "--metric",
+                        "throughput=max",
+                        "--output",
+                        str(output_path),
+                    ]
+                )
+
+            self.assertEqual(exit_code, 0)
+            self.assertEqual(summarize.call_args.kwargs["pass_labels"], ["A", "B"])
+            self.assertEqual(
+                summarize.call_args.kwargs["metric_directions"],
+                {"latency_ms": "min", "throughput": "max"},
+            )
+            self.assertEqual(json.loads(stdout.getvalue()), summary)
+
+        with self.assertRaisesRegex(ValidationError, "must be unique"):
+            cli._parse_metric_directions(["latency=min", "latency=max"])
+
+    def test_report_v11_cli_loads_extensions_and_writes_once(self) -> None:
+        repository = Path(__file__).parents[1]
+        results = repository / "examples" / "synthetic-results.json"
+        with TemporaryDirectory() as directory:
+            root = Path(directory)
+            recommendation = root / "recommendation.json"
+            profiles = root / "profiles.json"
+            load = root / "load.json"
+            stability = root / "stability.json"
+            output = root / "report-v1.1.html"
+            recommendation.write_text(
+                json.dumps({"selected_id": "balanced"}),
+                encoding="utf-8",
+            )
+            profiles.write_text(json.dumps({"profiles": []}), encoding="utf-8")
+            load.write_text(json.dumps({"rows": []}), encoding="utf-8")
+            stability.write_text(json.dumps({"rows": []}), encoding="utf-8")
+            stdout = io.StringIO()
+
+            with (
+                patch.object(
+                    cli,
+                    "render_report_v11",
+                    return_value="<!doctype html><title>ParetoPilot v1.1</title>",
+                ) as render,
+                patch("sys.stdout", stdout),
+            ):
+                exit_code = cli.main(
+                    [
+                        "report-v11",
+                        str(results),
+                        "--recommendation",
+                        str(recommendation),
+                        "--profiles",
+                        str(profiles),
+                        "--load",
+                        str(load),
+                        "--stability",
+                        str(stability),
+                        "--output",
+                        str(output),
+                    ]
+                )
+
+            self.assertEqual(exit_code, 0)
+            self.assertIn("ParetoPilot v1.1", output.read_text(encoding="utf-8"))
+            kwargs = render.call_args.kwargs
+            self.assertEqual(kwargs["policy_profiles"], {"profiles": []})
+            self.assertEqual(kwargs["load_sweep"], {"rows": []})
+            self.assertEqual(kwargs["stability_summary"], {"rows": []})
+            self.assertEqual(len(kwargs["benchmarks_sha256"]), 64)
+            self.assertEqual(len(kwargs["recommendation_sha256"]), 64)
+            self.assertEqual(len(kwargs["profiles_sha256"]), 64)
+            self.assertEqual(len(kwargs["load_sha256"]), 64)
+            self.assertEqual(len(kwargs["stability_sha256"]), 64)
+            payload = json.loads(stdout.getvalue())
+            self.assertTrue(payload["valid"])
+            self.assertTrue(payload["policy_profiles_supplied"])
+            self.assertTrue(payload["load_sweep_supplied"])
+            self.assertTrue(payload["stability_summary_supplied"])
+
+            stderr = io.StringIO()
+            with patch("sys.stdout", io.StringIO()), patch("sys.stderr", stderr):
+                overwrite_exit = cli.main(
+                    [
+                        "report-v11",
+                        str(results),
+                        "--recommendation",
+                        str(recommendation),
+                        "--output",
+                        str(output),
                     ]
                 )
             self.assertEqual(overwrite_exit, 2)

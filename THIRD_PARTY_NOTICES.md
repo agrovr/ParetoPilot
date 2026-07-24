@@ -28,9 +28,11 @@ uploaded evidence artifacts.
 
 ## Evaluation prompts
 
-The five deterministic prompts in [`evals/qwen-smoke-v1.json`](evals/qwen-smoke-v1.json) were
-written for ParetoPilot and are dedicated to the public domain under CC0-1.0. They are narrow
-smoke checks for exact-answer retention, not a claim of broad model quality or safety.
+The five deterministic prompts in [`evals/qwen-smoke-v1.json`](evals/qwen-smoke-v1.json) and the
+24 deterministic cases in
+[`evals/qwen-behavior-v2.json`](evals/qwen-behavior-v2.json) were written for ParetoPilot and are
+dedicated to the public domain under CC0-1.0. They are narrow exact-match behavior checks, not a
+claim of broad model quality or safety.
 
 ## Build and automation services
 

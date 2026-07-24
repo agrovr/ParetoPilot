@@ -6,6 +6,7 @@ on:
     paths:
       - ".github/workflows/pages.yml"
       - "configs/constraints.candidate-study.json"
+      - "configs/policies.arm64.json"
       - "results/published/**"
       - "src/paretopilot/**"
   workflow_dispatch:
@@ -22,6 +23,7 @@ concurrency:
 jobs:
   deploy:
     name: Verify evidence and publish report
+    if: github.ref_name == github.event.repository.default_branch
     runs-on: ubuntu-24.04
     environment:
       name: github-pages
@@ -109,6 +111,11 @@ jobs:
               actual_digest = hashlib.sha256((extracted / relative).read_bytes()).hexdigest()
               if actual_digest != expected_digest:
                   raise SystemExit(f"checksum mismatch: {relative}")
+          archived_report_digest = hashlib.sha256(
+              (extracted / "experiment/report.html").read_bytes()
+          ).hexdigest()
+          if archived_report_digest != review["archived_report_sha256"]:
+              raise SystemExit("released report does not match the reviewed archive hash")
 
           status = json.loads((extracted / "status.json").read_text(encoding="utf-8"))
           if status != {
@@ -138,24 +145,25 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          mkdir -p output/pages/rebuilt _site
-          PYTHONPATH=src python -m paretopilot assemble-experiment \
-            output/pages/evidence/experiment/manifest.json \
-            --output output/pages/rebuilt/benchmark-set.json
-          cmp \
-            output/pages/rebuilt/benchmark-set.json \
-            output/pages/evidence/experiment/benchmark-set.json
-          cmp \
-            configs/constraints.candidate-study.json \
-            output/pages/evidence/experiment/constraints.json
-          PYTHONPATH=src python -m paretopilot report \
-            output/pages/rebuilt/benchmark-set.json \
-            --constraints output/pages/evidence/experiment/constraints.json \
-            --output _site/index.html \
-            --recommendation-output output/pages/rebuilt/recommendation.json
-          cmp \
-            output/pages/rebuilt/recommendation.json \
-            output/pages/evidence/experiment/recommendation.json
+          mkdir -p _site
+          PYTHONPATH=src python -m paretopilot replay \
+            output/pages/evidence \
+            --output-dir output/pages/replayed \
+            --policies configs/policies.arm64.json
+          python - <<'PY'
+          import hashlib
+          import json
+          from pathlib import Path
+
+          lock = json.loads(
+              Path("results/published/29973188507/evidence.json").read_text(encoding="utf-8")
+          )
+          report = Path("output/pages/replayed/report.html")
+          digest = hashlib.sha256(report.read_bytes()).hexdigest()
+          if digest != lock["review"]["submission_report_sha256"]:
+              raise SystemExit("replayed report does not match the reviewed submission hash")
+          PY
+          cp output/pages/replayed/report.html _site/index.html
           test "$(find _site -type f | wc -l)" -eq 1
 
       - name: Upload Pages artifact

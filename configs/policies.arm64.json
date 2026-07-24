@@ -1,0 +1,66 @@
+{
+  "canonical_profile_id": "canonical-latency",
+  "profiles": [
+    {
+      "classification": "canonical",
+      "description": "Uses the submission's end-to-end p95 latency objective, 1% practical tolerance, and declared preference order.",
+      "id": "canonical-latency",
+      "label": "Canonical latency",
+      "objective": {
+        "direction": "min",
+        "metric": "e2e_latency_ms_p95"
+      },
+      "objective_tolerance_percent": 1.0,
+      "preference_policy": "canonical"
+    },
+    {
+      "classification": "derived-non-canonical",
+      "description": "Explores the candidate with the lowest measured peak resident memory after the canonical quality and resource gates.",
+      "id": "memory-first",
+      "label": "Memory first",
+      "objective": {
+        "direction": "min",
+        "metric": "peak_rss_mib"
+      },
+      "objective_tolerance_percent": 0.0,
+      "preference_policy": "none"
+    },
+    {
+      "classification": "derived-non-canonical",
+      "description": "Explores the candidate with the lowest measured p95 time to first token after the canonical gates.",
+      "id": "first-token-first",
+      "label": "First token first",
+      "objective": {
+        "direction": "min",
+        "metric": "ttft_ms_p95"
+      },
+      "objective_tolerance_percent": 0.0,
+      "preference_policy": "none"
+    },
+    {
+      "classification": "derived-non-canonical",
+      "description": "Explores the candidate with the highest measured prompt-processing throughput after the canonical gates.",
+      "id": "prompt-ingest-first",
+      "label": "Prompt ingest first",
+      "objective": {
+        "direction": "max",
+        "metric": "prompt_tps"
+      },
+      "objective_tolerance_percent": 0.0,
+      "preference_policy": "none"
+    },
+    {
+      "classification": "derived-non-canonical",
+      "description": "Explores the candidate with the highest measured token-generation throughput after the canonical gates.",
+      "id": "decode-first",
+      "label": "Decode first",
+      "objective": {
+        "direction": "max",
+        "metric": "generation_tps"
+      },
+      "objective_tolerance_percent": 0.0,
+      "preference_policy": "none"
+    }
+  ],
+  "schema_version": "1.0"
+}

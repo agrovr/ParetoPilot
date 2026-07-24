@@ -7,7 +7,7 @@ from collections import Counter
 import json
 from pathlib import Path
 import sys
-from typing import Sequence
+from typing import Mapping, Sequence
 
 from paretopilot import __version__
 from paretopilot.analysis import recommend
@@ -25,12 +25,23 @@ from paretopilot.io import (
 from paretopilot.llama_bench import LlamaBenchRecord, load_llama_bench_jsonl
 from paretopilot.llama_compare import compare_llama_bench_summaries
 from paretopilot.llama_summary import summarize_llama_bench_paths
+from paretopilot.load_eval import (
+    build_load_evidence_binding,
+    combine_load_evaluations,
+    evaluate_llama_server_load,
+    load_load_plan,
+)
+from paretopilot.pass_eval import assemble_repeat_pass
+from paretopilot.profiles import evaluate_policy_profiles, load_policy_set
+from paretopilot.replay import replay_evidence
 from paretopilot.report import render_report
+from paretopilot.report_v11 import render_report_v11
 from paretopilot.server_eval import (
     evaluate_server,
     parse_gnu_time_peak_rss,
     pool_server_evaluations,
 )
+from paretopilot.stability import summarize_stability
 from paretopilot.study import assemble_study
 
 
@@ -141,6 +152,76 @@ def _parser() -> argparse.ArgumentParser:
     )
     pool_server_parser.add_argument("--output", required=True, type=Path)
 
+    evaluate_load_parser = subparsers.add_parser(
+        "evaluate-load",
+        help="run a bounded 1/2/4-client load plan against llama-server",
+    )
+    evaluate_load_parser.add_argument("--base-url", required=True)
+    evaluate_load_parser.add_argument("--candidate-id", required=True)
+    evaluate_load_parser.add_argument("--plan", required=True, type=Path)
+    evaluate_load_parser.add_argument(
+        "--server-command",
+        required=True,
+        type=Path,
+        help="exact server command used for the load sweep",
+    )
+    evaluate_load_parser.add_argument(
+        "--canonical-server-command",
+        required=True,
+        type=Path,
+        help="canonical deployment command used for material-equivalence validation",
+    )
+    evaluate_load_parser.add_argument("--output", required=True, type=Path)
+
+    combine_load_parser = subparsers.add_parser(
+        "combine-load",
+        help="combine compatible candidate load sweeps for report rendering",
+    )
+    combine_load_parser.add_argument(
+        "--input",
+        dest="inputs",
+        action="append",
+        required=True,
+        type=Path,
+        help="candidate load-evaluation JSON; repeat from 2 to 32 times",
+    )
+    combine_load_parser.add_argument("--output", required=True, type=Path)
+
+    stability_parser = subparsers.add_parser(
+        "summarize-stability",
+        help="summarize observed directions across validated benchmark passes",
+    )
+    stability_parser.add_argument(
+        "--input",
+        dest="inputs",
+        action="append",
+        required=True,
+        metavar="LABEL=PATH",
+        help="labeled benchmark-set JSON; repeat from 2 to 8 times",
+    )
+    stability_parser.add_argument(
+        "--metric",
+        dest="metrics",
+        action="append",
+        required=True,
+        metavar="NAME=min|max",
+        help="metric direction; repeat for each summarized metric",
+    )
+    stability_parser.add_argument("--output", required=True, type=Path)
+
+    repeat_pass_parser = subparsers.add_parser(
+        "assemble-repeat-pass",
+        help="rebuild one balanced benchmark pass from raw experiment evidence",
+    )
+    repeat_pass_parser.add_argument("--experiment", required=True, type=Path)
+    repeat_pass_parser.add_argument(
+        "--pass-number",
+        required=True,
+        type=int,
+        choices=(1, 2),
+    )
+    repeat_pass_parser.add_argument("--output", required=True, type=Path)
+
     rss_parser = subparsers.add_parser(
         "parse-peak-rss",
         help="convert GNU time -v maximum RSS output into a strict JSON artifact",
@@ -176,6 +257,38 @@ def _parser() -> argparse.ArgumentParser:
     report_parser.add_argument("--constraints", required=True, type=Path)
     report_parser.add_argument("--output", required=True, type=Path)
     report_parser.add_argument("--recommendation-output", type=Path)
+
+    report_v11_parser = subparsers.add_parser(
+        "report-v11",
+        help="render the additive v1.1 decision, policy, load, and stability report",
+    )
+    report_v11_parser.add_argument("results", type=Path)
+    report_v11_parser.add_argument("--recommendation", required=True, type=Path)
+    report_v11_parser.add_argument("--profiles", type=Path)
+    report_v11_parser.add_argument("--load", type=Path)
+    report_v11_parser.add_argument("--stability", type=Path)
+    report_v11_parser.add_argument("--output", required=True, type=Path)
+
+    profiles_parser = subparsers.add_parser(
+        "profiles",
+        help="precompute canonical and derived deployment-policy recommendations",
+    )
+    profiles_parser.add_argument("results", type=Path)
+    profiles_parser.add_argument("--constraints", required=True, type=Path)
+    profiles_parser.add_argument("--policies", required=True, type=Path)
+    profiles_parser.add_argument("--output", required=True, type=Path)
+
+    replay_parser = subparsers.add_parser(
+        "replay",
+        help="verify and regenerate outputs from an extracted evidence directory",
+    )
+    replay_parser.add_argument("evidence", type=Path)
+    replay_parser.add_argument("--output-dir", required=True, type=Path)
+    replay_parser.add_argument(
+        "--policies",
+        type=Path,
+        help="optionally precompute policy profiles from this configuration",
+    )
 
     experiment_parser = subparsers.add_parser(
         "assemble-experiment",
@@ -287,6 +400,52 @@ def main(argv: Sequence[str] | None = None) -> int:
             payload = pool_server_evaluations(args.inputs)
             write_json(args.output, payload)
             exit_code = 0
+        elif args.command == "evaluate-load":
+            _require_new_distinct_outputs([args.output])
+            plan = load_load_plan(args.plan)
+            evidence_binding = build_load_evidence_binding(
+                base_url=args.base_url,
+                plan_path=args.plan,
+                server_command_path=args.server_command,
+                canonical_server_command_path=args.canonical_server_command,
+            )
+            payload = evaluate_llama_server_load(
+                args.base_url,
+                plan,
+                candidate_id=args.candidate_id,
+                evidence_binding=evidence_binding,
+            )
+            write_json(args.output, payload)
+            exit_code = 0
+        elif args.command == "combine-load":
+            _require_new_distinct_outputs([args.output])
+            evaluations = [load_json_object(path) for path in args.inputs]
+            payload = combine_load_evaluations(
+                evaluations,
+                require_evidence_bindings=True,
+            )
+            write_json(args.output, payload)
+            exit_code = 0
+        elif args.command == "summarize-stability":
+            _require_new_distinct_outputs([args.output])
+            artifacts = _parse_labeled_artifacts(args.inputs)
+            directions = _parse_metric_directions(args.metrics)
+            payload = summarize_stability(
+                [load_benchmarks(path) for _, path in artifacts],
+                metric_directions=directions,
+                pass_labels=[label for label, _ in artifacts],
+                input_fingerprints={label: sha256_file(path) for label, path in artifacts},
+            )
+            write_json(args.output, payload)
+            exit_code = 0
+        elif args.command == "assemble-repeat-pass":
+            _require_new_distinct_outputs([args.output])
+            payload = assemble_repeat_pass(
+                args.experiment,
+                pass_number=args.pass_number,
+            )
+            write_json(args.output, payload)
+            exit_code = 0
         elif args.command == "parse-peak-rss":
             if not args.candidate_id.strip():
                 raise ValidationError("candidate-id must be a non-empty string")
@@ -367,6 +526,77 @@ def main(argv: Sequence[str] | None = None) -> int:
                 ),
             }
             exit_code = 0
+        elif args.command == "report-v11":
+            _require_new_distinct_outputs([args.output])
+            benchmarks = load_benchmarks(args.results)
+            recommendation = load_json_object(args.recommendation)
+            policy_profiles = load_json_object(args.profiles) if args.profiles is not None else None
+            load_sweep = load_json_object(args.load) if args.load is not None else None
+            stability_summary = (
+                load_json_object(args.stability) if args.stability is not None else None
+            )
+            report_html = render_report_v11(
+                benchmarks,
+                recommendation,
+                policy_profiles=policy_profiles,
+                load_sweep=load_sweep,
+                stability_summary=stability_summary,
+                benchmarks_sha256=sha256_file(args.results),
+                recommendation_sha256=sha256_file(args.recommendation),
+                profiles_sha256=sha256_file(args.profiles) if args.profiles is not None else "",
+                load_sha256=sha256_file(args.load) if args.load is not None else "",
+                stability_sha256=(
+                    sha256_file(args.stability) if args.stability is not None else ""
+                ),
+            )
+            write_text(args.output, report_html)
+            payload = {
+                "valid": True,
+                "selected_id": recommendation.get("selected_id"),
+                "baseline_id": benchmarks.baseline_id,
+                "synthetic_source": benchmarks.synthetic,
+                "policy_profiles_supplied": policy_profiles is not None,
+                "load_sweep_supplied": load_sweep is not None,
+                "stability_summary_supplied": stability_summary is not None,
+                "report": str(args.output),
+                "report_sha256": sha256_file(args.output),
+            }
+            exit_code = 0
+        elif args.command == "profiles":
+            _require_new_distinct_outputs([args.output])
+            benchmarks = load_benchmarks(args.results)
+            constraints = load_constraints(args.constraints)
+            policy_set = load_policy_set(args.policies)
+            payload = dict(evaluate_policy_profiles(benchmarks, constraints, policy_set))
+            payload["input_fingerprints"] = {
+                "benchmarks_sha256": sha256_file(args.results),
+                "constraints_sha256": sha256_file(args.constraints),
+                "policies_sha256": sha256_file(args.policies),
+            }
+            write_json(args.output, payload)
+            exit_code = 0
+        elif args.command == "replay":
+            replay_result = replay_evidence(
+                args.evidence,
+                args.output_dir,
+                policies_path=args.policies,
+            )
+            payload = {
+                "schema_version": replay_result["schema_version"],
+                "valid": replay_result["valid"],
+                "verdict": replay_result["verdict"],
+                "decision_reproduced": replay_result["decision_reproduced"],
+                "fully_reproduced": replay_result["fully_reproduced"],
+                "report_matches_archive": replay_result["report_matches_archive"],
+                "selected_id": replay_result["selected_id"],
+                "checksum_entries": replay_result["checksums"]["entry_count"],
+                "differences": replay_result["differences"],
+                "warnings": replay_result["warnings"],
+                "policy_selected_ids": replay_result["policy_selected_ids"],
+                "output_directory": replay_result["output_directory"],
+                "details": str(Path(replay_result["output_directory"]) / "replay.json"),
+            }
+            exit_code = 0 if replay_result["valid"] else 5
         elif args.command == "assemble-experiment":
             payload = assemble_experiment(args.manifest)
             write_json(args.output, payload)
@@ -408,6 +638,22 @@ def _parse_labeled_artifacts(values: Sequence[str]) -> list[tuple[str, Path]]:
         labels.add(label)
         artifacts.append((label, Path(path_text)))
     return artifacts
+
+
+def _parse_metric_directions(values: Sequence[str]) -> Mapping[str, str]:
+    """Parse repeated ``NAME=min|max`` values into one strict direction map."""
+
+    directions: dict[str, str] = {}
+    for value in values:
+        metric, separator, direction = value.partition("=")
+        metric = metric.strip()
+        direction = direction.strip()
+        if not separator or not metric or direction not in {"min", "max"}:
+            raise ValidationError(f"metric {value!r} must use the form NAME=min or NAME=max")
+        if metric in directions:
+            raise ValidationError(f"metric {metric!r} must be unique")
+        directions[metric] = direction
+    return directions
 
 
 def _require_new_distinct_outputs(paths: Sequence[Path]) -> None:

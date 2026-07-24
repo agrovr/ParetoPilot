@@ -10,7 +10,9 @@ ParetoPilot supports three levels of reproduction:
 
 The current canonical evidence is GitHub Actions run
 [`29973188507`](https://github.com/agrovr/ParetoPilot/actions/runs/29973188507), preserved in the
-[`v1.0.0` release](https://github.com/agrovr/ParetoPilot/releases/tag/v1.0.0).
+[`v1.0.0` release](https://github.com/agrovr/ParetoPilot/releases/tag/v1.0.0). The repository
+implements an additive v1.1 evidence contract, but no canonical v1.1 archive is published yet.
+Configuration files and local test output must not be presented as measured v1.1 results.
 
 ## Requirements
 
@@ -83,30 +85,33 @@ The bundle's `status.json` must say `complete`, `canonical`, `measurement_valid:
 [`evidence.json`](../results/published/29973188507/evidence.json) records the Actions artifact,
 release asset, outer digest, review checks, and derived-output fingerprints.
 
-## 3. Rebuild and compare the decision
+## 3. Replay and compare the decision
 
 Use fresh output paths; ParetoPilot intentionally refuses to overwrite evidence or reports.
+With the current source, use the replay command so a v1.0 archive is compared under its recorded
+producer-version identity:
 
 ```bash
-mkdir -p output/reproduction
-python -m paretopilot assemble-experiment \
-  evidence/experiment/manifest.json \
-  --output output/reproduction/benchmark-set.json
-cmp output/reproduction/benchmark-set.json evidence/experiment/benchmark-set.json
-
-python -m paretopilot report \
-  output/reproduction/benchmark-set.json \
-  --constraints evidence/experiment/constraints.json \
-  --output output/reproduction/report.html \
-  --recommendation-output output/reproduction/recommendation.json
-cmp output/reproduction/recommendation.json evidence/experiment/recommendation.json
+python -m paretopilot replay evidence \
+  --output-dir output/reproduction \
+  --policies configs/policies.arm64.json
 ```
 
-The benchmark set and recommendation are the authoritative deterministic decision outputs and
-must match exactly. The report is a presentation generated from those verified inputs; its layout
-may improve after the evidence release. To reproduce the archived HTML byte-for-byte, first check
-out tag `v1.0.0`, then run the same report command and compare it with
-`evidence/experiment/report.html`.
+Inspect `output/reproduction/replay.json`. For the published v1.0 archive,
+`replay_contract` must be `1.0`, `valid` and `decision_reproduced` must be `true`, the
+`benchmark-set` and `recommendation` authoritative comparisons must match, and `selected_id` must
+be `q8-generic`.
+
+The replay path matters across releases. A direct report command from newer source records the
+current ParetoPilot package version in newly generated JSON. Replay instead restores the archived
+producer version before comparing the authoritative recommendation, so version metadata does not
+look like decision drift.
+
+The HTML report is a presentation generated from verified inputs, so its layout may improve after
+the evidence release. A report-only difference leaves `valid: true`, keeps
+`decision_reproduced: true`, and appears as a presentation warning. To reproduce every v1.0 output
+byte-for-byte, including the archived HTML, check out tag `v1.0.0` and run the reproduction
+commands from that tag.
 
 Expected decision:
 
@@ -142,7 +147,56 @@ The two generic candidates must have zero `CPU_KLEIDIAI model buffer` markers in
 passes. Both KleidiAI candidates must have exactly one marker per pass. The canonical archive has
 counts `[0, 0]`, `[0, 0]`, `[1, 1]`, and `[1, 1]` respectively.
 
-## 5. Dispatch a fresh native Arm64 study
+## 5. Replay a v1.1 archive
+
+This section applies only after the current workflow produces a complete v1.1 artifact directory.
+It does not apply to the published v1.0 archive, which intentionally lacks the additive files.
+
+Use a new destination outside the extracted evidence directory:
+
+```bash
+python -m paretopilot replay evidence-v1.1 \
+  --output-dir output/replay-v1.1
+```
+
+Replay verifies the complete `SHA256SUMS` list, safe paths, canonical completion status, and the
+required v1.1 artifact set. It then:
+
+1. reassembles the canonical benchmark and recommendation;
+2. recomputes every policy profile from the archived policy configuration;
+3. validates the declared load plan and each per-candidate load file, checks the request endpoint
+   and both server-command digests, and rebuilds the combined load evaluation;
+4. reconstructs both pass benchmark sets from their checksummed raw throughput, settings,
+   server-evaluation, and GNU `time -v` files;
+5. regenerates repeat stability from those pass sets; and
+6. renders fresh v1.0 and v1.1 reports.
+
+To inspect pass reconstruction independently, use fresh output paths:
+
+```bash
+python -m paretopilot assemble-repeat-pass \
+  --experiment evidence-v1.1/experiment \
+  --pass-number 1 \
+  --output output/pass-1.json
+python -m paretopilot assemble-repeat-pass \
+  --experiment evidence-v1.1/experiment \
+  --pass-number 2 \
+  --output output/pass-2.json
+
+cmp output/pass-1.json evidence-v1.1/extensions/benchmark-set-pass-1.json
+cmp output/pass-2.json evidence-v1.1/extensions/benchmark-set-pass-2.json
+```
+
+The command follows only artifact paths and SHA-256 digests bound by the canonical benchmark; it
+does not derive a pass by splitting pooled metrics.
+
+`benchmark-set`, `recommendation`, `policy-profiles`, `load-evaluation`, both pass benchmark sets,
+and `repeat-stability` are core replay comparisons. Any difference invalidates
+`decision_reproduced`. HTML is presentation: if the verified core matches but a newly generated
+report differs, replay remains valid, marks `fully_reproduced` false, and records a warning. Replay
+does not rerun inference.
+
+## 6. Dispatch a fresh native Arm64 study
 
 From GitHub Actions, select **Native Arm64 candidate study**, choose **Run workflow**, use the
 default branch, and retain `10` repetitions. The equivalent GitHub CLI command is:
@@ -160,7 +214,10 @@ must not replace canonical evidence.
 ## Evidence limits
 
 - The hosted runner is ephemeral. Do not pool separate workflow runs as one experiment.
-- The five-case suite is a deterministic smoke gate, not a broad model-quality benchmark.
+- The published v1.0 five-case suite and v1.1 24-case suite are deterministic gates, not broad
+  model-quality benchmarks.
+- Two reconstructed balanced passes describe observed direction and spread; they do not establish
+  statistical significance.
 - Results may not generalize to every Arm CPU, model, prompt distribution, concurrency level, or
   deployment environment.
 - Energy and cost were not measured and must not be inferred from throughput.

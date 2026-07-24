@@ -87,6 +87,61 @@ class AnalysisTests(unittest.TestCase):
         self.assertIn("quality retention", evaluations["fast-low-quality"].violations[0])
         self.assertTrue(evaluations["balanced"].eligible)
 
+    def test_candidate_study_quality_gate_accepts_20_of_24_but_rejects_19(self) -> None:
+        data = BenchmarkSet.from_mapping(
+            {
+                "schema_version": "1.0",
+                "baseline_id": "baseline",
+                "synthetic": True,
+                "candidates": [
+                    {
+                        "id": "baseline",
+                        "parameters": {},
+                        "metrics": {"quality_score": 21 / 24, "latency": 100.0},
+                    },
+                    {
+                        "id": "twenty-of-twenty-four",
+                        "parameters": {},
+                        "metrics": {"quality_score": 20 / 24, "latency": 90.0},
+                    },
+                    {
+                        "id": "nineteen-of-twenty-four",
+                        "parameters": {},
+                        "metrics": {"quality_score": 19 / 24, "latency": 80.0},
+                    },
+                ],
+            }
+        )
+        declared = Constraints.from_mapping(
+            {
+                "min_quality_retention": 0.95,
+                "quality_metric": "quality_score",
+                "min_values": {"quality_score": 0.8},
+                "objective": {"metric": "latency", "direction": "min"},
+                "frontier_metrics": {
+                    "quality_score": "max",
+                    "latency": "min",
+                },
+            }
+        )
+
+        evaluations = {
+            item.candidate.candidate_id: item for item in evaluate_constraints(data, declared)
+        }
+        self.assertTrue(evaluations["baseline"].eligible)
+        self.assertTrue(evaluations["twenty-of-twenty-four"].eligible)
+        self.assertFalse(evaluations["nineteen-of-twenty-four"].eligible)
+        self.assertTrue(
+            any(
+                "quality retention" in violation
+                for violation in evaluations["nineteen-of-twenty-four"].violations
+            )
+        )
+
+        result = recommend(data, declared)
+        self.assertEqual(result["constraints"]["min_quality_retention"], 0.95)
+        self.assertEqual(result["constraints"]["min_values"]["quality_score"], 0.8)
+
     def test_pareto_frontier_removes_dominated_candidate(self) -> None:
         data = benchmark_set()
         directions = {
@@ -104,7 +159,7 @@ class AnalysisTests(unittest.TestCase):
         self.assertEqual(result["frontier_ids"], ["balanced"])
         self.assertIn("fast-low-quality", result["rejected"])
         self.assertEqual(result["constraints"]["min_quality_retention"], 0.95)
-        self.assertEqual(result["paretopilot_version"], "1.0.0")
+        self.assertEqual(result["paretopilot_version"], "1.1.0")
 
     def test_quality_retention_requires_positive_baseline(self) -> None:
         data = BenchmarkSet.from_mapping(
