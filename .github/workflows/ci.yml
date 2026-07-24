@@ -109,16 +109,14 @@ jobs:
           assert receipt["synthetic_source"] is True
           PY
       - name: Confirm measured-evidence protection fails closed
-        id: synthetic-guard
-        continue-on-error: true
-        uses: ./
-        with:
-          benchmarks: examples/synthetic-results.json
-          constraints: configs/constraints.example.json
-          output-dir: action-guard-output
-      - name: Verify the synthetic guard
-        if: always()
         shell: bash
-        env:
-          GUARD_OUTCOME: ${{ steps.synthetic-guard.outcome }}
-        run: test "$GUARD_OUTCOME" = "failure"
+        run: |
+          set -euo pipefail
+          if python -m paretopilot ci-gate examples/synthetic-results.json \
+            --constraints configs/constraints.example.json \
+            --output-dir action-guard-output
+          then
+            echo "synthetic evidence unexpectedly passed the measured-evidence gate" >&2
+            exit 1
+          fi
+          test ! -e action-guard-output
