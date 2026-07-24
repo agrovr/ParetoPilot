@@ -225,6 +225,19 @@ class ShowcaseV11Tests(unittest.TestCase):
         self.assertLessEqual(canonical_tab_controls, showcase_ids)
         self.assertNotEqual(canonical.encode(), showcase.encode())
 
+    def test_policy_tabs_reset_inherited_bottom_padding(self) -> None:
+        report = rendered_showcase()
+
+        self.assertIn(
+            ".showcase .profile-tabs {\n"
+            "  display: grid;\n"
+            "  grid-auto-columns: minmax(10.5rem, 1fr);\n"
+            "  grid-auto-flow: column;\n"
+            "  gap: 0;\n"
+            "  padding-bottom: 0;",
+            report,
+        )
+
     def test_charts_use_stable_series_tags_and_responsive_html_legends(self) -> None:
         report = rendered_showcase()
         expected_shapes = {

@@ -1539,6 +1539,7 @@ html[data-theme="dark"] .showcase {
   grid-auto-columns: minmax(10.5rem, 1fr);
   grid-auto-flow: column;
   gap: 0;
+  padding-bottom: 0;
   max-width: 100%;
   overflow-x: auto;
   border: 2px solid var(--flight-ink);
