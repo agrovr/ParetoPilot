@@ -43,7 +43,11 @@ def candidate_deployment_argv(candidate_id: str) -> list[str]:
     ]
 
 
-def canonical_benchmarks(*, metadata: bool = True) -> BenchmarkSet:
+def canonical_benchmarks(
+    *,
+    metadata: bool = True,
+    classification: str = "canonical",
+) -> BenchmarkSet:
     candidate_evidence = {
         candidate_id: {
             "artifacts": {
@@ -69,7 +73,7 @@ def canonical_benchmarks(*, metadata: bool = True) -> BenchmarkSet:
             "synthetic": False,
             "metadata": (
                 {
-                    "classification": "canonical",
+                    "classification": classification,
                     "runner": "Ubuntu 24.04 Arm64 · Neoverse-N2",
                     "candidate_evidence": candidate_evidence,
                 }
@@ -239,6 +243,17 @@ def derived_profiles(data: BenchmarkSet) -> dict[str, object]:
     canonical = canonical_recommendation(data)
     memory = recommend(data, memory_policy)
     prompt = recommend(data, prompt_policy)
+    canonical_evidence = not data.synthetic and data.metadata.get("classification") == "canonical"
+    primary_notice = (
+        "This is the canonical predeclared decision."
+        if canonical_evidence
+        else "This is the primary predeclared policy; the evidence is not canonical."
+    )
+    derived_notice = (
+        "Derived scenario only; it does not replace the canonical decision."
+        if canonical_evidence
+        else "Derived scenario only; it does not replace the primary predeclared policy."
+    )
     return {
         "schema_version": "1.0",
         "source_schema_version": data.schema_version,
@@ -256,7 +271,7 @@ def derived_profiles(data: BenchmarkSet) -> dict[str, object]:
                 "label": "Canonical policy",
                 "description": "The predeclared latency objective and simpler-first preference.",
                 "classification": "canonical",
-                "scenario_notice": "This is the canonical predeclared decision.",
+                "scenario_notice": primary_notice,
                 "recommendation": canonical,
             },
             {
@@ -264,9 +279,7 @@ def derived_profiles(data: BenchmarkSet) -> dict[str, object]:
                 "label": "Memory first",
                 "description": "Prefer the smallest measured peak resident memory.",
                 "classification": "derived-non-canonical",
-                "scenario_notice": (
-                    "Derived scenario only; it does not replace the canonical decision."
-                ),
+                "scenario_notice": derived_notice,
                 "recommendation": memory,
             },
             {
@@ -274,9 +287,7 @@ def derived_profiles(data: BenchmarkSet) -> dict[str, object]:
                 "label": "Prompt throughput",
                 "description": "Prefer the greatest measured prompt processing throughput.",
                 "classification": "derived-non-canonical",
-                "scenario_notice": (
-                    "Derived scenario only; it does not replace the canonical decision."
-                ),
+                "scenario_notice": derived_notice,
                 "recommendation": prompt,
             },
         ],
@@ -497,6 +508,18 @@ class ReportV11Tests(unittest.TestCase):
         self.assertIn("43.7% lower", report)
         self.assertNotIn(">No change<", report)
         self.assertIn("descriptive comparison, not a second recommendation", report)
+
+    def test_exploratory_report_uses_primary_policy_labels(self) -> None:
+        report = rendered_v11(data=canonical_benchmarks(classification="exploratory"))
+
+        self.assertIn(
+            "Exploratory evidence — not canonical submission evidence.",
+            report,
+        )
+        self.assertIn("Primary predeclared policy", report)
+        self.assertIn("does not replace the primary predeclared policy", report)
+        self.assertNotIn(">Canonical recommendation<", report)
+        self.assertNotIn("Canonical submission decision.", report)
 
     def test_sections_follow_the_required_evidence_narrative(self) -> None:
         report = rendered_v11()
@@ -725,7 +748,7 @@ class ReportV11Tests(unittest.TestCase):
         self.assertIn("p95 end-to-end latency vs generation throughput data", report)
         self.assertIn("Declared frontier", report)
 
-    def test_responsive_styles_scroll_tables_and_avoid_generic_ai_tropes(self) -> None:
+    def test_responsive_flat_styles_and_self_contained_assets(self) -> None:
         report = rendered_v11()
 
         self.assertIn("@media (min-width: 48rem)", report)

@@ -76,7 +76,7 @@ V1.1 preserves the same candidates, balanced order, single-runner boundary, thro
 fixed 64-token streamed latency workload, and canonical selection objective. It adds three
 supplementary evidence layers plus precomputed policy scenarios.
 
-### Stricter behavior gate
+### Expanded behavior gate
 
 The checksummed `paretopilot-qwen-behavior-v2` suite contains 24 deterministic cases:
 
@@ -90,11 +90,13 @@ the measured baseline score. These are narrow reproducibility gates, not estimat
 model quality.
 
 These v1.1 limits were declared after
-[non-canonical exploratory run `30050573298`](https://github.com/agrovr/ParetoPilot/actions/runs/30050573298)
-and before any canonical v1.1 measurement. The 24 binary cases have a 1/24, or 4.17
-percentage-point, resolution. In both passes, the Q8 reference scored 21/24 and every Q4
-candidate scored 20/24. The combined rule therefore requires at least 20/24 for this measured
-reference and rejects 19/24.
+[incomplete diagnostic run `30050573298`](https://github.com/agrovr/ParetoPilot/actions/runs/30050573298)
+and before any canonical v1.1 measurement. The provisional gate stopped that run, whose status
+correctly records `measurement_valid: false` and `valid_evidence: false`; it is not canonical or
+complete benchmark evidence. The checksummed raw case outcomes were used only to calibrate the
+pre-canonical rule. The 24 binary cases have a 1/24, or 4.17 percentage-point, resolution. In
+both passes, the Q8 reference scored 21/24 and every Q4 candidate scored 20/24. The combined rule
+therefore requires at least 20/24 for that observed reference and rejects 19/24.
 
 The calibration did not remove or recategorize failures. Q8 missed one single-word casing case
 and returned two otherwise-valid JSON objects inside code fences. Each Q4 candidate returned a

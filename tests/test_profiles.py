@@ -18,7 +18,11 @@ from paretopilot.profiles import (
 )
 
 
-def _benchmarks() -> BenchmarkSet:
+def _benchmarks(
+    *,
+    synthetic: bool = True,
+    classification: str | None = None,
+) -> BenchmarkSet:
     candidates = (
         ("q8-generic", 100.0, 20.0, 4000.0, 50.0, 100.0),
         ("q4-generic", 99.8, 18.0, 2000.0, 44.0, 110.0),
@@ -29,7 +33,8 @@ def _benchmarks() -> BenchmarkSet:
         {
             "schema_version": "1.0",
             "baseline_id": "q8-generic",
-            "synthetic": True,
+            "synthetic": synthetic,
+            "metadata": ({"classification": classification} if classification is not None else {}),
             "candidates": [
                 {
                     "id": candidate_id,
@@ -111,17 +116,39 @@ class PolicyProfileTests(unittest.TestCase):
         )
         canonical = result["profiles"][0]
         self.assertEqual(canonical["classification"], "canonical")
-        self.assertEqual(canonical["scenario_notice"], "Canonical submission decision.")
+        self.assertEqual(
+            canonical["scenario_notice"],
+            "Primary predeclared policy; source evidence is not canonical.",
+        )
         self.assertEqual(
             canonical["recommendation"],
             recommend(_benchmarks(), _constraints()),
         )
         for profile in result["profiles"][1:]:
             self.assertEqual(profile["classification"], "derived-non-canonical")
-            self.assertIn("does not replace the canonical decision", profile["scenario_notice"])
+            self.assertIn(
+                "does not replace the primary predeclared policy",
+                profile["scenario_notice"],
+            )
             self.assertEqual(
                 profile["recommendation"]["constraints"]["preference_order"],
                 [],
+            )
+
+    def test_canonical_measured_evidence_uses_submission_decision_notices(self) -> None:
+        data = _benchmarks(synthetic=False, classification="canonical")
+        result = evaluate_policy_profiles(
+            data, _constraints(), PolicySet.from_mapping(_config_mapping())
+        )
+
+        self.assertEqual(
+            result["profiles"][0]["scenario_notice"],
+            "Canonical submission decision.",
+        )
+        for profile in result["profiles"][1:]:
+            self.assertIn(
+                "does not replace the canonical decision",
+                profile["scenario_notice"],
             )
 
     def test_policy_set_rejects_unknown_missing_duplicate_and_ambiguous_fields(self) -> None:

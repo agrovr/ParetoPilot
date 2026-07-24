@@ -1188,6 +1188,10 @@ def _effect_text(
     return f"Changed · {change}", "effect-held"
 
 
+def _is_canonical_evidence(benchmarks: BenchmarkSet) -> bool:
+    return not benchmarks.synthetic and benchmarks.metadata.get("classification") == "canonical"
+
+
 def _evidence_banner(benchmarks: BenchmarkSet) -> str:
     classification = benchmarks.metadata.get("classification")
     if benchmarks.synthetic:
@@ -1256,6 +1260,11 @@ def _verdict_section(
     alternative: Candidate | None,
 ) -> str:
     objective = _mapping(recommendation["objective"], "recommendation.objective")
+    decision_label = (
+        "Canonical recommendation"
+        if _is_canonical_evidence(benchmarks)
+        else "Primary predeclared policy"
+    )
     baseline_retained = selected.candidate_id == benchmarks.baseline_id
     preference_changed = selection.get("preference_changed_winner") is True
     if baseline_retained and preference_changed:
@@ -1299,7 +1308,7 @@ def _verdict_section(
     return (
         '<section class="verdict-layout" aria-label="Decision summary">'
         '<section class="verdict-column canonical-column" aria-labelledby="canonical-heading">'
-        '<p class="context-label">Canonical recommendation</p>'
+        f'<p class="context-label">{decision_label}</p>'
         f'<h2 id="canonical-heading">{_escape(selected.label)}</h2>'
         f'<p class="verdict-copy">{_escape(verdict)}</p>'
         '<dl class="decision-pair">'
@@ -1486,12 +1495,25 @@ def _profile_panel(
         "</li>"
         for metric in metrics
     )
-    origin = "Derived policy scenario" if profile.derived else "Canonical recommendation"
+    canonical_evidence = _is_canonical_evidence(benchmarks)
+    origin = (
+        "Derived policy scenario"
+        if profile.derived
+        else ("Canonical recommendation" if canonical_evidence else "Primary predeclared policy")
+    )
     notice = profile.scenario_notice or (
         "This scenario applies a different precomputed policy to the same evidence. "
-        "It does not replace the canonical decision."
+        + (
+            "It does not replace the canonical decision."
+            if canonical_evidence
+            else "It does not replace the primary predeclared policy."
+        )
         if profile.derived
-        else "This is the canonical predeclared decision."
+        else (
+            "This is the canonical predeclared decision."
+            if canonical_evidence
+            else "This is the primary predeclared policy; the evidence is not canonical."
+        )
     )
     derived_note = f'<p class="derived-note">{_escape(notice)}</p>'
     hidden = " hidden" if index else ""
@@ -1519,13 +1541,14 @@ def _policy_section(
     profiles: tuple[_DecisionProfile, ...],
     benchmarks: BenchmarkSet,
 ) -> tuple[str, str]:
+    primary_badge = "Canonical" if _is_canonical_evidence(benchmarks) else "Primary"
     tabs = "".join(
         f'<button id="profile-tab-{index}" type="button" role="tab" '
         f'aria-selected="{"true" if index == 0 else "false"}" '
         f'aria-controls="profile-panel-{index}" data-profile-target="{index}" '
         f'tabindex="{"0" if index == 0 else "-1"}">'
         f"{_escape(profile.label)}"
-        f"<span>{'Canonical' if not profile.derived else 'Derived'}</span>"
+        f"<span>{primary_badge if not profile.derived else 'Derived'}</span>"
         "</button>"
         for index, profile in enumerate(profiles)
     )
@@ -1871,7 +1894,7 @@ def _load_section(load: _LoadSweep | None, benchmarks: BenchmarkSet) -> str:
     if load is None:
         content = (
             '<div class="no-data" role="status"><strong>No load sweep was supplied.</strong> '
-            "The canonical single-request evidence remains valid, but this report does not "
+            "The primary single-request evidence remains available, but this report does not "
             "infer concurrent cloud behavior.</div>"
         )
     elif not load.rows:
@@ -2389,7 +2412,7 @@ def _evidence_section(
         '<section class="report-section" aria-labelledby="evidence-heading">'
         '<div class="section-heading"><h2 id="evidence-heading">Full evidence table</h2>'
         "<p>Missing values remain explicitly unmeasured. Rejection reasons are copied "
-        "from the canonical recommendation record.</p></div>"
+        "from the primary recommendation record.</p></div>"
         f"{_evidence_table(benchmarks, recommendation)}"
         "</section>"
     )
@@ -2502,7 +2525,7 @@ def _trust_section(
         f"{_metadata_table(benchmarks)}</details>"
         '<div class="reproduction-note"><h3>Reproduction contract</h3>'
         "<ol><li>Verify the evidence archive and recorded source hashes.</li>"
-        "<li>Rebuild the benchmark set and canonical recommendation from the validated inputs.</li>"
+        "<li>Rebuild the benchmark set and primary recommendation from the validated inputs.</li>"
         "<li>Render into a fresh path and compare the resulting artifact hash.</li></ol>"
         "<p>The v1.1 renderer is additive. The v1.0 renderer remains available for replaying "
         "the published v1.0 evidence.</p></div>"
@@ -2927,7 +2950,7 @@ def render_report_v11(
 ) -> str:
     """Render one additive, deterministic, self-contained v1.1 decision report.
 
-    ``recommendation`` must be the canonical mapping produced by
+    ``recommendation`` must be the primary mapping produced by
     :func:`paretopilot.analysis.recommend`. Supplied policy profiles contain
     precomputed decisions; the renderer recomputes each selection only as a
     fail-closed integrity check. Load-sweep rows and pass-level stability
@@ -2995,7 +3018,7 @@ def render_report_v11(
         f"{_evidence_section(benchmarks, recommendation)}\n"
         f"{_trust_section(benchmarks, recommendation, selected, benchmarks_sha256=benchmarks_sha256, recommendation_sha256=recommendation_sha256, profiles_sha256=profiles_sha256, load_sha256=load_sha256, stability_sha256=stability_sha256)}\n"
         "</main>\n"
-        '<footer class="report-footer">ParetoPilot keeps the canonical recommendation, '
+        '<footer class="report-footer">ParetoPilot keeps the primary recommendation, '
         "derived policy scenarios, measurements, and evidence limits visibly separate.</footer>\n"
         f"{interaction_script}"
         "</body>\n"

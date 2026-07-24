@@ -21,7 +21,18 @@ from paretopilot.io import load_json_object
 _PROFILE_ID = re.compile(r"^[a-z0-9][a-z0-9-]{0,63}$")
 _CLASSIFICATIONS = {"canonical", "derived-non-canonical"}
 _PREFERENCE_POLICIES = {"canonical", "none"}
-_DERIVED_NOTICE = "Derived, non-canonical scenario; it does not replace the canonical decision."
+
+
+def _evidence_notices(benchmarks: BenchmarkSet) -> tuple[str, str]:
+    if not benchmarks.synthetic and benchmarks.metadata.get("classification") == "canonical":
+        return (
+            "Canonical submission decision.",
+            "Derived, non-canonical scenario; it does not replace the canonical decision.",
+        )
+    return (
+        "Primary predeclared policy; source evidence is not canonical.",
+        "Derived policy scenario; it does not replace the primary predeclared policy.",
+    )
 
 
 def _exact_fields(raw: Mapping[str, Any], expected: set[str], context: str) -> None:
@@ -239,6 +250,7 @@ def evaluate_policy_profiles(
     """Precompute deterministic recommendations for every deployment profile."""
 
     results: list[dict[str, Any]] = []
+    primary_notice, derived_notice = _evidence_notices(benchmarks)
     candidate_ids = [candidate.candidate_id for candidate in benchmarks.candidates]
     for profile in policy_set.profiles:
         missing = [
@@ -260,9 +272,7 @@ def evaluate_policy_profiles(
                 "description": profile.description,
                 "classification": profile.classification,
                 "scenario_notice": (
-                    "Canonical submission decision."
-                    if profile.classification == "canonical"
-                    else _DERIVED_NOTICE
+                    primary_notice if profile.classification == "canonical" else derived_notice
                 ),
                 "recommendation": decision,
             }

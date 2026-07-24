@@ -57,9 +57,11 @@ The v1.1 workflow extends the core without changing its `BenchmarkSet` or recomm
 5. **Precompute decision scenarios.** One canonical policy and four non-canonical profiles are
    evaluated from the same benchmark set. The canonical profile must reproduce the core
    recommendation.
-6. **Render and replay.** `report-v1.1.html` presents the bound core and extension evidence.
-   Offline replay rebuilds every core decision artifact; report-only differences remain
-   presentation warnings.
+6. **Render, then support offline replay.** The measurement workflow renders
+   `report-v1.1.html` from the bound core and extension evidence. After a complete canonical
+   bundle is downloaded, the separate offline replay command rebuilds every core decision
+   artifact; report-only differences remain presentation warnings. Replay is not run inside the
+   measurement job.
 
 ## Candidate attribution
 

@@ -85,30 +85,33 @@ The bundle's `status.json` must say `complete`, `canonical`, `measurement_valid:
 [`evidence.json`](../results/published/29973188507/evidence.json) records the Actions artifact,
 release asset, outer digest, review checks, and derived-output fingerprints.
 
-## 3. Rebuild and compare the decision
+## 3. Replay and compare the decision
 
 Use fresh output paths; ParetoPilot intentionally refuses to overwrite evidence or reports.
+With the current source, use the replay command so a v1.0 archive is compared under its recorded
+producer-version identity:
 
 ```bash
-mkdir -p output/reproduction
-python -m paretopilot assemble-experiment \
-  evidence/experiment/manifest.json \
-  --output output/reproduction/benchmark-set.json
-cmp output/reproduction/benchmark-set.json evidence/experiment/benchmark-set.json
-
-python -m paretopilot report \
-  output/reproduction/benchmark-set.json \
-  --constraints evidence/experiment/constraints.json \
-  --output output/reproduction/report.html \
-  --recommendation-output output/reproduction/recommendation.json
-cmp output/reproduction/recommendation.json evidence/experiment/recommendation.json
+python -m paretopilot replay evidence \
+  --output-dir output/reproduction \
+  --policies configs/policies.arm64.json
 ```
 
-The benchmark set and recommendation are the authoritative deterministic decision outputs and
-must match exactly. The report is a presentation generated from those verified inputs; its layout
-may improve after the evidence release. To reproduce the archived HTML byte-for-byte, first check
-out tag `v1.0.0`, then run the same report command and compare it with
-`evidence/experiment/report.html`.
+Inspect `output/reproduction/replay.json`. For the published v1.0 archive,
+`replay_contract` must be `1.0`, `valid` and `decision_reproduced` must be `true`, the
+`benchmark-set` and `recommendation` authoritative comparisons must match, and `selected_id` must
+be `q8-generic`.
+
+The replay path matters across releases. A direct report command from newer source records the
+current ParetoPilot package version in newly generated JSON. Replay instead restores the archived
+producer version before comparing the authoritative recommendation, so version metadata does not
+look like decision drift.
+
+The HTML report is a presentation generated from verified inputs, so its layout may improve after
+the evidence release. A report-only difference leaves `valid: true`, keeps
+`decision_reproduced: true`, and appears as a presentation warning. To reproduce every v1.0 output
+byte-for-byte, including the archived HTML, check out tag `v1.0.0` and run the reproduction
+commands from that tag.
 
 Expected decision:
 

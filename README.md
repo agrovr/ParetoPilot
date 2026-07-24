@@ -69,8 +69,8 @@ repository keeps only a short reviewed summary and an exact archive lock.
 
 ## Additive v1.1 evidence
 
-The current code extends that core with stricter quality, policy, load, and repeat-stability
-evidence. These features do not retroactively change the published result:
+The current code extends that core with expanded behavior evaluation, policy, load, and
+repeat-stability evidence. These features do not retroactively change the published result:
 
 - A checksummed 24-case behavior suite uses declared `trimmed-exact` and strict `json-exact`
   matching. The candidate constraints require both a 0.80 absolute quality floor and at least
@@ -91,13 +91,14 @@ No canonical v1.1 Arm64 result is published yet. Until a fresh v1.1 workflow run
 is locked in a release, the v1.0 run above remains the authoritative measured evidence. See the
 [v1.1 evidence contract](docs/evidence-extensions-v1.1.md) for the additive boundary.
 
-The v1.1 thresholds were declared after a
-[non-canonical calibration run](https://github.com/agrovr/ParetoPilot/actions/runs/30050573298)
-and before any canonical v1.1 run. That deterministic 24-case run scored the Q8 reference at
-21/24 and every Q4 candidate at 20/24 in both passes. The 0.80 floor requires at least 20/24, and
-0.95 retention permits that one-case net deficit while rejecting 19/24. Case-level failures
-remain checksummed and visible; this gate is not a claim of behavioral equivalence or general
-model quality.
+The v1.1 thresholds were declared after an
+[incomplete diagnostic run](https://github.com/agrovr/ParetoPilot/actions/runs/30050573298)
+and before any canonical v1.1 run. The provisional gate stopped that run, so its artifact is not
+valid benchmark evidence. Its checksummed raw case outcomes were used only for pre-canonical
+calibration: Q8 scored 21/24 and every Q4 candidate scored 20/24 in both passes. The 0.80 floor
+requires at least 20/24, and 0.95 retention permits that one-case net deficit while rejecting
+19/24. Case-level failures remain visible; this gate is not a claim of behavioral equivalence or
+general model quality.
 
 ## Quick start
 

@@ -1,9 +1,9 @@
 # ParetoPilot v1.1 evidence extensions
 
-ParetoPilot v1.1 adds stricter quality evaluation, deployment-policy scenarios, bounded
-multi-client measurements, pass-level reconstruction, and repeat-stability summaries. The
-extension is additive: it does not change the schema or byte-level rebuild path of the published
-v1.0 evidence.
+ParetoPilot v1.1 adds expanded deterministic behavior evaluation with stricter JSON parsing,
+deployment-policy scenarios, bounded multi-client measurements, pass-level reconstruction, and
+repeat-stability summaries. The extension is additive: it does not change the schema or
+byte-level rebuild path of the published v1.0 evidence.
 
 ## Evidence status and compatibility boundary
 
@@ -44,12 +44,14 @@ least 95% retention of the measured baseline score.
 
 This remains a deterministic behavior gate, not a broad language-model quality benchmark.
 The thresholds were declared after
-[non-canonical exploratory run `30050573298`](https://github.com/agrovr/ParetoPilot/actions/runs/30050573298)
-and before any canonical v1.1 run. The measured Q8 reference scored 21/24 and each Q4 candidate
-scored 20/24 in both passes, so the combined gate requires at least 20/24 for that reference and
-rejects 19/24. Case-level failures remain checksummed; the one-case net difference is not a claim
+[incomplete diagnostic run `30050573298`](https://github.com/agrovr/ParetoPilot/actions/runs/30050573298)
+and before any canonical v1.1 run. The provisional gate stopped that run, so its artifact records
+`measurement_valid: false` and is not valid benchmark evidence. Its checksummed raw case outcomes
+were used only for pre-canonical calibration: Q8 scored 21/24 and each Q4 candidate scored 20/24
+in both passes. The combined gate therefore requires at least 20/24 for that observed reference
+and rejects 19/24. Case-level failures remain visible; the one-case net difference is not a claim
 of behavioral equivalence or general quality. The
-[benchmark methodology](benchmark-methodology.md#stricter-behavior-gate) records the disclosed
+[benchmark methodology](benchmark-methodology.md#expanded-behavior-gate) records the disclosed
 failure types and calibration rationale.
 
 ### Policy profiles
