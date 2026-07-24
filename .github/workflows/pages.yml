@@ -5,8 +5,6 @@ on:
     branches: [main]
     paths:
       - ".github/workflows/pages.yml"
-      - "configs/constraints.candidate-study.json"
-      - "configs/policies.arm64.json"
       - "results/published/**"
       - "src/paretopilot/**"
   workflow_dispatch:
@@ -20,9 +18,12 @@ concurrency:
   group: pages
   cancel-in-progress: false
 
+env:
+  EVIDENCE_LOCK: results/published/30055662526/evidence.json
+
 jobs:
   deploy:
-    name: Verify evidence and publish report
+    name: Verify evidence, replay, and publish report
     if: github.ref_name == github.event.repository.default_branch
     runs-on: ubuntu-24.04
     environment:
@@ -51,21 +52,70 @@ jobs:
 
           import hashlib
           import json
+          import os
           from pathlib import Path, PurePosixPath
           import re
+          import stat
           from urllib.request import Request, urlopen
           from zipfile import ZipFile
 
-          lock_path = Path("results/published/29973188507/evidence.json")
+          lock_path = Path(os.environ["EVIDENCE_LOCK"])
           lock = json.loads(lock_path.read_text(encoding="utf-8"))
           source = lock["source"]
           archive = lock["archive"]
           review = lock["review"]
 
-          if lock["schema_version"] != "1.0" or lock["classification"] != "canonical":
-              raise SystemExit("evidence lock is not canonical schema 1.0")
+          if lock["schema_version"] != "1.1" or lock["classification"] != "canonical":
+              raise SystemExit("evidence lock is not canonical schema 1.1")
+          if source != {
+              "run_id": "30055662526",
+              "run_attempt": 1,
+              "job_id": "89366649754",
+              "head_sha": "8a9ddce0afa2272c4a4097fe87ef6f06cb7689a9",
+              "workflow": ".github/workflows/candidate-study-arm64.yml",
+              "url": "https://github.com/agrovr/ParetoPilot/actions/runs/30055662526",
+              "generated_at_utc": "2026-07-24T00:46:28Z",
+              "runner": {
+                  "os": "Ubuntu 24.04",
+                  "architecture": "arm64",
+                  "cpu": "Neoverse-N2",
+                  "cpu_count": 4,
+              },
+          }:
+              raise SystemExit("committed source identity is not the reviewed canonical run")
+          if archive != {
+              "actions_artifact_id": 8583168905,
+              "actions_artifact_name": "arm64-candidate-study-30055662526-1",
+              "actions_digest": (
+                  "sha256:b5586878ccd214667911390f417db0417111ac2c31d163a2f5f55c4469aefeb2"
+              ),
+              "release_id": 359027209,
+              "release_tag": "v1.1.0",
+              "release_tag_object_sha": "9acc9031deddc4b93efed7361efdcc2668138386",
+              "release_asset_id": 487826578,
+              "release_asset_name": (
+                  "paretopilot-v1.1.0-arm64-evidence-30055662526.zip"
+              ),
+              "release_asset_url": (
+                  "https://github.com/agrovr/ParetoPilot/releases/download/v1.1.0/"
+                  "paretopilot-v1.1.0-arm64-evidence-30055662526.zip"
+              ),
+              "release_url": "https://github.com/agrovr/ParetoPilot/releases/tag/v1.1.0",
+              "size_bytes": 402899,
+              "sha256": "b5586878ccd214667911390f417db0417111ac2c31d163a2f5f55c4469aefeb2",
+          }:
+              raise SystemExit("release identity is not the reviewed canonical archive")
           if archive["actions_digest"] != f"sha256:{archive['sha256']}":
               raise SystemExit("Actions and release digest declarations disagree")
+          for flag in (
+              "all_checksums_verified",
+              "exact_file_coverage",
+              "status_complete",
+              "measurement_valid",
+              "valid_evidence",
+          ):
+              if review.get(flag) is not True:
+                  raise SystemExit(f"review flag is not true: {flag}")
 
           root = Path("output/pages")
           archive_path = root / archive["release_asset_name"]
@@ -86,13 +136,34 @@ jobs:
 
           with ZipFile(archive_path) as bundle:
               members = bundle.infolist()
+              if not members:
+                  raise SystemExit("release ZIP is empty")
+              normalized_names: set[str] = set()
               for member in members:
-                  path = PurePosixPath(member.filename)
-                  if path.is_absolute() or ".." in path.parts:
-                      raise SystemExit(f"unsafe ZIP member: {member.filename}")
+                  name = member.filename
+                  if "\\" in name:
+                      raise SystemExit(f"unsafe backslash ZIP member: {name}")
+                  path = PurePosixPath(name)
+                  normalized = path.as_posix()
+                  if (
+                      not name
+                      or path.is_absolute()
+                      or ".." in path.parts
+                      or normalized in normalized_names
+                  ):
+                      raise SystemExit(f"unsafe or duplicate ZIP member: {name}")
+                  normalized_names.add(normalized)
+                  mode = member.external_attr >> 16
+                  if stat.S_ISLNK(mode):
+                      raise SystemExit(f"symbolic-link ZIP member is forbidden: {name}")
+                  if mode and not (stat.S_ISREG(mode) or stat.S_ISDIR(mode)):
+                      raise SystemExit(f"special-file ZIP member is forbidden: {name}")
               bundle.extractall(extracted)
 
           checksum_path = extracted / "SHA256SUMS"
+          checksum_digest = hashlib.sha256(checksum_path.read_bytes()).hexdigest()
+          if checksum_digest != review["checksum_manifest_sha256"]:
+              raise SystemExit("SHA256SUMS digest does not match the evidence lock")
           checksum_pattern = re.compile(r"^([0-9a-f]{64})  \./(.+)$")
           expected: dict[str, str] = {}
           for line in checksum_path.read_text(encoding="utf-8").splitlines():
@@ -105,23 +176,27 @@ jobs:
               for path in extracted.rglob("*")
               if path.is_file() and path != checksum_path
           }
-          if set(expected) != actual or len(expected) != review["checksum_entries"]:
+          if (
+              set(expected) != actual
+              or len(expected) != review["checksum_entries"]
+              or not review["exact_file_coverage"]
+          ):
               raise SystemExit("SHA256SUMS coverage does not exactly match the release bundle")
           for relative, expected_digest in expected.items():
               actual_digest = hashlib.sha256((extracted / relative).read_bytes()).hexdigest()
               if actual_digest != expected_digest:
                   raise SystemExit(f"checksum mismatch: {relative}")
-          archived_report_digest = hashlib.sha256(
-              (extracted / "experiment/report.html").read_bytes()
-          ).hexdigest()
-          if archived_report_digest != review["archived_report_sha256"]:
-              raise SystemExit("released report does not match the reviewed archive hash")
 
-          status = json.loads((extracted / "status.json").read_text(encoding="utf-8"))
-          if status != {
+          status_payload = json.loads(
+              (extracted / "status.json").read_text(encoding="utf-8")
+          )
+          if status_payload != {
               "classification": "canonical",
               "measurement_valid": True,
-              "reason": "all candidate, quality, latency, memory, integrity, selection, and report gates passed",
+              "reason": (
+                  "all candidate, quality, latency, memory, load, repeat-stability, "
+                  "integrity, policy, selection, and report gates passed"
+              ),
               "schema_version": "1.0",
               "status": "complete",
               "valid_evidence": True,
@@ -133,37 +208,148 @@ jobs:
           )
           if (
               manifest["classification"] != "canonical"
+              or manifest["source"]["repository"] != "agrovr/ParetoPilot"
               or manifest["source"]["run_id"] != source["run_id"]
               or manifest["source"]["run_attempt"] != source["run_attempt"]
               or manifest["source"]["revision"] != source["head_sha"]
               or manifest["source"]["workflow"] != source["workflow"]
+              or manifest["source"]["generated_at_utc"] != source["generated_at_utc"]
+              or manifest["source"]["runner"] != source["runner"]
           ):
               raise SystemExit("released manifest does not match the committed source identity")
+
+          artifact_paths = {
+              "manifest": "experiment/manifest.json",
+              "evaluation_suite": "experiment/evaluation-suite.json",
+              "benchmark_set": "experiment/benchmark-set.json",
+              "constraints": "experiment/constraints.json",
+              "recommendation": "experiment/recommendation.json",
+              "report": "experiment/report.html",
+              "policy_config": "extensions/policy-config.json",
+              "policy_profiles": "extensions/policy-profiles.json",
+              "load_plan": "extensions/load-plan.json",
+              "load_evaluation": "extensions/load-evaluation.json",
+              "benchmark_set_pass_1": "extensions/benchmark-set-pass-1.json",
+              "benchmark_set_pass_2": "extensions/benchmark-set-pass-2.json",
+              "repeat_stability": "extensions/repeat-stability.json",
+              "report_v1_1": "report-v1.1.html",
+          }
+          if set(artifact_paths) != set(review["artifacts_sha256"]):
+              raise SystemExit("reviewed artifact hash map has unexpected keys")
+          for label, relative in artifact_paths.items():
+              actual_digest = hashlib.sha256((extracted / relative).read_bytes()).hexdigest()
+              if actual_digest != review["artifacts_sha256"][label]:
+                  raise SystemExit(f"reviewed artifact hash mismatch: {label}")
+
+          expected_dispatch = {
+              "q8-generic": {
+                  "throughput_passes": [0, 0],
+                  "server_passes": [0, 0],
+                  "load_server": 0,
+              },
+              "q4-generic": {
+                  "throughput_passes": [0, 0],
+                  "server_passes": [0, 0],
+                  "load_server": 0,
+              },
+              "q4-kleidiai": {
+                  "throughput_passes": [1, 1],
+                  "server_passes": [1, 1],
+                  "load_server": 1,
+              },
+              "q4-kleidiai-tuned": {
+                  "throughput_passes": [1, 1],
+                  "server_passes": [1, 1],
+                  "load_server": 1,
+              },
+          }
+          if review["dispatch_marker_counts"] != expected_dispatch:
+              raise SystemExit("committed dispatch review is not the canonical four-stage result")
+          marker = b"CPU_KLEIDIAI model buffer"
+          for candidate, declared in review["dispatch_marker_counts"].items():
+              actual_counts = {
+                  "throughput_passes": [
+                      (
+                          extracted
+                          / f"experiment/candidates/{candidate}/raw/pass-{number}.stderr.log"
+                      ).read_bytes().count(marker)
+                      for number in (1, 2)
+                  ],
+                  "server_passes": [
+                      (
+                          extracted
+                          / f"experiment/candidates/{candidate}/server-pass-{number}.stderr.log"
+                      ).read_bytes().count(marker)
+                      for number in (1, 2)
+                  ],
+                  "load_server": (
+                      extracted / f"extensions/load/{candidate}/server.stderr.log"
+                  ).read_bytes().count(marker),
+              }
+              if actual_counts != declared:
+                  raise SystemExit(f"dispatch marker mismatch: {candidate}")
           PY
 
-      - name: Rebuild and compare the decision
+      - name: Rebuild and compare every v1.1 output
         shell: bash
         run: |
           set -euo pipefail
           mkdir -p _site
           PYTHONPATH=src python -m paretopilot replay \
             output/pages/evidence \
-            --output-dir output/pages/replayed \
-            --policies configs/policies.arm64.json
+            --output-dir output/pages/replayed
           python - <<'PY'
           import hashlib
           import json
+          import os
           from pathlib import Path
 
-          lock = json.loads(
-              Path("results/published/29973188507/evidence.json").read_text(encoding="utf-8")
+          lock = json.loads(Path(os.environ["EVIDENCE_LOCK"]).read_text(encoding="utf-8"))
+          expected = lock["review"]["replay"]
+          replay = json.loads(
+              Path("output/pages/replayed/replay.json").read_text(encoding="utf-8")
           )
-          report = Path("output/pages/replayed/report.html")
+          for field in (
+              "valid",
+              "decision_reproduced",
+              "fully_reproduced",
+              "report_matches_archive",
+              "status_complete",
+              "authoritative_outputs_match",
+          ):
+              if replay.get(field) is not True:
+                  raise SystemExit(f"v1.1 replay field is not true: {field}")
+          if (
+              replay.get("replay_contract") != expected["replay_contract"]
+              or replay.get("selected_id") != expected["selected_id"]
+              or replay.get("differences") != expected["differences"]
+              or replay.get("warnings") != expected["warnings"]
+              or replay.get("checksums", {}).get("entry_count")
+              != expected["checksum_entry_count"]
+              or replay.get("checksums", {}).get("manifest_sha256")
+              != expected["checksum_manifest_sha256"]
+              or replay.get("checksums", {}).get("verified") is not True
+              or replay.get("policy_profile_count") != expected["policy_profile_count"]
+              or replay.get("policy_selected_ids") != expected["policy_selected_ids"]
+          ):
+              raise SystemExit("v1.1 replay result does not match the committed review")
+
+          comparisons = replay.get("authoritative_comparisons", {})
+          if set(comparisons) != set(expected["authoritative_comparisons"]):
+              raise SystemExit("v1.1 replay comparison set is incomplete or unexpected")
+          for name in expected["authoritative_comparisons"]:
+              comparison = comparisons[name]
+              if comparison.get("present") is not True or comparison.get("matches") is not True:
+                  raise SystemExit(f"authoritative replay comparison failed: {name}")
+          if comparisons["report-v1.1"].get("matches") is not True:
+              raise SystemExit("v1.1 report did not reproduce exactly")
+
+          report = Path("output/pages/replayed/report-v1.1.html")
           digest = hashlib.sha256(report.read_bytes()).hexdigest()
-          if digest != lock["review"]["submission_report_sha256"]:
-              raise SystemExit("replayed report does not match the reviewed submission hash")
+          if digest != lock["review"]["artifacts_sha256"]["report_v1_1"]:
+              raise SystemExit("replayed v1.1 report does not match the reviewed hash")
           PY
-          cp output/pages/replayed/report.html _site/index.html
+          cp output/pages/replayed/report-v1.1.html _site/index.html
           test "$(find _site -type f | wc -l)" -eq 1
 
       - name: Upload Pages artifact

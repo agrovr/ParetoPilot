@@ -1,6 +1,6 @@
 # ParetoPilot
 
-ParetoPilot is an evidence-first deployment advisor for AI inference on Arm64. It verifies
+ParetoPilot is an evidence-first deployment advisor for AI inference on Arm64. It validates
 benchmark provenance, applies quality and resource guardrails, computes the Pareto frontier, and
 recommends a configuration without assuming that an "optimized" build must win.
 
@@ -9,8 +9,8 @@ Arm Performix is an optional profiling enhancement; it is not required by the pr
 evidence pipeline.
 
 [Live decision report](https://agrovr.github.io/ParetoPilot/) |
-[Published v1.0 result](results/published/29973188507/README.md) |
-[Complete evidence release](https://github.com/agrovr/ParetoPilot/releases/tag/v1.0.0) |
+[Canonical v1.1 result](results/published/30055662526/README.md) |
+[Complete v1.1 evidence](https://github.com/agrovr/ParetoPilot/releases/tag/v1.1.0) |
 [Reproduction guide](docs/reproducibility.md)
 
 ## What it does
@@ -23,82 +23,76 @@ into an inspectable deployment decision:
 2. reject configurations that miss declared quality or resource limits;
 3. compute the non-dominated candidates across latency, throughput, memory, size, and quality;
 4. select against a declared objective and practical-effect tolerance; and
-5. export a deterministic JSON recommendation and self-contained HTML report.
+5. export deterministic JSON recommendations and a self-contained HTML report.
 
 The baseline is allowed to win. An honest no-change result is more useful than extra deployment
-complexity for a gain below the decision tolerance.
+complexity when the measured alternatives do not improve the declared objective.
 
-## Published canonical Arm64 result
+## Canonical Arm64 result
 
-[Run `29973188507`](https://github.com/agrovr/ParetoPilot/actions/runs/29973188507)
-compared four configurations in balanced order on one GitHub-hosted Arm Neoverse-N2 runner.
+[Run `30055662526`](https://github.com/agrovr/ParetoPilot/actions/runs/30055662526)
+completed on one GitHub-hosted Ubuntu 24.04 Arm64 runner with a 4-vCPU Arm Neoverse-N2 CPU. It
+compared four configurations in balanced order from commit
+[`8a9ddce`](https://github.com/agrovr/ParetoPilot/commit/8a9ddce0afa2272c4a4097fe87ef6f06cb7689a9).
 
 | Candidate | E2E p95 | TTFT p95 | Prompt tok/s | Generation tok/s | Peak RSS | Model size | Quality |
 | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
-| Q8 generic reference | 2335.917 ms | 553.415 ms | 101.7475 | **36.5399** | 3437.613 MiB | 1806.767 MiB | 5/5 |
-| Q4 generic | **2330.914 ms** | 483.327 ms | 113.5460 | 34.7130 | **1966.461 MiB** | **1016.834 MiB** | 5/5 |
-| Q4 + KleidiAI | 2393.537 ms | **472.764 ms** | 114.1015 | 34.5675 | 1966.477 MiB | **1016.834 MiB** | 5/5 |
-| Q4 + KleidiAI tuned | 2337.799 ms | 472.799 ms | **131.2565** | 34.6329 | 1966.477 MiB | **1016.834 MiB** | 5/5 |
+| **Q8 generic reference** | **2231.933 ms** | 545.374 ms | 102.6185 | **38.7265** | 3437.598 MiB | 1806.767 MiB | **21/24** |
+| Q4 generic | 2311.125 ms | 483.113 ms | 113.8210 | 35.0124 | **1966.473 MiB** | **1016.834 MiB** | 20/24 |
+| Q4 + KleidiAI | 2299.454 ms | 470.402 ms | 114.4480 | 35.3764 | 1966.484 MiB | **1016.834 MiB** | 20/24 |
+| Q4 + KleidiAI tuned | 2307.715 ms | **469.968 ms** | **131.4565** | 35.0959 | 1966.480 MiB | **1016.834 MiB** | 20/24 |
 
-ParetoPilot retained **Q8 generic reference**. Q4 generic had the lowest measured p95 end-to-end
-latency, but its 0.214% lead was inside the predeclared 1% objective tolerance. The deterministic
-simpler-first preference therefore kept Q8 instead of treating that small difference as a
-deployment win.
+ParetoPilot retained **Q8 generic reference** because it was also the numeric p95 end-to-end
+latency winner. The predeclared 1% objective cutoff was 2254.2522 ms, so none of the three Q4
+candidates entered the canonical shortlist. The result is a useful no-change decision: the
+measured optimization alternatives had real resource advantages, but they did not beat the
+declared latency objective.
 
-The other results remain useful. Compared with Q8, the tuned Q4 + KleidiAI candidate used a 43.7%
-smaller model and 42.8% less peak RSS, raised prompt throughput by 29.0%, and reduced p95 TTFT by
-14.6%. It also had 0.08% higher p95 end-to-end latency and 5.2% lower generation throughput. No
-candidate won every metric, and all four stayed on the Pareto frontier.
+The tuned Q4 + KleidiAI configuration is the strongest measured resource alternative. Compared
+with Q8, it used a 43.72% smaller model and 42.79% less peak RSS, reduced p95 TTFT by 13.83%, and
+raised prompt throughput by 28.10%. The tradeoff was 3.40% slower p95 end-to-end latency, 9.37%
+lower generation throughput, and one fewer passing behavior case.
 
-## How the published v1.0 evidence was built
+## What v1.1 adds
 
-- One native `ubuntu-24.04-arm` job builds pinned generic and KleidiAI-enabled `llama.cpp`
-  binaries and verifies two pinned Qwen2.5 1.5B Instruct model files.
-- Four stages isolate Q8, Q4 quantization, KleidiAI kernels, and one micro-batch change.
-- Throughput and server passes use the balanced order `A-B-C-D-D-C-B-A` on the same runner.
-- `llama-bench` supplies twenty prompt and generation samples per candidate and workload.
-- `llama-server` supplies a fixed five-case exact-answer smoke gate and twenty streamed 64-token
-  latency samples per candidate; GNU `time -v` supplies peak RSS.
-- Runtime logs must prove KleidiAI dispatch only for the intended candidates.
-- A closed manifest binds the decision evidence before selection; a bundle-level SHA-256 file then
-  locks the final archive.
+The canonical v1.1 release makes four supplementary views inspectable without changing the core
+selection rule:
 
-The permanent release contains every raw sample, command, environment record, build log,
-dispatch log, manifest, recommendation, and offline report. For the canonical run, the Git
-repository keeps only a short reviewed summary and an exact archive lock.
+- **Behavior gate:** a checksummed 24-case suite uses declared `trimmed-exact` and strict
+  `json-exact` matching. Q8 passed 21/24 cases; every Q4 candidate passed 20/24. All four cleared
+  the 0.80 absolute floor and 95% baseline-retention rule.
+- **Policy sensitivity:** five profiles recompute the decision from the same benchmark. Canonical
+  latency and decode-first select Q8; memory-first selects Q4 generic; first-token-first and
+  prompt-ingest-first select tuned Q4 + KleidiAI.
+- **Bounded load:** every candidate ran eight measured requests at concurrency 1, 2, and 4. All
+  had 100% completion; concurrency 1 was the highest level that met both the 2000 ms p95 TTFT and
+  6500 ms p95 end-to-end SLOs.
+- **Repeat stability:** two independently reconstructed balanced passes produced 24 comparison
+  rows. All six reported metrics were directionally consistent for the three Q4 candidates. The
+  largest relative spread for those candidates was 1.6695%; this is an observed consistency
+  result, not a statistical significance claim.
 
-## Additive v1.1 evidence
+The release contains 150 checksummed payloads. A separate offline replay verified the complete
+bundle, reproduced the selected candidate, matched all nine core and report comparisons, and
+returned no differences or warnings.
 
-The current code extends that core with expanded behavior evaluation, policy, load, and
-repeat-stability evidence. These features do not retroactively change the published result:
+## How the evidence was built
 
-- A checksummed 24-case behavior suite uses declared `trimmed-exact` and strict `json-exact`
-  matching. The candidate constraints require both a 0.80 absolute quality floor and at least
-  95% retention of the measured reference score.
-- `policy-profiles.json` precomputes the canonical latency decision plus four clearly labeled
-  non-canonical deployment scenarios from the same validated benchmark set.
-- A bounded 1/2/4-client load sweep records raw requests and SLO outcomes. Its evidence binds the
-  load plan, request endpoint, exact load-server command, and canonical deployment command for
-  every candidate; only host and port binding differences are permitted.
-- Each balanced pass is reconstructed from its checksummed raw throughput, server-evaluation,
-  GNU `time -v`, and settings files before stability is summarized. The summary reports observed
-  direction and relative spread only, with no statistical-significance claim.
-- Replay verifies the checksummed archive and regenerates the core benchmark, recommendation,
-  policy profiles, combined load evaluation, pass benchmark sets, and stability summary. HTML
-  drift remains a presentation warning rather than being treated as changed measurement data.
+- One native `ubuntu-24.04-arm` job built pinned generic and KleidiAI-enabled `llama.cpp`
+  binaries and verified two pinned Qwen2.5 1.5B Instruct model files.
+- Four stages isolated Q8, Q4 quantization, KleidiAI kernels, and one micro-batch change.
+- Throughput and server passes used the balanced order `A-B-C-D-D-C-B-A` on the same runner.
+- `llama-bench` supplied prompt-processing and generation-throughput samples.
+- `llama-server` supplied the deterministic behavior gate, streamed 64-token TTFT and
+  end-to-end samples, and the bounded 1/2/4-client load sweep; GNU `time -v` supplied peak RSS.
+- Runtime logs had to prove KleidiAI dispatch only for the intended candidates.
+- A closed manifest bound the decision evidence before selection, and bundle-level SHA-256
+  checksums locked the release archive.
 
-No canonical v1.1 Arm64 result is published yet. Until a fresh v1.1 workflow run passes review and
-is locked in a release, the v1.0 run above remains the authoritative measured evidence. See the
-[v1.1 evidence contract](docs/evidence-extensions-v1.1.md) for the additive boundary.
-
-The v1.1 thresholds were declared after an
-[incomplete diagnostic run](https://github.com/agrovr/ParetoPilot/actions/runs/30050573298)
-and before any canonical v1.1 run. The provisional gate stopped that run, so its artifact is not
-valid benchmark evidence. Its checksummed raw case outcomes were used only for pre-canonical
-calibration: Q8 scored 21/24 and every Q4 candidate scored 20/24 in both passes. The 0.80 floor
-requires at least 20/24, and 0.95 retention permits that one-case net deficit while rejecting
-19/24. Case-level failures remain visible; this gate is not a claim of behavioral equivalence or
-general model quality.
+The measurement pins include `llama.cpp`
+`67b9b0e7f6ce45d929a4411907d3c48ec719e81c`, KleidiAI `1.24.0`, Qwen2.5 1.5B Instruct
+revision `91cad51170dc346986eccefdc2dd33a9da36ead9`, and evaluation-suite SHA-256
+`e49c16fba32fd65c947264aef4141026ab68b1fd415ef09eeea6e8ade9a545c7`.
 
 ## Quick start
 
@@ -127,23 +121,31 @@ as Arm64 benchmark evidence.
 ## Reproduce the canonical decision
 
 Download
-[`paretopilot-v1.0.0-arm64-evidence-29973188507.zip`](https://github.com/agrovr/ParetoPilot/releases/download/v1.0.0/paretopilot-v1.0.0-arm64-evidence-29973188507.zip)
-and verify this SHA-256 before extraction:
+[`paretopilot-v1.1.0-arm64-evidence-30055662526.zip`](https://github.com/agrovr/ParetoPilot/releases/download/v1.1.0/paretopilot-v1.1.0-arm64-evidence-30055662526.zip)
+and verify this outer SHA-256 before extraction:
 
 ```text
-fb4f4c86a729a5eb42e23dbd3c6346fd4ab31ce14423dbb8c7672b11b6a6fd00
+b5586878ccd214667911390f417db0417111ac2c31d163a2f5f55c4469aefeb2
 ```
 
-After extracting it to `evidence/`, rebuild the measured benchmark set and report into fresh
-paths:
+After extracting it to `evidence/`, replay the complete archived contract into a fresh directory:
 
 ```bash
-python -m paretopilot assemble-experiment evidence/experiment/manifest.json --output output/reproduction/benchmark-set.json
-python -m paretopilot report output/reproduction/benchmark-set.json --constraints evidence/experiment/constraints.json --output output/reproduction/report.html --recommendation-output output/reproduction/recommendation.json
+python -m paretopilot replay evidence --output-dir output/reproduction
 ```
 
-ParetoPilot refuses to overwrite existing outputs. See the [reproduction guide](docs/reproducibility.md)
-for checksum, byte-comparison, and fresh Arm64 measurement instructions.
+The canonical replay reports `replay_contract: "1.1"`, `valid: true`,
+`decision_reproduced: true`, `fully_reproduced: true`, and `selected_id: "q8-generic"`, with
+empty differences and warnings. See the [reproduction guide](docs/reproducibility.md) for the
+complete checksum and comparison procedure.
+
+## Historical v1.0 evidence
+
+The earlier [run `29973188507`](results/published/29973188507/README.md) and
+[`v1.0.0` release](https://github.com/agrovr/ParetoPilot/releases/tag/v1.0.0) remain preserved as
+historical evidence. That study used a five-case smoke gate and produced a different measured
+latency ordering on a separate ephemeral runner. It is independently reproducible, but it is not
+pooled with or substituted for the current v1.1 canonical run.
 
 ## Run a new native Arm64 study
 
@@ -157,25 +159,25 @@ trees, or credentials. Only compact evidence is retained.
 ## Trust and limits
 
 - Measured and synthetic inputs are explicitly separated.
-- Closed ParetoPilot schemas reject duplicate keys, non-finite numbers, unknown fields, and
-  malformed evidence; the upstream `llama-bench` reader validates a required subset while
-  tolerating additional upstream fields. Experiment paths are bounded below their evidence root.
-- Candidate summaries reconcile reported runtime settings with declared settings.
-- Missing fingerprints, mismatched commands, invalid checksums, incomplete runs, or absent
-  dispatch proof fail closed.
-- The published v1.0 five-case suite and the v1.1 24-case behavior suite are deterministic gates,
-  not broad language-model quality benchmarks.
-- The canonical result is one controlled hosted-runner comparison. It does not claim the same
-  ranking on every Arm processor, model, workload, or concurrency level.
+- Closed schemas reject duplicate keys, non-finite numbers, unknown fields, malformed evidence,
+  mismatched settings, missing fingerprints, path escapes, and invalid checksums.
+- The 24-case behavior suite is a deterministic deployment gate, not a broad language-model
+  quality benchmark.
+- The 1/2/4-client sweep is bounded evidence, not a general capacity study.
+- Two balanced passes support an observed consistency description, not a significance claim.
+- The canonical result is one model and workload on one controlled hosted Arm64 runner. It does
+  not claim the same ranking on every Arm processor or deployment.
 - Energy and cost were not measured.
+- Arm Performix remains optional and does not substitute profiler output for benchmark evidence.
 
 ## Project map
 
 ```text
-src/paretopilot/                 validation, assembly, selection, and reporting
-evals/                           versioned quality and latency suites
+src/paretopilot/                 validation, assembly, selection, replay, and reporting
+evals/                           versioned behavior and latency suites
 configs/                         decision, policy-profile, and bounded-load declarations
-results/published/29973188507/   concise canonical summary and release lock
+results/published/30055662526/   current v1.1 canonical summary and release lock
+results/published/29973188507/   preserved v1.0 historical summary and release lock
 .github/workflows/               cross-platform CI, Arm64 study, and verified Pages deploy
 docs/                            architecture, methodology, contracts, and reproduction
 tests/                           deterministic behavior and failure-path coverage
