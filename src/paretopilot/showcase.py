@@ -1045,6 +1045,10 @@ html[data-theme="dark"] .showcase {
 }
 .showcase p { max-width: 72ch; }
 .showcase a { color: var(--flight-cobalt); text-underline-offset: .18em; }
+.showcase .skip-link {
+  background: var(--flight-panel);
+  color: var(--flight-on-dark);
+}
 .showcase button:focus-visible,
 .showcase a:focus-visible,
 .showcase summary:focus-visible,
@@ -1423,8 +1427,10 @@ html[data-theme="dark"] .showcase {
 .showcase th, .showcase td {
   padding: .82rem .72rem;
   border-color: var(--flight-line);
-  overflow-wrap: anywhere;
+  word-break: normal;
 }
+.showcase th { overflow-wrap: normal; }
+.showcase td { overflow-wrap: anywhere; }
 .showcase thead th {
   background: var(--flight-panel);
   color: var(--flight-white);
@@ -1434,7 +1440,8 @@ html[data-theme="dark"] .showcase {
 .showcase .command {
   width: 100%;
   max-width: 100%;
-  contain: inline-size paint;
+  min-width: 0;
+  contain: inline-size;
 }
 .showcase .table-scroll { overflow-x: auto; }
 .showcase .load-table,
@@ -1455,6 +1462,27 @@ html[data-theme="dark"] .showcase {
 }
 .showcase .candidate-table th:first-child { width: 12rem; }
 .showcase .candidate-table th:nth-child(3) { width: 10rem; }
+.showcase .metadata-table {
+  width: 100%;
+  min-width: 48rem;
+  table-layout: fixed;
+}
+.showcase .metadata-table th:first-child { width: 13rem; }
+.showcase .metadata-table code {
+  display: block;
+  width: 100%;
+  max-width: 100%;
+  max-height: 18rem;
+  padding: .75rem .85rem;
+  overflow: auto;
+  border: 1px solid var(--flight-panel-line);
+  background: var(--flight-command-bg);
+  color: var(--flight-command-text);
+  line-height: 1.55;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  word-break: normal;
+}
 .showcase .table-scroll-hint {
   display: none;
   margin: .2rem 0 .65rem;
@@ -1775,7 +1803,13 @@ html[data-theme="dark"] .showcase {
 }
 .showcase .trust-section summary,
 .showcase .trust-section a { color: var(--flight-link-inverse); }
-.showcase .trust-section table { color: var(--flight-ink); }
+.showcase .trust-section table { color: var(--flight-on-dark); }
+.showcase .trust-section caption { color: var(--flight-on-dark-muted); }
+.showcase .trust-section th,
+.showcase .trust-section td { border-color: var(--flight-panel-line); }
+.showcase .trust-section tbody tr:nth-child(even) {
+  background: var(--flight-ink-soft);
+}
 .showcase .command {
   border-radius: 0;
   background: var(--flight-command-bg);
@@ -1922,12 +1956,14 @@ html[data-theme="dark"] .showcase {
   .showcase .table-scroll,
   .showcase .chart-figure,
   .showcase .json-block,
+  .showcase .metadata-table code,
   .showcase .command {
     max-height: none !important;
     overflow: visible !important;
     contain: none !important;
   }
   .showcase .compact-table,
+  .showcase .metadata-table,
   .showcase .load-binding .compact-table,
   .showcase .candidate-table,
   .showcase .load-table,

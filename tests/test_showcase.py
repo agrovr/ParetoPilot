@@ -261,6 +261,21 @@ class ShowcaseV11Tests(unittest.TestCase):
         self.assertIn('<p class="table-scroll-hint">Scroll the table horizontally.</p>', report)
         self.assertIn(".showcase .candidate-table {\n  width: 92rem;", report)
         self.assertIn(".showcase .candidate-table caption {", report)
+        self.assertIn(".showcase .metadata-table {\n  width: 100%;\n  min-width: 48rem;", report)
+        self.assertIn(".showcase .metadata-table th:first-child { width: 13rem; }", report)
+        self.assertIn(".showcase th { overflow-wrap: normal; }", report)
+        self.assertIn(".showcase td { overflow-wrap: anywhere; }", report)
+        self.assertIn("max-height: 18rem;", report)
+        self.assertIn(
+            ".showcase .table-scroll,\n"
+            ".showcase .command {\n"
+            "  width: 100%;\n"
+            "  max-width: 100%;\n"
+            "  min-width: 0;\n"
+            "  contain: inline-size;\n"
+            "}",
+            report,
+        )
         self.assertIn(
             '.showcase [data-series-style="0"] .chart-marker {',
             report,
@@ -415,6 +430,8 @@ class ShowcaseV11Tests(unittest.TestCase):
             with self.subTest(print_surface=token):
                 self.assertEqual(print_tokens[token], "#ffffff")
         self.assertIn(".showcase .theme-toggle { display: none; }", print_css)
+        self.assertIn(".showcase .metadata-table code,", print_css)
+        self.assertIn(".showcase .metadata-table,", print_css)
 
     def test_light_and_dark_theme_tokens_meet_contrast_requirements(self) -> None:
         report = rendered_showcase()
@@ -430,6 +447,8 @@ class ShowcaseV11Tests(unittest.TestCase):
             ("solid cobalt", "--flight-white", "--flight-cobalt-solid"),
             ("table header", "--flight-white", "--flight-panel"),
             ("striped table row", "--flight-ink", "--flight-paper-blue"),
+            ("trust table", "--flight-on-dark", "--flight-panel"),
+            ("trust table caption", "--flight-on-dark-muted", "--flight-panel"),
             ("code", "--flight-command-text", "--flight-command-bg"),
             ("success", "--flight-teal", "--flight-teal-soft"),
             ("warning", "--flight-amber", "--flight-amber-soft"),
@@ -467,6 +486,35 @@ class ShowcaseV11Tests(unittest.TestCase):
                         ),
                         3.0,
                     )
+
+    def test_fixed_dark_trust_table_uses_inverse_text_and_stable_columns(self) -> None:
+        report = rendered_showcase()
+
+        self.assertIn(
+            ".showcase .trust-section table { color: var(--flight-on-dark); }",
+            report,
+        )
+        self.assertIn(
+            ".showcase .trust-section caption { color: var(--flight-on-dark-muted); }",
+            report,
+        )
+        self.assertIn(
+            ".showcase .skip-link {\n"
+            "  background: var(--flight-panel);\n"
+            "  color: var(--flight-on-dark);\n"
+            "}",
+            report,
+        )
+        self.assertIn(
+            ".showcase .trust-section tbody tr:nth-child(even) {\n"
+            "  background: var(--flight-ink-soft);\n"
+            "}",
+            report,
+        )
+        self.assertNotIn(
+            ".showcase .trust-section table { color: var(--flight-ink); }",
+            report,
+        )
 
     def test_tolerance_track_keeps_full_names_values_and_roles_in_text(self) -> None:
         report = rendered_showcase()
