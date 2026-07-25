@@ -146,6 +146,18 @@ def load_json_object(path: Path) -> Mapping[str, Any]:
     return _load_json(path)
 
 
+def load_json_object_snapshot(path: Path) -> tuple[Mapping[str, Any], str]:
+    """Load one strict JSON object and hash the exact parsed byte snapshot."""
+
+    return _load_json_snapshot(path)
+
+
+def sha256_json(payload: Any) -> str:
+    """Hash the exact canonical UTF-8 JSON representation used by ``write_json``."""
+
+    return hashlib.sha256(_serialize_json(payload).encode("utf-8")).hexdigest()
+
+
 def load_benchmarks(path: Path) -> BenchmarkSet:
     raw = _load_json(path)
     try:
@@ -199,17 +211,7 @@ def write_json(
     """Atomically write strict JSON, refusing existing destinations by default."""
 
     try:
-        normalized = _json_compatible(payload)
-        serialized = (
-            json.dumps(
-                normalized,
-                allow_nan=False,
-                ensure_ascii=False,
-                indent=2,
-                sort_keys=True,
-            )
-            + "\n"
-        )
+        serialized = _serialize_json(payload)
     except ValidationError:
         raise
     except (OverflowError, RecursionError, TypeError, ValueError) as exc:
@@ -256,6 +258,20 @@ def write_json(
         if temporary_path is not None:
             with suppress(OSError):
                 temporary_path.unlink()
+
+
+def _serialize_json(payload: Any) -> str:
+    normalized = _json_compatible(payload)
+    return (
+        json.dumps(
+            normalized,
+            allow_nan=False,
+            ensure_ascii=False,
+            indent=2,
+            sort_keys=True,
+        )
+        + "\n"
+    )
 
 
 def write_text(

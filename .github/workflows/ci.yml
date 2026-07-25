@@ -60,6 +60,9 @@ jobs:
           python -m venv "$RUNNER_TEMP/paretopilot-wheel-smoke"
           "$RUNNER_TEMP/paretopilot-wheel-smoke/bin/python" -m pip install --no-deps dist/*.whl
           "$RUNNER_TEMP/paretopilot-wheel-smoke/bin/paretopilot" --version
+          "$RUNNER_TEMP/paretopilot-wheel-smoke/bin/paretopilot" assemble-capacity --help
+          "$RUNNER_TEMP/paretopilot-wheel-smoke/bin/paretopilot" bind-capacity-quality --help
+          "$RUNNER_TEMP/paretopilot-wheel-smoke/bin/paretopilot" capacity-receipt --help
           "$RUNNER_TEMP/paretopilot-wheel-smoke/bin/paretopilot" validate \
             examples/synthetic-results.json
           "$RUNNER_TEMP/paretopilot-wheel-smoke/bin/paretopilot" recommend \

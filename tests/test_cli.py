@@ -902,6 +902,64 @@ class CliTests(unittest.TestCase):
             self.assertEqual(payload["peak_rss_mib"], 2048.0)
             self.assertEqual(payload, json.loads(output_path.read_text(encoding="utf-8")))
 
+    def test_bind_capacity_quality_cli_writes_source_bound_wrapper(self) -> None:
+        with TemporaryDirectory() as directory:
+            root = Path(directory)
+            evaluation = root / "quality.json"
+            command = root / "server-command.json"
+            destination = root / "bound-quality.json"
+            payload = {
+                "schema_version": "1.0",
+                "classification": "capacity-quality-binding",
+            }
+            stdout = io.StringIO()
+
+            with (
+                patch.object(
+                    cli,
+                    "bind_capacity_quality",
+                    return_value=payload,
+                ) as bind,
+                patch("sys.stdout", stdout),
+            ):
+                exit_code = cli.main(
+                    [
+                        "bind-capacity-quality",
+                        "--evaluation",
+                        str(evaluation),
+                        "--server-command",
+                        str(command),
+                        "--base-url",
+                        "http://127.0.0.1:19404",
+                        "--pass-id",
+                        "quality",
+                        "--candidate-id",
+                        "q8-generic",
+                        "--server-parallel",
+                        "4",
+                        "--run-id",
+                        "123456",
+                        "--run-attempt",
+                        "2",
+                        "--output",
+                        str(destination),
+                    ]
+                )
+
+            self.assertEqual(exit_code, 0)
+            bind.assert_called_once_with(
+                evaluation_path=evaluation,
+                server_command_path=command,
+                base_url="http://127.0.0.1:19404",
+                pass_id="quality",
+                candidate_id="q8-generic",
+                server_parallel=4,
+                run_id="123456",
+                run_attempt=2,
+            )
+            self.assertEqual(json.loads(destination.read_text(encoding="utf-8")), payload)
+            self.assertEqual(json.loads(stdout.getvalue()), payload)
+
     def test_pool_server_evaluations_cli_writes_once_and_preserves_inputs(self) -> None:
         with TemporaryDirectory() as directory:
             root = Path(directory)
@@ -1013,6 +1071,7 @@ class CliTests(unittest.TestCase):
                 sentinel_plan,
                 candidate_id="candidate-a",
                 evidence_binding=sentinel_binding,
+                execution_order=None,
             )
             self.assertEqual(
                 json.loads(output_path.read_text(encoding="utf-8")),
@@ -1061,6 +1120,98 @@ class CliTests(unittest.TestCase):
                 json.loads(output_path.read_text(encoding="utf-8")),
                 combined,
             )
+
+    def test_capacity_cli_preserves_every_labeled_source_contract(self) -> None:
+        with TemporaryDirectory() as directory:
+            root = Path(directory)
+            plan = root / "capacity.json"
+            load_plan = root / "load.json"
+            manifest = root / "manifest.json"
+            for path in (plan, load_plan, manifest):
+                path.write_text("{}\n", encoding="utf-8")
+            output = root / "capacity-study.json"
+            artifact = {
+                "schema_version": "1.1",
+                "classification": "supplementary-capacity",
+            }
+            stdout = io.StringIO()
+            with (
+                patch.object(
+                    cli,
+                    "assemble_capacity_study",
+                    return_value=artifact,
+                ) as assemble,
+                patch("sys.stdout", stdout),
+            ):
+                exit_code = cli.main(
+                    [
+                        "assemble-capacity",
+                        "--plan",
+                        str(plan),
+                        "--load-plan",
+                        str(load_plan),
+                        "--manifest",
+                        str(manifest),
+                        "--load",
+                        "forward/q8-generic/p1=load-artifact.json",
+                        "--rss",
+                        "forward/q8-generic/p1=server-time.txt",
+                        "--server-log",
+                        "forward/q8-generic/p1=server.stderr.log",
+                        "--quality",
+                        "q8-generic/p1=quality.json",
+                        "--output",
+                        str(output),
+                    ]
+                )
+
+            self.assertEqual(exit_code, 0)
+            assemble.assert_called_once_with(
+                plan_path=plan,
+                load_plan_path=load_plan,
+                manifest_path=manifest,
+                load_artifacts=[("forward/q8-generic/p1", Path("load-artifact.json"))],
+                rss_artifacts=[("forward/q8-generic/p1", Path("server-time.txt"))],
+                server_logs=[("forward/q8-generic/p1", Path("server.stderr.log"))],
+                quality_artifacts=[("q8-generic/p1", Path("quality.json"))],
+            )
+            self.assertEqual(json.loads(output.read_text(encoding="utf-8")), artifact)
+            self.assertEqual(json.loads(stdout.getvalue()), artifact)
+
+    def test_capacity_receipt_cli_writes_once(self) -> None:
+        with TemporaryDirectory() as directory:
+            root = Path(directory)
+            study = root / "capacity-study.json"
+            study.write_text(
+                '{"classification":"supplementary-capacity"}\n',
+                encoding="utf-8",
+            )
+            output = root / "capacity-receipt.md"
+            stdout = io.StringIO()
+            with (
+                patch.object(
+                    cli,
+                    "render_capacity_receipt",
+                    return_value="# Capacity receipt\n",
+                ) as render,
+                patch("sys.stdout", stdout),
+            ):
+                exit_code = cli.main(
+                    [
+                        "capacity-receipt",
+                        str(study),
+                        "--output",
+                        str(output),
+                    ]
+                )
+
+            self.assertEqual(exit_code, 0)
+            render.assert_called_once_with({"classification": "supplementary-capacity"})
+            self.assertEqual(output.read_text(encoding="utf-8"), "# Capacity receipt\n")
+            payload = json.loads(stdout.getvalue())
+            self.assertEqual(payload["classification"], "supplementary-capacity")
+            self.assertEqual(payload["capacity_receipt"], str(output))
+            self.assertEqual(len(payload["capacity_receipt_sha256"]), 64)
 
     def test_stability_cli_parses_labeled_inputs_and_metric_directions(self) -> None:
         repository = Path(__file__).parents[1]

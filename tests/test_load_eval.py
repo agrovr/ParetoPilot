@@ -65,6 +65,7 @@ def _evaluate(
     request_runner=None,
     slo: dict[str, object] | None = None,
     peak_rss: dict[int, float] | None = None,
+    execution_order: tuple[int, ...] | None = None,
 ):
     runner = request_runner or _result
     return evaluate_load(
@@ -75,6 +76,7 @@ def _evaluate(
         measured_requests_per_level=8,
         request_runner=runner,
         slo=slo or SLO,
+        execution_order=execution_order,
         peak_rss_mib_by_concurrency=peak_rss,
         synthetic=True,
     )
@@ -292,6 +294,34 @@ class LoadEvaluationTests(unittest.TestCase):
             artifact["rows"][0]["generated_tokens_per_second"],
             128 / 1.51,
         )
+        self.assertEqual(artifact["schema_version"], "1.0")
+        self.assertNotIn("execution_order", artifact)
+
+    def test_custom_execution_order_is_recorded_but_rows_remain_canonical(self) -> None:
+        calls: list[LoadRequest] = []
+        lock = threading.Lock()
+
+        def runner(request: LoadRequest):
+            with lock:
+                calls.append(request)
+            return _result(request)
+
+        artifact = _evaluate(
+            request_runner=runner,
+            execution_order=(4, 2, 1),
+        )
+
+        validate_load_evaluation(artifact)
+        self.assertEqual(artifact["schema_version"], "1.1")
+        self.assertEqual(artifact["execution_order"], [4, 2, 1])
+        self.assertEqual([row["concurrency"] for row in artifact["rows"]], [1, 2, 4])
+        observed_order = list(dict.fromkeys(request.concurrency for request in calls))
+        self.assertEqual(observed_order, [4, 2, 1])
+
+        tampered = deepcopy(artifact)
+        tampered["execution_order"] = [1, 2, 4]
+        with self.assertRaisesRegex(ValidationError, "non-default execution_order"):
+            validate_load_evaluation(tampered)
 
     def test_expected_request_failures_are_measured_not_hidden(self) -> None:
         def runner(request: LoadRequest):
@@ -402,6 +432,8 @@ class LoadEvaluationTests(unittest.TestCase):
         scenarios = [
             ({"concurrency_levels": (1, 3)}, "only 1, 2, and 4"),
             ({"concurrency_levels": (2, 1)}, "unique and increasing"),
+            ({"execution_order": (4, 1)}, "permutation of every concurrency level"),
+            ({"execution_order": (4, 2, 2)}, "permutation of every concurrency level"),
             ({"measured_requests_per_level": 6}, "divisible"),
             ({"prompts": ("same", "same")}, "must be unique"),
             (

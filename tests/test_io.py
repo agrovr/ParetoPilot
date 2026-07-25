@@ -11,7 +11,9 @@ from paretopilot.io import (
     load_benchmarks,
     load_benchmarks_snapshot,
     load_json_object,
+    load_json_object_snapshot,
     sha256_file,
+    sha256_json,
     write_json,
     write_text,
 )
@@ -100,6 +102,17 @@ class StrictJsonInputTests(unittest.TestCase):
             self.assertEqual(benchmarks.baseline_id, "baseline")
             self.assertEqual(digest, hashlib.sha256(serialized).hexdigest())
 
+    def test_generic_snapshot_hashes_the_same_bytes_it_parses(self) -> None:
+        with TemporaryDirectory() as directory:
+            path = Path(directory) / "manifest.json"
+            serialized = b'{\r\n  "threads": 4\r\n}\r\n'
+            path.write_bytes(serialized)
+
+            payload, digest = load_json_object_snapshot(path)
+
+            self.assertEqual(payload, {"threads": 4})
+            self.assertEqual(digest, hashlib.sha256(serialized).hexdigest())
+
 
 class StrictJsonOutputTests(unittest.TestCase):
     def test_writes_utf8_json_with_stable_trailing_newline(self) -> None:
@@ -111,6 +124,9 @@ class StrictJsonOutputTests(unittest.TestCase):
             self.assertTrue(raw.endswith(b"\n"))
             self.assertIn("Café".encode(), raw)
             self.assertEqual(json.loads(raw), {"label": "Café", "warnings": ["one"]})
+            self.assertEqual(
+                sha256_json({"label": "Café", "warnings": ("one",)}), sha256_file(path)
+            )
 
     def test_refuses_existing_destination_and_preserves_it(self) -> None:
         with TemporaryDirectory() as directory:

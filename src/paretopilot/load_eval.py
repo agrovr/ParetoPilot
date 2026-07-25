@@ -255,6 +255,7 @@ def evaluate_llama_server_load(
     *,
     candidate_id: str,
     evidence_binding: Mapping[str, Any] | None = None,
+    execution_order: Sequence[int] | None = None,
 ) -> Mapping[str, Any]:
     """Evaluate one live ``llama-server`` using a validated load plan."""
 
@@ -277,6 +278,7 @@ def evaluate_llama_server_load(
         request_runner=runner,
         slo=plan.slo,
         concurrency_levels=plan.concurrency_levels,
+        execution_order=execution_order,
         synthetic=False,
         evidence_binding=evidence_binding,
     )
@@ -446,6 +448,7 @@ def evaluate_load(
     request_runner: RequestRunner,
     slo: Mapping[str, Any],
     concurrency_levels: Sequence[int] = (1, 2, 4),
+    execution_order: Sequence[int] | None = None,
     peak_rss_mib_by_concurrency: Mapping[int, float] | None = None,
     synthetic: bool,
     evidence_binding: Mapping[str, Any] | None = None,
@@ -478,6 +481,10 @@ def evaluate_load(
         maximum=32,
     )
     normalized_levels = _validate_concurrency_levels(concurrency_levels)
+    normalized_execution_order = _validate_execution_order(
+        execution_order,
+        normalized_levels,
+    )
     normalized_requests = _integer_between(
         measured_requests_per_level,
         "measured_requests_per_level",
@@ -511,8 +518,8 @@ def evaluate_load(
         }
         for index, prompt in enumerate(normalized_prompts, start=1)
     ]
-    rows: list[Mapping[str, Any]] = []
-    for concurrency in normalized_levels:
+    rows_by_concurrency: dict[int, Mapping[str, Any]] = {}
+    for concurrency in normalized_execution_order:
         warmup_requests = _make_requests(
             normalized_prompts,
             output_tokens=normalized_output_tokens,
@@ -567,19 +574,18 @@ def evaluate_load(
             )
             samples.append(result)
 
-        rows.append(
-            _aggregate_row(
-                candidate_id=normalized_candidate,
-                concurrency=concurrency,
-                samples=samples,
-                peak_rss_mib=normalized_rss.get(concurrency),
-                slo=normalized_slo,
-            )
+        rows_by_concurrency[concurrency] = _aggregate_row(
+            candidate_id=normalized_candidate,
+            concurrency=concurrency,
+            samples=samples,
+            peak_rss_mib=normalized_rss.get(concurrency),
+            slo=normalized_slo,
         )
 
+    rows = [rows_by_concurrency[concurrency] for concurrency in normalized_levels]
     passing_levels = [int(row["concurrency"]) for row in rows if row["slo_met"]]
-    artifact: Mapping[str, Any] = {
-        "schema_version": "1.0",
+    artifact: dict[str, Any] = {
+        "schema_version": ("1.0" if normalized_execution_order == normalized_levels else "1.1"),
         "candidate_id": normalized_candidate,
         "synthetic": synthetic,
         "methodology": {
@@ -596,6 +602,8 @@ def evaluate_load(
         "highest_slo_concurrency": max(passing_levels) if passing_levels else None,
         "evidence_binding": normalized_binding,
     }
+    if normalized_execution_order != normalized_levels:
+        artifact["execution_order"] = list(normalized_execution_order)
     validate_load_evaluation(artifact)
     return artifact
 
@@ -708,22 +716,22 @@ def validate_load_evaluation(
         raise ValidationError("require_evidence_binding must be a boolean")
     if not isinstance(raw, Mapping):
         raise ValidationError("load evaluation must be an object")
-    _require_exact_fields(
-        raw,
-        {
-            "schema_version",
-            "candidate_id",
-            "synthetic",
-            "methodology",
-            "slo",
-            "rows",
-            "highest_slo_concurrency",
-            "evidence_binding",
-        },
-        "load evaluation",
-    )
-    if raw.get("schema_version") != "1.0":
-        raise ValidationError("load evaluation schema_version must be '1.0'")
+    schema_version = raw.get("schema_version")
+    if schema_version not in {"1.0", "1.1"}:
+        raise ValidationError("load evaluation schema_version must be '1.0' or '1.1'")
+    expected_fields = {
+        "schema_version",
+        "candidate_id",
+        "synthetic",
+        "methodology",
+        "slo",
+        "rows",
+        "highest_slo_concurrency",
+        "evidence_binding",
+    }
+    if schema_version == "1.1":
+        expected_fields.add("execution_order")
+    _require_exact_fields(raw, expected_fields, "load evaluation")
     candidate_id = _nonempty_text(
         raw.get("candidate_id"),
         "load evaluation candidate_id",
@@ -741,6 +749,14 @@ def validate_load_evaluation(
         raw.get("methodology"),
         "load evaluation methodology",
     )
+    if schema_version == "1.0":
+        execution_order = levels
+    else:
+        execution_order = _validate_execution_order(raw.get("execution_order"), levels)
+        if execution_order == levels:
+            raise ValidationError(
+                "load evaluation schema_version 1.1 requires a non-default execution_order"
+            )
     slo = _validate_slo(raw.get("slo"), "load evaluation slo")
     rows = raw.get("rows")
     if not isinstance(rows, list) or len(rows) != len(levels):
@@ -1608,6 +1624,22 @@ def _validate_concurrency_levels(levels: Sequence[int]) -> tuple[int, ...]:
         raise ValidationError("concurrency_levels may contain only 1, 2, and 4")
     if normalized != tuple(sorted(set(normalized))):
         raise ValidationError("concurrency_levels must be unique and increasing")
+    return normalized
+
+
+def _validate_execution_order(
+    order: Sequence[int] | None,
+    levels: tuple[int, ...],
+) -> tuple[int, ...]:
+    if order is None:
+        return levels
+    if not isinstance(order, Sequence) or isinstance(order, (str, bytes)):
+        raise ValidationError("execution_order must be an array")
+    normalized = tuple(order)
+    if any(isinstance(level, bool) or not isinstance(level, int) for level in normalized):
+        raise ValidationError("execution_order must contain integers")
+    if len(normalized) != len(levels) or set(normalized) != set(levels):
+        raise ValidationError("execution_order must be a permutation of every concurrency level")
     return normalized
 
 
