@@ -21,21 +21,23 @@ measured result.
 
 ## 60-second judge path
 
-1. **Try three deployment priorities.** Start with the
-   [live evidence showcase](https://agrovr.github.io/ParetoPilot/) and switch between latency,
-   memory, and first-token priorities. Each result is precomputed from the locked evidence and
-   links to a human-readable receipt.
-2. **Inspect the measured capacity envelope.** The reviewed
-   [supplementary Arm64 result](results/published/30144901854/README.md) shows every passing and
-   rejected P/C cell, the selected P4/C4 points, the release digest, and the exact replay path.
-   It is a candidate-local serving decision and does not replace the frozen Q8 recommendation.
-3. **See the reusable gate pass.**
-   Open the
+1. **Read the flight brief and try the policy switch.** Open the
+   [live evidence showcase](https://agrovr.github.io/ParetoPilot/). The first screen states the
+   frozen canonical call, the selected serving envelope, and the proof size. Switch between
+   latency, memory, and first-token priorities to see how the same locked evidence supports
+   different deployment needs.
+2. **Open the measured envelope.** Jump to the
+   [supplementary Arm64 capacity board](https://agrovr.github.io/ParetoPilot/#capacity-envelope).
+   It shows all 18 tested P/C cells, the selected P4/C4 points, and why cells passed or were
+   blocked. This sizes each candidate and does not replace the frozen Q8 model decision.
+3. **Check the reusable CI gate.** Open the
    [latest green main-branch CI run](https://github.com/agrovr/ParetoPilot/actions/workflows/ci.yml?query=branch%3Amain)
    and inspect `action-smoke`, which exercises the five-artifact composite Action contract and its
    fail-closed measured-evidence guard.
-4. **Try the engine locally.** After the short installation below, run this deliberately synthetic
-   software smoke test:
+
+## 5-minute hands-on test
+
+After the short installation below, run this deliberately synthetic software smoke test:
 
 ```bash
 python -m paretopilot ci-gate examples/synthetic-results.json \

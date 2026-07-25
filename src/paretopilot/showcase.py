@@ -113,6 +113,7 @@ def _source_context(benchmarks: BenchmarkSet) -> Mapping[str, str]:
     runner_mapping = runner if isinstance(runner, Mapping) else {}
     return {
         "run_id": str(source_mapping.get("run_id", "not supplied")),
+        "repository": str(source_mapping.get("repository", "not supplied")),
         "cpu": str(runner_mapping.get("cpu", "Arm64 CPU")),
         "architecture": str(runner_mapping.get("architecture", "arm64")),
         "cpu_count": str(runner_mapping.get("cpu_count", "not supplied")),
@@ -220,10 +221,35 @@ def _proof_context(
     archive = _mapping(lock.get("archive"), "evidence_lock.archive")
     release_url = archive.get("release_url")
     release_tag = archive.get("release_tag")
-    if not isinstance(release_url, str) or not release_url.startswith("https://github.com/"):
-        raise ValidationError("evidence_lock release_url must be a GitHub HTTPS URL")
     if not isinstance(release_tag, str) or not release_tag:
         raise ValidationError("evidence_lock release_tag must be non-empty")
+    if not isinstance(release_url, str):
+        raise ValidationError("evidence_lock release_url must be a GitHub HTTPS URL")
+    validated_release_url = _validated_href(
+        release_url,
+        label="evidence_lock release_url",
+    )
+    release_parts = urlsplit(validated_release_url)
+    release_path_parts = release_parts.path.strip("/").split("/")
+    if (
+        release_parts.scheme != "https"
+        or release_parts.netloc.lower() != "github.com"
+        or len(release_path_parts) != 5
+        or release_path_parts[2:4] != ["releases", "tag"]
+        or release_path_parts[-1] != release_tag
+    ):
+        raise ValidationError(
+            "evidence_lock release_url must match its GitHub repository and release tag"
+        )
+    benchmark_repository = benchmark_source["repository"]
+    if benchmark_repository != "not supplied":
+        expected_release_url = (
+            f"https://github.com/{benchmark_repository}/releases/tag/{release_tag}"
+        )
+        if validated_release_url != expected_release_url:
+            raise ValidationError(
+                "evidence_lock release_url does not match benchmark repository metadata"
+            )
     archive_digest = archive.get("sha256")
     if not isinstance(archive_digest, str) or _SHA256_RE.fullmatch(archive_digest) is None:
         raise ValidationError("evidence_lock archive digest is invalid")
@@ -235,7 +261,7 @@ def _proof_context(
         "comparison_count": str(len(comparison_names)),
         "report_sha256": canonical_sha256,
         "release_tag": release_tag,
-        "release_url": release_url,
+        "release_url": validated_release_url,
     }
 
 
@@ -395,7 +421,7 @@ def _tag_chart_series(
         style_index = style_by_id[candidate.candidate_id]
         needle = f'<g aria-label="{_escape(candidate.label)}">'
         replacement = (
-            f'<g aria-label="{_escape(candidate.label)}" '
+            f'<g role="group" aria-label="{_escape(candidate.label)}" '
             f'data-series-style="{style_index}" '
             f'data-marker-shape="{_marker_shape(style_index)}">'
         )
@@ -418,7 +444,7 @@ def _tag_chart_series(
         scatter = scatter.replace(
             "<g>",
             (
-                f'<g aria-label="{_escape(candidate.label)}" '
+                f'<g role="group" aria-label="{_escape(candidate.label)}" '
                 f'data-series-style="{style_index}" '
                 f'data-marker-shape="{_marker_shape(style_index)}">'
             ),
@@ -725,7 +751,10 @@ def _validated_evidence_href(value: str, *, label: str, filename: str) -> str:
 
 def _validated_report_href(value: str) -> str:
     validated = _validated_href(value, label="canonical_report_href")
-    if urlsplit(validated).path.rsplit("/", 1)[-1] != "report-v1.1.html":
+    parsed = urlsplit(validated)
+    if parsed.scheme or parsed.netloc:
+        raise ValidationError("canonical_report_href must be a repository-relative path")
+    if parsed.path.rsplit("/", 1)[-1] != "report-v1.1.html":
         raise ValidationError("canonical_report_href must point to report-v1.1.html")
     return validated
 
@@ -1532,6 +1561,7 @@ def _capacity_proof_context(
         "archive_url": archive_url,
         "checksum_entries": str(checksum_entries),
         "checksum_manifest_sha256": checksum_digest,
+        "failed_request_count": str(recomputation["failed_request_count"]),
         "release_tag": release_tag,
         "study_sha256": study_digest,
     }
@@ -1547,27 +1577,145 @@ def _relative_measure_phrase(
     return f"{_format_number(abs(delta_percent), digits=2)}% {direction} {metric}"
 
 
+def _capacity_flight_brief_markup(
+    benchmarks: BenchmarkSet,
+    recommendation: Mapping[str, Any],
+    result: Mapping[str, Any],
+    proof: Mapping[str, str],
+) -> str:
+    """Put the locked model and serving decisions in one first-screen briefing."""
+
+    if benchmarks.synthetic:
+        raise ValidationError("capacity flight brief requires measured evidence")
+    selected_points = _mapping(
+        result.get("selected_operating_points"),
+        "capacity result selected_operating_points",
+    )
+    canonical: Mapping[str, Any] | None = None
+    alternative: Mapping[str, Any] | None = None
+    for candidate_id, raw_point in selected_points.items():
+        point = dict(_mapping(raw_point, f"capacity selected point {candidate_id}"))
+        point["candidate_id"] = str(candidate_id)
+        if point.get("role") == "canonical-reference":
+            canonical = point
+        elif point.get("role") == "resource-alternative":
+            alternative = point
+    if canonical is None or alternative is None:
+        raise ValidationError("capacity flight brief requires canonical and resource roles")
+
+    comparisons = _mapping(
+        result.get("q4_vs_q8_at_selected_points_percent"),
+        "capacity selected-point comparisons",
+    )
+    throughput_delta = float(comparisons.get("generated_tokens_per_second_median"))
+    rss_delta = float(comparisons.get("server_peak_rss_mib_max"))
+    quality = _mapping(alternative.get("quality"), "capacity alternative quality")
+    quality_retention = float(quality.get("retention_vs_reference"))
+    measured_requests = int(result.get("measured_request_count"))
+    failed_requests = int(proof.get("failed_request_count", "-1"))
+    if measured_requests <= 0 or failed_requests != 0:
+        raise ValidationError("capacity flight brief requires completed measured evidence")
+
+    selected_id = str(recommendation.get("selected_id"))
+    selected = benchmarks.by_id(selected_id)
+    selection_verb = "Retain" if selected_id == benchmarks.baseline_id else "Select"
+    parallel = int(alternative.get("server_parallel"))
+    concurrency = int(alternative.get("client_concurrency"))
+    alternative_label = str(alternative.get("label"))
+    throughput_phrase = _relative_measure_phrase(
+        throughput_delta,
+        "generation throughput",
+    )
+    rss_phrase = _relative_measure_phrase(rss_delta, "peak RSS")
+
+    return (
+        '<section class="flight-brief" aria-labelledby="flight-brief-heading">'
+        '<header><p class="flight-brief-call-sign">Judge flight brief</p>'
+        '<h2 id="flight-brief-heading">One model call. One serving envelope.</h2>'
+        "<p>ParetoPilot turns locked Arm64 measurements into a replayable "
+        "deployment decision and CI gate.</p></header>"
+        '<dl class="flight-brief-facts">'
+        '<div class="is-canonical"><dt>Canonical latency call</dt><dd>'
+        f"<strong>{_escape(selection_verb)} {_escape(selected.label)}</strong>"
+        "<span>The declared latency objective still controls the model decision.</span>"
+        "</dd></div>"
+        '<div class="is-capacity"><dt>Serving envelope</dt><dd>'
+        f"<strong>P{parallel} / C{concurrency}</strong>"
+        f"<span>{_escape(alternative_label)} · {_escape(throughput_phrase)} · "
+        f"{_escape(rss_phrase)}</span></dd></div>"
+        '<div class="is-proof"><dt>Measured proof</dt><dd>'
+        f"<strong>{measured_requests} requests · zero recorded failures</strong>"
+        f"<span>{_format_number(quality_retention * 100.0, digits=1)}% of reference "
+        "quality · canonical replay unchanged</span></dd></div></dl>"
+        '<nav class="flight-brief-actions" aria-label="Judge quick actions">'
+        '<a class="flight-brief-primary" href="#capacity-envelope">'
+        "See the measured envelope</a>"
+        '<a class="flight-brief-secondary" '
+        'href="https://github.com/agrovr/ParetoPilot/blob/main/docs/github-action.md">'
+        "Use the CI gate</a></nav></section>\n"
+    )
+
+
 def _capacity_failure_label(reasons: object) -> tuple[str, str]:
     if not isinstance(reasons, Sequence) or isinstance(reasons, (str, bytes)):
         raise ValidationError("capacity failure reasons must be an array")
-    normalized = [str(reason) for reason in reasons]
-    labels: list[str] = []
-    if any("ttft_ms_p95_above_maximum" in reason for reason in normalized):
-        labels.append("TTFT")
-    if any("e2e_latency_ms_p95_above_maximum" in reason for reason in normalized):
-        labels.append("E2E")
-    if not labels:
-        labels.append("Gate")
-    short = " + ".join(labels)
-    expanded = " and ".join(
-        {
-            "TTFT": "time to first token",
-            "E2E": "end-to-end latency",
-            "Gate": "one or more declared gates",
-        }[label]
-        for label in labels
+    normalized = [str(reason).partition(":")[2] or str(reason) for reason in reasons]
+    presentations = (
+        (
+            "completion_rate_below_minimum",
+            "Completion",
+            "Completion rate was below the predeclared minimum.",
+        ),
+        (
+            "no_completed_request_ttft",
+            "TTFT evidence",
+            "No completed request produced time-to-first-token evidence.",
+        ),
+        (
+            "ttft_ms_p95_above_maximum",
+            "TTFT",
+            "Observed-p95 time to first token exceeded the predeclared limit.",
+        ),
+        (
+            "no_completed_request_e2e",
+            "E2E evidence",
+            "No completed request produced end-to-end latency evidence.",
+        ),
+        (
+            "e2e_latency_ms_p95_above_maximum",
+            "E2E",
+            "Observed-p95 end-to-end latency exceeded the predeclared limit.",
+        ),
+        (
+            "server_peak_rss_above_maximum",
+            "Memory",
+            "Peak server memory exceeded the predeclared limit.",
+        ),
+        (
+            "quality_gate_failed",
+            "Quality",
+            "The task-specific quality guard failed.",
+        ),
+        (
+            "throughput_relative_spread_above_maximum",
+            "Throughput stability",
+            "Generation throughput varied too much between the mirrored passes.",
+        ),
+        (
+            "e2e_relative_spread_above_maximum",
+            "E2E stability",
+            "End-to-end latency varied too much between the mirrored passes.",
+        ),
     )
-    return short, expanded
+    labels: list[str] = []
+    explanations: list[str] = []
+    for reason, label, explanation in presentations:
+        if reason in normalized and label not in labels:
+            labels.append(label)
+            explanations.append(explanation)
+    if not labels:
+        return "Gate", "One or more predeclared gates failed."
+    return " + ".join(labels), " ".join(explanations)
 
 
 def _capacity_envelope_markup(
@@ -1708,13 +1856,12 @@ def _capacity_envelope_markup(
                         summary.get("failure_reasons")
                     )
                     reason_markup = (
-                        f'<span class="capacity-failure" aria-label="Blocked by '
+                        f'<span class="capacity-failure" aria-label="Blocked: '
                         f'{_escape(expanded_reason)}">{_escape(reason)}</span>'
                     )
                     blocked_items.append(
                         f"<li><strong>P{server_parallel} / C{client_concurrency}</strong>"
-                        f"<span>{_escape(expanded_reason.capitalize())} exceeded the "
-                        "predeclared limit.</span></li>"
+                        f"<span>{_escape(expanded_reason)}</span></li>"
                     )
 
                 reference_markup = (
@@ -1805,10 +1952,11 @@ def _capacity_envelope_markup(
     rss_phrase = _relative_measure_phrase(rss_delta, "peak RSS")
     if canonical_point == alternative_point:
         parallel, concurrency = canonical_point
-        heading = f"The envelope opens at {parallel} × {concurrency}."
+        heading = f"Selected operating point: P{parallel} / C{concurrency}."
         selection_summary = (
-            "The predeclared gate-and-tiebreaker policy selected "
-            f"P{parallel}/C{concurrency} for both candidates."
+            "Both candidates met every declared gate at "
+            f"{parallel} server slots and {concurrency} concurrent clients; "
+            "the predeclared tiebreakers selected that point."
         )
         comparison_label = f"At separately selected P{parallel}/C{concurrency} points:"
     else:
@@ -1825,6 +1973,7 @@ def _capacity_envelope_markup(
 
     load_slo = _mapping(plan.get("load_slo"), "capacity load SLO")
     capacity_gate = _mapping(plan.get("capacity_gate"), "capacity gate")
+    quality_gate = _mapping(plan.get("quality_gate"), "capacity quality gate")
     return (
         '<section id="capacity-envelope" class="capacity-envelope" '
         'aria-labelledby="capacity-heading">'
@@ -1841,7 +1990,7 @@ def _capacity_envelope_markup(
         f"<div><dt>Operating points</dt><dd>{len(cells)}</dd></div>"
         f"<div><dt>Measured requests</dt><dd>{measured_request_count}</dd></div>"
         f"<div><dt>Exact-reversal passes</dt><dd>{len(raw_passes)}</dd></div>"
-        f"<div><dt>Latency-blocked cells</dt><dd>{blocked_count}</dd></div>"
+        f"<div><dt>Gate-blocked cells</dt><dd>{blocked_count}</dd></div>"
         "</dl>"
         f'<div class="capacity-boards">{"".join(candidate_boards)}</div>'
         '<dl class="capacity-slo-strip" aria-label="Predeclared capacity limits">'
@@ -1852,7 +2001,15 @@ def _capacity_envelope_markup(
         "<div><dt>Peak RSS</dt>"
         f"<dd>≤ {_format_number(float(capacity_gate.get('max_server_peak_rss_mib')), digits=0)} MiB</dd></div>"
         "<div><dt>Completion</dt>"
-        f"<dd>{float(load_slo.get('min_completion_rate')) * 100:.0f}%</dd></div></dl>"
+        f"<dd>≥ {float(load_slo.get('min_completion_rate')) * 100:.0f}%</dd></div>"
+        "<div><dt>Quality</dt>"
+        f"<dd>≥ {float(quality_gate.get('minimum_score')) * 100:.0f}% · "
+        f"≥ {float(quality_gate.get('minimum_retention_vs_reference')) * 100:.0f}% ref</dd></div>"
+        "<div><dt>Quality outcomes</dt><dd>Same across P levels</dd></div>"
+        "<div><dt>Generation stability</dt>"
+        f"<dd>≤ {_format_number(float(capacity_gate.get('max_throughput_relative_spread_percent')), digits=1)}%</dd></div>"
+        "<div><dt>E2E stability</dt>"
+        f"<dd>≤ {_format_number(float(capacity_gate.get('max_e2e_relative_spread_percent')), digits=1)}%</dd></div></dl>"
         '<nav class="capacity-actions" aria-label="Capacity evidence links">'
         f'<a href="{_escape(receipt_href)}">Open capacity receipt</a>'
         f'<a href="{_escape(study_href)}">Inspect validated JSON</a>'
@@ -2051,7 +2208,8 @@ def _policy_cockpit_markup(
         )
         panels.append(
             f'<section id="cockpit-panel-{index}" class="cockpit-panel" role="tabpanel" '
-            f'aria-labelledby="cockpit-tab-{index}" data-cockpit-panel="{index}"{hidden}>'
+            f'aria-labelledby="cockpit-tab-{index}" data-cockpit-panel="{index}" '
+            f'tabindex="0"{hidden}>'
             '<div class="cockpit-decision">'
             f'<p class="cockpit-classification">{_escape(evidence_label)} result</p>'
             f"<h3>{_escape(selected.label)}</h3>"
@@ -2103,6 +2261,7 @@ def _hero_markup(
     *,
     canonical_report_href: str,
     policy_cockpit: str = "",
+    capacity_brief: str = "",
     capacity_available: bool = False,
 ) -> tuple[str, str, str]:
     source = _source_context(benchmarks)
@@ -2163,6 +2322,7 @@ def _hero_markup(
         f"Pareto-frontier, and {_escape(_metric_label(metric))} checks. "
         f"{_escape(evidence_copy)}</p>\n"
     )
+    hero_summary = capacity_brief or lede
     decision_rail = policy_cockpit or (
         '<dl class="decision-rail" aria-label="Decision at a glance">'
         f"<div><dt>Selected objective</dt><dd>{_escape(_metric_value(metric, selected_value))}</dd></div>"
@@ -2171,29 +2331,40 @@ def _hero_markup(
         f"<div><dt>Evidence class</dt><dd>{'Locked canonical' if proof else 'Unverified preview'}</dd></div>"
         "</dl>\n"
     )
-    actions = [
-        (
-            "#optimization-ladder",
-            "Trace the optimization ladder",
-            "secondary",
-        ),
-        (
-            "https://github.com/agrovr/ParetoPilot/blob/main/docs/github-action.md",
-            "Use the GitHub Action",
-            "secondary",
-        ),
-        (
-            "https://github.com/agrovr/ParetoPilot",
-            "View source on GitHub",
-            "secondary",
-        ),
-    ]
+    actions = (
+        [
+            (
+                "https://github.com/agrovr/ParetoPilot",
+                "View source on GitHub",
+                "secondary",
+            )
+        ]
+        if capacity_available
+        else [
+            (
+                "#optimization-ladder",
+                "Trace the optimization ladder",
+                "secondary",
+            ),
+            (
+                "https://github.com/agrovr/ParetoPilot/blob/main/docs/github-action.md",
+                "Use the GitHub Action",
+                "secondary",
+            ),
+            (
+                "https://github.com/agrovr/ParetoPilot",
+                "View source on GitHub",
+                "secondary",
+            ),
+        ]
+    )
     if proof:
+        report_kind = "secondary" if capacity_available else "primary"
         actions[0:0] = (
             (
                 canonical_report_href,
                 "Open exact canonical report",
-                "primary",
+                report_kind,
             ),
             (
                 proof["release_url"],
@@ -2234,7 +2405,7 @@ def _hero_markup(
     hero = (
         '<div class="hero-layout"><div class="hero-headline">'
         f"{headline}</div>"
-        f'<div class="hero-proof">{lede}{decision_rail}{action_markup}</div></div>\n'
+        f'<div class="hero-proof">{hero_summary}{decision_rail}{action_markup}</div></div>\n'
     )
     return provenance, hero, flight_log
 
@@ -2242,6 +2413,7 @@ def _hero_markup(
 _SHOWCASE_CSS = r"""
 
 /* Judge-facing presentation layer. The canonical report remains byte-frozen. */
+html { overflow-x: clip; }
 .showcase {
   --flight-ink: #13233d;
   --flight-ink-soft: #203653;
@@ -2298,6 +2470,7 @@ _SHOWCASE_CSS = r"""
   --danger: var(--flight-danger);
   --danger-soft: var(--flight-danger-soft);
   --focus: var(--flight-focus);
+  overflow-x: clip;
   background: var(--flight-canvas);
   color: var(--flight-ink);
   font-size: 1rem;
@@ -2462,7 +2635,10 @@ html[data-theme="dark"] .showcase {
   margin: 2rem 0 0;
   border-block: 1px solid var(--flight-panel-line);
 }
-.showcase .decision-rail div { padding: .85rem 1rem .9rem 0; }
+.showcase .decision-rail div {
+  min-width: 0;
+  padding: .85rem 1rem .9rem 0;
+}
 .showcase .decision-rail div:nth-child(even) {
   padding-left: 1rem;
   border-left: 1px solid var(--flight-panel-line);
@@ -2475,12 +2651,105 @@ html[data-theme="dark"] .showcase {
   letter-spacing: .04em;
 }
 .showcase .decision-rail dd {
+  min-width: 0;
   margin: .22rem 0 0;
   color: var(--flight-white);
   font-size: 1.15rem;
   font-weight: 800;
   font-variant-numeric: tabular-nums;
+  overflow-wrap: anywhere;
 }
+.showcase .flight-brief {
+  min-width: 0;
+  padding: .8rem 0 .9rem;
+  border-block: 1px solid var(--flight-panel-line);
+}
+.showcase .flight-brief header > p:last-child {
+  margin: .35rem 0 0;
+  color: var(--flight-on-dark-muted);
+  font-size: .82rem;
+  line-height: 1.4;
+}
+.showcase .flight-brief-call-sign {
+  margin: 0;
+  color: var(--flight-hero-accent);
+  font-family: "SFMono-Regular", Consolas, "Liberation Mono", monospace;
+  font-size: .66rem;
+  font-weight: 800;
+  letter-spacing: .045em;
+  text-transform: uppercase;
+}
+.showcase .flight-brief h2 {
+  max-width: 22ch;
+  margin: .16rem 0 0;
+  color: var(--flight-white);
+  font-size: clamp(1.25rem, 2.25vw, 1.65rem);
+  line-height: 1.02;
+}
+.showcase .flight-brief-facts {
+  display: grid;
+  margin: .7rem 0 0;
+  border-top: 1px solid var(--flight-panel-line);
+}
+.showcase .flight-brief-facts > div {
+  display: grid;
+  grid-template-columns: minmax(0, .68fr) minmax(0, 1.32fr);
+  gap: .55rem;
+  min-width: 0;
+  padding: .5rem 0;
+  border-bottom: 1px solid var(--flight-panel-line);
+}
+.showcase .flight-brief-facts dt {
+  color: var(--flight-on-dark-muted);
+  font-size: .65rem;
+  font-weight: 760;
+  letter-spacing: .035em;
+  text-transform: uppercase;
+}
+.showcase .flight-brief-facts dd {
+  min-width: 0;
+  margin: 0;
+}
+.showcase .flight-brief-facts strong,
+.showcase .flight-brief-facts span {
+  display: block;
+  overflow-wrap: anywhere;
+}
+.showcase .flight-brief-facts strong {
+  color: var(--flight-white);
+  font-size: .78rem;
+  font-variant-numeric: tabular-nums;
+}
+.showcase .flight-brief-facts span {
+  margin-top: .12rem;
+  color: var(--flight-on-dark-muted);
+  font-size: .67rem;
+  line-height: 1.35;
+}
+.showcase .flight-brief-facts .is-capacity strong {
+  color: var(--flight-hero-accent);
+}
+.showcase .flight-brief-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: .45rem .9rem;
+  margin-top: .75rem;
+}
+.showcase .flight-brief-actions a {
+  display: inline-flex;
+  min-height: 2.75rem;
+  align-items: center;
+  padding: .55rem .7rem;
+  font-size: .78rem;
+  font-weight: 800;
+}
+.showcase .flight-brief-primary {
+  background: var(--flight-hero-accent);
+  color: var(--flight-on-light) !important;
+  text-decoration: none;
+}
+.showcase .flight-brief-primary:hover { background: var(--flight-white); }
+.showcase .flight-brief-secondary { color: var(--flight-link-inverse) !important; }
 .showcase .policy-cockpit {
   min-width: 0;
   margin-top: 1.35rem;
@@ -2520,12 +2789,17 @@ html[data-theme="dark"] .showcase {
   grid-auto-flow: column;
   max-width: 100%;
   overflow-x: auto;
+  overflow-y: hidden;
   border-block: 1px solid var(--flight-panel-line);
   contain: inline-size paint;
   overscroll-behavior-inline: contain;
   scrollbar-width: none;
 }
-.showcase .cockpit-tabs::-webkit-scrollbar { display: none; }
+.showcase .cockpit-tabs::-webkit-scrollbar {
+  width: 0;
+  height: 0;
+  display: none;
+}
 .showcase .cockpit-tabs button {
   min-width: 0;
   min-height: 2.75rem;
@@ -2666,6 +2940,9 @@ html[data-theme="dark"] .showcase {
   font-family: "SFMono-Regular", Consolas, "Liberation Mono", monospace;
 }
 .showcase .cockpit-proof a {
+  display: inline-flex;
+  min-height: 2.75rem;
+  align-items: center;
   color: var(--flight-link-inverse);
   font-weight: 800;
 }
@@ -2724,7 +3001,7 @@ html[data-theme="dark"] .showcase {
   display: flex;
   gap: .5rem;
   align-items: baseline;
-  min-height: 2.65rem;
+  min-height: 2.75rem;
   padding: .65rem .55rem;
   color: var(--flight-on-dark);
   font-size: .82rem;
@@ -2745,6 +3022,12 @@ html[data-theme="dark"] .showcase {
   color: var(--flight-ink);
 }
 .showcase .verdict-column { padding: 1.45rem; }
+.showcase .decision-pair { min-width: 0; }
+.showcase .decision-pair > div {
+  flex: 1 1 9rem;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
 .showcase .canonical-column {
   background: var(--flight-cobalt-solid);
   color: var(--flight-white);
@@ -3030,8 +3313,8 @@ html[data-theme="dark"] .showcase {
 }
 .showcase .capacity-heading .capacity-compare {
   margin-top: 1rem;
-  padding-left: .9rem;
-  border-left: 4px solid var(--flight-teal);
+  padding-top: .65rem;
+  border-top: 2px solid var(--flight-teal);
 }
 .showcase .capacity-compare strong { color: var(--flight-ink); }
 .showcase .capacity-facts {
@@ -3228,13 +3511,13 @@ html[data-theme="dark"] .showcase {
   line-height: 1;
 }
 .showcase .capacity-rate span {
-  color: var(--flight-text-subtle);
+  color: var(--flight-text-muted);
   font-size: clamp(.54rem, 1.35vw, .66rem);
   font-weight: 700;
 }
 .showcase .capacity-cell-metrics {
   margin: 0;
-  color: var(--flight-text-subtle);
+  color: var(--flight-text-muted);
   font-size: clamp(.56rem, 1.35vw, .68rem);
 }
 .showcase .capacity-cell-metrics > div {
@@ -3260,6 +3543,9 @@ html[data-theme="dark"] .showcase {
   border-top: 1px solid var(--flight-line-strong);
 }
 .showcase .capacity-blocked-details summary {
+  display: flex;
+  min-height: 2.75rem;
+  align-items: center;
   color: var(--capacity-accent);
   font-size: .82rem;
   font-weight: 780;
@@ -3303,6 +3589,9 @@ html[data-theme="dark"] .showcase {
   margin-top: 1.4rem;
 }
 .showcase .capacity-actions a {
+  display: inline-flex;
+  min-height: 2.75rem;
+  align-items: center;
   font-size: .82rem;
   font-weight: 780;
 }
@@ -3464,11 +3753,16 @@ html[data-theme="dark"] .showcase {
   font-size: .83rem;
 }
 .showcase .why-layout { gap: 2rem; }
+.showcase .why-layout > * {
+  min-width: 0;
+  max-width: 100%;
+}
 .showcase .reason-block,
 .showcase .no-data {
   border-color: var(--flight-line-strong);
   border-radius: 0;
   background: var(--flight-paper-blue);
+  overflow-wrap: anywhere;
 }
 .showcase .reason-number {
   color: var(--flight-cobalt);
@@ -3557,6 +3851,11 @@ html[data-theme="dark"] .showcase {
   margin-top: 1.3rem;
   border-block: 1px solid var(--flight-line-strong);
 }
+.showcase .sr-only { contain: strict; }
+.showcase .tradeoff-board > .sr-only > span {
+  position: absolute;
+  inset: 0;
+}
 .showcase details:not([open]) > :not(summary) { display: none; }
 .showcase .data-disclosure > summary {
   width: 100%;
@@ -3568,16 +3867,30 @@ html[data-theme="dark"] .showcase {
   margin: 0 0 .85rem;
   border-bottom: 1px solid var(--flight-line);
 }
+.showcase .metadata-details > summary {
+  display: flex;
+  min-height: 2.75rem;
+  align-items: center;
+}
 .showcase .tradeoff-board {
   border-color: var(--flight-ink);
   border-width: 2px 0;
 }
-.showcase .tradeoff-row { border-color: var(--flight-line); }
+.showcase .tradeoff-row {
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  border-color: var(--flight-line);
+}
+.showcase .tradeoff-row > * {
+  min-width: 0;
+  max-width: 100%;
+  overflow-wrap: anywhere;
+}
 .showcase .tradeoff-metric { font-size: 1rem; }
 .showcase .tradeoff-value {
   font-size: 1.02rem;
   font-weight: 700;
 }
+.showcase .tradeoff-effect { max-width: 100%; }
 .showcase .value-label { color: var(--flight-text-subtle); }
 .showcase .effect-better {
   border-radius: 3px;
@@ -3911,10 +4224,17 @@ html[data-theme="dark"] .showcase {
   .showcase .capacity-slo-strip {
     grid-template-columns: repeat(4, minmax(0, 1fr));
   }
-  .showcase .capacity-facts > div + div,
-  .showcase .capacity-slo-strip > div + div {
+  .showcase .capacity-facts > div + div {
     border-top: 0;
     border-left: 1px solid var(--flight-line-strong);
+  }
+  .showcase .capacity-slo-strip > div {
+    border-top: 0;
+    border-left: 1px solid var(--flight-line-strong);
+  }
+  .showcase .capacity-slo-strip > div:nth-child(4n + 1) { border-left: 0; }
+  .showcase .capacity-slo-strip > div:nth-child(n + 5) {
+    border-top: 1px solid var(--flight-line-strong);
   }
   .showcase .ladder-runway dl {
     grid-template-columns: repeat(3, minmax(0, 1fr));
@@ -4029,7 +4349,33 @@ html[data-theme="dark"] .showcase {
   .showcase .provenance-strip ul { display: grid; grid-template-columns: 1fr 1fr; gap: .35rem 1rem; }
   .showcase .provenance-strip li + li::before { content: none; }
   .showcase .brand-line { margin: 1.6rem 0 2.4rem; }
-  .showcase h1 { font-size: clamp(3rem, 15vw, 4.5rem); }
+  .showcase h1 {
+    font-size: clamp(3rem, 15vw, 4.5rem);
+    overflow-wrap: anywhere;
+  }
+  .showcase .report-header,
+  .showcase .hero-layout,
+  .showcase .hero-headline,
+  .showcase .hero-proof,
+  .showcase .flight-brief,
+  .showcase .flight-brief-facts > div,
+  .showcase .optimization-stage,
+  .showcase .stage-body,
+  .showcase .verdict-column {
+    min-width: 0;
+    max-width: 100%;
+  }
+  .showcase .provenance-strip li,
+  .showcase .stage-body h3,
+  .showcase .verdict-column h2 {
+    overflow-wrap: anywhere;
+  }
+  .showcase .flight-brief-facts > div {
+    grid-template-columns: minmax(0, 1fr);
+    gap: .16rem;
+  }
+  .showcase .flight-brief-actions a { flex: 1 1 100%; }
+  .showcase .flight-log ol { grid-template-columns: minmax(0, 1fr); }
   .showcase .cockpit-heading,
   .showcase .cockpit-decision {
     grid-template-columns: minmax(0, 1fr);
@@ -4051,6 +4397,15 @@ html[data-theme="dark"] .showcase {
   .showcase .capacity-envelope-inner {
     width: min(calc(100% - 2rem), 78rem);
   }
+  .showcase .capacity-table-wrap {
+    width: 100%;
+    max-width: 100%;
+    min-width: 0;
+    overflow-x: auto;
+    contain: inline-size;
+    overscroll-behavior-inline: contain;
+  }
+  .showcase .capacity-matrix { min-width: 17.5rem; }
   .showcase .optimization-stages {
     grid-template-columns: 1fr;
   }
@@ -4129,6 +4484,7 @@ html[data-theme="dark"] .showcase {
     border: 1px solid var(--flight-ink);
   }
   .showcase .hero-actions { display: none; }
+  .showcase .flight-brief-actions { display: none; }
   .showcase .theme-toggle { display: none; }
   .showcase .report-header *,
   .showcase .optimization-ladder *,
@@ -4419,6 +4775,7 @@ def render_showcase_v11(
     passport = _decision_passport(benchmarks, recommendation)
     optimization_ladder = _optimization_ladder_markup(passport)
     capacity_envelope = ""
+    capacity_brief = ""
     if capacity_study is not None and capacity_evidence_lock is not None:
         capacity_proof = _capacity_proof_context(
             capacity_study,
@@ -4433,6 +4790,12 @@ def render_showcase_v11(
             study_href=capacity_study_href,
             receipt_href=capacity_receipt_href,
         )
+        capacity_brief = _capacity_flight_brief_markup(
+            benchmarks,
+            recommendation,
+            _capacity_result_from_study(capacity_study),
+            capacity_proof,
+        )
     policy_cockpit = _policy_cockpit_markup(benchmarks, policy_profiles)
     provenance, hero, hero_tail = _hero_markup(
         benchmarks,
@@ -4440,6 +4803,7 @@ def render_showcase_v11(
         proof,
         canonical_report_href=canonical_report_href,
         policy_cockpit=policy_cockpit,
+        capacity_brief=capacity_brief,
         capacity_available=bool(capacity_envelope),
     )
     legend, style_by_id = _series_key(
