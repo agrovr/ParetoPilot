@@ -241,8 +241,10 @@ class CliTests(unittest.TestCase):
             payload = json.loads(stdout.getvalue())
             recommendation_path = output_dir / "recommendation.json"
             report_path = output_dir / "report.html"
+            passport_path = output_dir / "decision-passport.json"
             receipt_path = output_dir / "gate.json"
             recommendation = json.loads(recommendation_path.read_text(encoding="utf-8"))
+            passport = json.loads(passport_path.read_text(encoding="utf-8"))
             receipt = json.loads(receipt_path.read_text(encoding="utf-8"))
 
             self.assertEqual(exit_code, 0)
@@ -251,12 +253,172 @@ class CliTests(unittest.TestCase):
             self.assertTrue(payload["synthetic_source"])
             self.assertEqual(recommendation["selected_id"], "q4-kleidiai")
             self.assertEqual(receipt["selected_id"], "q4-kleidiai")
+            self.assertEqual(receipt["schema_version"], "1.1")
+            self.assertEqual(receipt["evidence_grade"], "synthetic")
+            self.assertEqual(passport["evidence_grade"], "synthetic")
             self.assertEqual(
                 receipt["recommendation_sha256"],
                 cli.sha256_file(recommendation_path),
             )
             self.assertEqual(receipt["report_sha256"], cli.sha256_file(report_path))
+            self.assertEqual(
+                receipt["decision_passport_sha256"],
+                cli.sha256_file(passport_path),
+            )
             self.assertEqual(payload["receipt_sha256"], cli.sha256_file(receipt_path))
+
+    def test_ci_gate_binds_every_artifact_to_one_input_byte_snapshot(self) -> None:
+        with TemporaryDirectory() as directory:
+            root = Path(directory)
+            constraints_path = root / "constraints.json"
+            constraints_path.write_bytes(Path("configs/constraints.example.json").read_bytes())
+            original_constraints_sha256 = cli.sha256_file(constraints_path)
+            output_dir = root / "gate"
+            original_loader = cli.load_constraints_snapshot
+
+            def load_then_mutate(path: Path):
+                constraints, digest = original_loader(path)
+                path.write_text("{not valid JSON", encoding="utf-8")
+                return constraints, digest
+
+            stdout = io.StringIO()
+            with (
+                patch.object(
+                    cli,
+                    "load_constraints_snapshot",
+                    side_effect=load_then_mutate,
+                ) as snapshot_loader,
+                patch("sys.stdout", stdout),
+            ):
+                exit_code = cli.main(
+                    [
+                        "ci-gate",
+                        "examples/synthetic-results.json",
+                        "--constraints",
+                        str(constraints_path),
+                        "--output-dir",
+                        str(output_dir),
+                        "--allow-synthetic",
+                        "--expect-selected-id",
+                        "q4-kleidiai",
+                    ]
+                )
+
+            recommendation = json.loads(
+                (output_dir / "recommendation.json").read_text(encoding="utf-8")
+            )
+            passport = json.loads(
+                (output_dir / "decision-passport.json").read_text(encoding="utf-8")
+            )
+            self.assertEqual(exit_code, 0)
+            snapshot_loader.assert_called_once_with(constraints_path)
+            self.assertEqual(
+                recommendation["input_fingerprints"],
+                passport["input_fingerprints"],
+            )
+            self.assertEqual(
+                recommendation["input_fingerprints"]["constraints_sha256"],
+                original_constraints_sha256,
+            )
+
+    def test_passport_cli_exports_strict_arm64_attribution_for_canonical_fixture(self) -> None:
+        with TemporaryDirectory() as directory:
+            root = Path(directory)
+            benchmarks_path = root / "benchmark-set.json"
+            passport_path = root / "decision-passport.json"
+            benchmark_payload = _benchmark_payload()
+            benchmark_payload["metadata"] = {
+                "classification": "canonical",
+                "source": {
+                    "repository": "agrovr/ParetoPilot",
+                    "revision": "8a9ddce0afa2272c4a4097fe87ef6f06cb7689a9",
+                    "workflow": ".github/workflows/candidate-study-arm64.yml",
+                    "run_id": "30055662526",
+                    "run_attempt": 1,
+                    "runner": {
+                        "architecture": "arm64",
+                        "cpu": "Neoverse-N2",
+                        "cpu_count": 4,
+                        "os": "Ubuntu 24.04",
+                    },
+                },
+                "runtime": {
+                    "name": "llama.cpp",
+                    "repository": "https://github.com/ggml-org/llama.cpp",
+                    "revision": "67b9b0e7f6ce45d929a4411907d3c48ec719e81c",
+                },
+                "model_family": {
+                    "name": "Qwen2.5-1.5B-Instruct",
+                    "repository": "Qwen/Qwen2.5-1.5B-Instruct-GGUF",
+                    "revision": "91cad51170dc346986eccefdc2dd33a9da36ead9",
+                },
+                "evaluation_suite": {
+                    "id": "paretopilot-qwen-behavior-v2",
+                    "sha256": ("e49c16fba32fd65c947264aef4141026ab68b1fd415ef09eeea6e8ade9a545c7"),
+                },
+            }
+            _write_json_fixture(benchmarks_path, benchmark_payload)
+            stdout = io.StringIO()
+
+            with patch("sys.stdout", stdout):
+                exit_code = cli.main(
+                    [
+                        "passport",
+                        str(benchmarks_path),
+                        "--constraints",
+                        "configs/constraints.candidate-study.json",
+                        "--output",
+                        str(passport_path),
+                        "--require-arm64-provenance",
+                    ]
+                )
+
+            payload = json.loads(stdout.getvalue())
+            passport = json.loads(passport_path.read_text(encoding="utf-8"))
+            self.assertEqual(exit_code, 0)
+            self.assertEqual(payload["evidence_grade"], "arm64-attributed")
+            self.assertEqual(payload["selected_id"], "q8-generic")
+            self.assertEqual(passport["evidence_grade"], "arm64-attributed")
+            self.assertEqual(
+                [stage["candidate_id"] for stage in passport["ladder"]],
+                [
+                    "q8-generic",
+                    "q4-generic",
+                    "q4-kleidiai",
+                    "q4-kleidiai-tuned",
+                ],
+            )
+            self.assertEqual(
+                passport["input_fingerprints"]["benchmarks_sha256"],
+                cli.sha256_file(benchmarks_path),
+            )
+            self.assertEqual(payload["passport_sha256"], cli.sha256_file(passport_path))
+
+    def test_passport_arm64_provenance_gate_rejects_synthetic_without_output(self) -> None:
+        with TemporaryDirectory() as directory:
+            output = Path(directory) / "must-not-exist.json"
+            stdout = io.StringIO()
+            stderr = io.StringIO()
+            with patch("sys.stdout", stdout), patch("sys.stderr", stderr):
+                exit_code = cli.main(
+                    [
+                        "passport",
+                        "examples/synthetic-results.json",
+                        "--constraints",
+                        "configs/constraints.example.json",
+                        "--output",
+                        str(output),
+                        "--require-arm64-provenance",
+                    ]
+                )
+
+            self.assertEqual(exit_code, 2)
+            self.assertEqual(stdout.getvalue(), "")
+            self.assertIn(
+                "complete source-declared Arm64 attribution metadata is required",
+                stderr.getvalue(),
+            )
+            self.assertFalse(output.exists())
 
     def test_ci_gate_rejects_synthetic_evidence_by_default_without_outputs(self) -> None:
         with TemporaryDirectory() as directory:
@@ -278,6 +440,33 @@ class CliTests(unittest.TestCase):
             self.assertEqual(exit_code, 2)
             self.assertEqual(stdout.getvalue(), "")
             self.assertIn("requires measured evidence", stderr.getvalue())
+            self.assertFalse(output_dir.exists())
+
+    def test_ci_gate_can_require_fully_attributed_arm64_evidence(self) -> None:
+        with TemporaryDirectory() as directory:
+            output_dir = Path(directory) / "must-not-exist"
+            stdout = io.StringIO()
+            stderr = io.StringIO()
+            with patch("sys.stdout", stdout), patch("sys.stderr", stderr):
+                exit_code = cli.main(
+                    [
+                        "ci-gate",
+                        "examples/synthetic-results.json",
+                        "--constraints",
+                        "configs/constraints.example.json",
+                        "--output-dir",
+                        str(output_dir),
+                        "--allow-synthetic",
+                        "--require-arm64-provenance",
+                    ]
+                )
+
+            self.assertEqual(exit_code, 2)
+            self.assertEqual(stdout.getvalue(), "")
+            self.assertIn(
+                "complete source-declared Arm64 attribution metadata is required",
+                stderr.getvalue(),
+            )
             self.assertFalse(output_dir.exists())
 
     def test_ci_gate_rejects_an_unexpected_selection_without_outputs(self) -> None:

@@ -446,11 +446,16 @@ def rendered_v11(
 ) -> str:
     benchmarks = data or canonical_benchmarks()
     recommendation = canonical_recommendation(benchmarks)
+    recommendation["paretopilot_version"] = "1.1.0"
+    policy_profiles = derived_profiles(benchmarks) if profiles else None
+    if policy_profiles is not None:
+        for profile in policy_profiles["profiles"]:
+            profile["recommendation"]["paretopilot_version"] = "1.1.0"
     load_sweep = measured_load_sweep() if load is True else load
     return render_report_v11(
         benchmarks,
         recommendation,
-        policy_profiles=derived_profiles(benchmarks) if profiles else None,
+        policy_profiles=policy_profiles,
         load_sweep=load_sweep,
         stability_summary=(measured_stability(benchmarks) if stability is True else stability),
         benchmarks_sha256="a" * 64,

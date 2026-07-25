@@ -35,6 +35,7 @@ jobs:
           paretopilot --version
           paretopilot validate examples/synthetic-results.json
           paretopilot recommend examples/synthetic-results.json --constraints configs/constraints.example.json
+          paretopilot passport examples/synthetic-results.json --constraints configs/constraints.example.json --output passport-smoke.json
           paretopilot validate-llama-bench tests/fixtures/llama_bench.synthetic.jsonl
 
   package:
@@ -63,6 +64,10 @@ jobs:
           "$RUNNER_TEMP/paretopilot-wheel-smoke/bin/paretopilot" recommend \
             examples/synthetic-results.json \
             --constraints configs/constraints.example.json
+          "$RUNNER_TEMP/paretopilot-wheel-smoke/bin/paretopilot" passport \
+            examples/synthetic-results.json \
+            --constraints configs/constraints.example.json \
+            --output "$RUNNER_TEMP/decision-passport.json"
 
   action-smoke:
     runs-on: ubuntu-latest
@@ -89,6 +94,8 @@ jobs:
           SYNTHETIC_SOURCE: ${{ steps.decision.outputs.synthetic-source }}
           RECOMMENDATION: ${{ steps.decision.outputs.recommendation }}
           REPORT: ${{ steps.decision.outputs.report }}
+          DECISION_PASSPORT: ${{ steps.decision.outputs.decision-passport }}
+          EVIDENCE_GRADE: ${{ steps.decision.outputs.evidence-grade }}
           RECEIPT: ${{ steps.decision.outputs.receipt }}
         run: |
           set -euo pipefail
@@ -96,6 +103,8 @@ jobs:
           test "$SYNTHETIC_SOURCE" = "true"
           test -f "$RECOMMENDATION"
           test -f "$REPORT"
+          test -f "$DECISION_PASSPORT"
+          test "$EVIDENCE_GRADE" = "synthetic"
           test -f "$RECEIPT"
           python - <<'PY'
           import json
@@ -103,10 +112,15 @@ jobs:
           from pathlib import Path
 
           recommendation = json.loads(Path(os.environ["RECOMMENDATION"]).read_text())
+          passport = json.loads(Path(os.environ["DECISION_PASSPORT"]).read_text())
           receipt = json.loads(Path(os.environ["RECEIPT"]).read_text())
           assert recommendation["selected_id"] == "q4-kleidiai"
+          assert passport["selected_decision"]["candidate_id"] == "q4-kleidiai"
+          assert passport["evidence_grade"] == "synthetic"
           assert receipt["expectation_matched"] is True
           assert receipt["synthetic_source"] is True
+          assert receipt["evidence_grade"] == "synthetic"
+          assert len(receipt["decision_passport_sha256"]) == 64
           PY
       - name: Confirm measured-evidence protection fails closed
         shell: bash

@@ -11,6 +11,7 @@ dist/
 build/
 artifacts/
 output/
+paretopilot-output/
 _site/
 .candidate-build/
 .candidate-models/
