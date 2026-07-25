@@ -143,6 +143,9 @@ one native Arm64 runner. Both predeclared candidates selected P4/C4 within their
 envelopes; the frozen canonical Q8 model decision did not change. The original Actions ZIP is
 preserved byte-for-byte in the versioned, SHA-256-locked
 [`v1.4.0` release](https://github.com/agrovr/ParetoPilot/releases/tag/v1.4.0).
+Use ParetoPilot
+[`v1.4.1`](https://github.com/agrovr/ParetoPilot/releases/tag/v1.4.1) or newer to run the replay
+command below. The tooling release does not move, replace, or modify the v1.4.0 evidence archive.
 
 For the shortest judge path, read the compact reviewed result first, inspect
 `capacity-receipt.md` for every passing and rejected cell, then replay the bundle without rerunning

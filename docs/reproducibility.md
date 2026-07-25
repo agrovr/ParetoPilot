@@ -21,6 +21,9 @@ The supplementary capacity envelope is GitHub Actions
 [run `30144901854`](https://github.com/agrovr/ParetoPilot/actions/runs/30144901854), preserved in
 the [`v1.4.0` release](https://github.com/agrovr/ParetoPilot/releases/tag/v1.4.0). It is a
 candidate-local serving study and does not replace or modify the canonical v1.1 decision.
+Use ParetoPilot
+[`v1.4.1`](https://github.com/agrovr/ParetoPilot/releases/tag/v1.4.1) or newer to replay that
+unchanged archive.
 
 ## Requirements
 
@@ -37,6 +40,7 @@ before repeated dispatches.
 ```bash
 git clone https://github.com/agrovr/ParetoPilot.git
 cd ParetoPilot
+git checkout v1.4.1
 python -m venv .venv
 ```
 

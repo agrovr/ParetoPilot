@@ -1577,6 +1577,43 @@ def _relative_measure_phrase(
     return f"{_format_number(abs(delta_percent), digits=2)}% {direction} {metric}"
 
 
+def _comparison_bar_widths(alternative_percent_of_reference: float) -> tuple[float, float]:
+    """Normalize a reference/candidate pair without changing their measured ratio."""
+
+    if alternative_percent_of_reference < 0:
+        raise ValidationError("comparison percentage of reference cannot be negative")
+    maximum = max(100.0, alternative_percent_of_reference)
+    return 100.0 * 100.0 / maximum, 100.0 * alternative_percent_of_reference / maximum
+
+
+def _flight_brief_metric_markup(
+    *,
+    label: str,
+    direction: str,
+    headline: str,
+    alternative_percent_of_reference: float,
+) -> str:
+    reference_width, alternative_width = _comparison_bar_widths(alternative_percent_of_reference)
+    alternative_value = _format_number(alternative_percent_of_reference, digits=2)
+    aria_label = (
+        f"{label}, {direction}. Q8 reference 100; tuned Q4 {alternative_value}. "
+        f"Measured comparison {headline}."
+    )
+    return (
+        f'<div class="flight-brief-metric" aria-label="{_escape(aria_label)}">'
+        '<div class="flight-brief-metric-heading">'
+        f"<span>{_escape(label)}<small>{_escape(direction)}</small></span>"
+        f"<strong>{_escape(headline)}</strong></div>"
+        '<div class="flight-brief-paired-bars" aria-hidden="true">'
+        '<div><span>Q8</span><i class="is-reference" '
+        f'style="--bar-size: {reference_width:.3f}%"></i></div>'
+        '<div><span>Q4</span><i class="is-alternative" '
+        f'style="--bar-size: {alternative_width:.3f}%"></i></div></div>'
+        '<div class="flight-brief-bar-values" aria-hidden="true">'
+        f"<span>100</span><span>{_escape(alternative_value)}</span></div></div>"
+    )
+
+
 def _capacity_flight_brief_markup(
     benchmarks: BenchmarkSet,
     recommendation: Mapping[str, Any],
@@ -1627,6 +1664,35 @@ def _capacity_flight_brief_markup(
         "generation throughput",
     )
     rss_phrase = _relative_measure_phrase(rss_delta, "peak RSS")
+    throughput_relative = 100.0 + throughput_delta
+    rss_relative = 100.0 + rss_delta
+    quality_relative = quality_retention * 100.0
+    throughput_headline = (
+        f"{'+' if throughput_delta > 0 else ''}{_format_number(throughput_delta, digits=2)}%"
+    )
+    rss_headline = f"{'+' if rss_delta > 0 else ''}{_format_number(rss_delta, digits=2)}%"
+    metric_markup = "".join(
+        (
+            _flight_brief_metric_markup(
+                label="Generation throughput",
+                direction="higher is better",
+                headline=throughput_headline,
+                alternative_percent_of_reference=throughput_relative,
+            ),
+            _flight_brief_metric_markup(
+                label="Peak RSS",
+                direction="lower is better",
+                headline=rss_headline,
+                alternative_percent_of_reference=rss_relative,
+            ),
+            _flight_brief_metric_markup(
+                label="Quality retention",
+                direction="reference = 100",
+                headline=f"{_format_number(quality_relative, digits=1)}%",
+                alternative_percent_of_reference=quality_relative,
+            ),
+        )
+    )
 
     return (
         '<section class="flight-brief" aria-labelledby="flight-brief-heading">'
@@ -1634,22 +1700,24 @@ def _capacity_flight_brief_markup(
         '<h2 id="flight-brief-heading">One model call. One serving envelope.</h2>'
         "<p>ParetoPilot turns locked Arm64 measurements into a replayable "
         "deployment decision and CI gate.</p></header>"
-        '<dl class="flight-brief-facts">'
-        '<div class="is-canonical"><dt>Canonical latency call</dt><dd>'
-        f"<strong>{_escape(selection_verb)} {_escape(selected.label)}</strong>"
-        "<span>The declared latency objective still controls the model decision.</span>"
-        "</dd></div>"
-        '<div class="is-capacity"><dt>Serving envelope</dt><dd>'
-        f"<strong>P{parallel} / C{concurrency}</strong>"
-        f"<span>{_escape(alternative_label)} · {_escape(throughput_phrase)} · "
-        f"{_escape(rss_phrase)}</span></dd></div>"
-        '<div class="is-proof"><dt>Measured proof</dt><dd>'
-        f"<strong>{measured_requests} requests · zero recorded failures</strong>"
-        f"<span>{_format_number(quality_retention * 100.0, digits=1)}% of reference "
-        "quality · canonical replay unchanged</span></dd></div></dl>"
+        '<figure class="flight-brief-instrument" '
+        'aria-labelledby="flight-brief-instrument-heading">'
+        "<figcaption><div><span>Q8 reference → tuned Q4</span>"
+        '<strong id="flight-brief-instrument-heading">Measured tradeoff at '
+        f"P{parallel} / C{concurrency}</strong></div>"
+        f"<p>{measured_requests} requests · zero recorded failures</p></figcaption>"
+        f'<div class="flight-brief-metrics">{metric_markup}</div>'
+        '<p class="flight-brief-boundary"><strong>Decision boundary:</strong> '
+        f"{_escape(selection_verb)} {_escape(selected.label)} for the frozen "
+        "single-client latency objective. "
+        f"{_escape(alternative_label)} sizes serving at its selected "
+        f"P{parallel} / C{concurrency} point; {_escape(throughput_phrase)} and "
+        f"{_escape(rss_phrase)} do not rewrite the canonical model call.</p></figure>"
         '<nav class="flight-brief-actions" aria-label="Judge quick actions">'
-        '<a class="flight-brief-primary" href="#capacity-envelope">'
-        "See the measured envelope</a>"
+        '<a class="flight-brief-primary" href="#optimization-ladder">'
+        "See exactly what changed</a>"
+        '<a class="flight-brief-secondary" href="#capacity-envelope">'
+        "See the serving envelope</a>"
         '<a class="flight-brief-secondary" '
         'href="https://github.com/agrovr/ParetoPilot/blob/main/docs/github-action.md">'
         "Use the CI gate</a></nav></section>\n"
@@ -2686,48 +2754,131 @@ html[data-theme="dark"] .showcase {
   font-size: clamp(1.25rem, 2.25vw, 1.65rem);
   line-height: 1.02;
 }
-.showcase .flight-brief-facts {
-  display: grid;
-  margin: .7rem 0 0;
+.showcase .flight-brief-instrument {
+  min-width: 0;
+  margin: .65rem 0 0;
   border-top: 1px solid var(--flight-panel-line);
 }
-.showcase .flight-brief-facts > div {
+.showcase .flight-brief-instrument figcaption {
   display: grid;
-  grid-template-columns: minmax(0, .68fr) minmax(0, 1.32fr);
-  gap: .55rem;
-  min-width: 0;
-  padding: .5rem 0;
-  border-bottom: 1px solid var(--flight-panel-line);
+  grid-template-columns: minmax(0, 1.25fr) minmax(0, .75fr);
+  gap: .75rem;
+  align-items: end;
+  padding: .45rem 0;
 }
-.showcase .flight-brief-facts dt {
-  color: var(--flight-on-dark-muted);
-  font-size: .65rem;
-  font-weight: 760;
+.showcase .flight-brief-instrument figcaption div,
+.showcase .flight-brief-instrument figcaption span,
+.showcase .flight-brief-instrument figcaption strong {
+  display: block;
+  min-width: 0;
+}
+.showcase .flight-brief-instrument figcaption span {
+  color: var(--flight-hero-accent);
+  font-family: "SFMono-Regular", Consolas, "Liberation Mono", monospace;
+  font-size: .61rem;
+  font-weight: 800;
   letter-spacing: .035em;
   text-transform: uppercase;
 }
-.showcase .flight-brief-facts dd {
-  min-width: 0;
-  margin: 0;
-}
-.showcase .flight-brief-facts strong,
-.showcase .flight-brief-facts span {
-  display: block;
-  overflow-wrap: anywhere;
-}
-.showcase .flight-brief-facts strong {
+.showcase .flight-brief-instrument figcaption strong {
+  margin-top: .08rem;
   color: var(--flight-white);
-  font-size: .78rem;
+  font-size: .76rem;
+}
+.showcase .flight-brief-instrument figcaption p {
+  margin: 0;
+  color: var(--flight-on-dark-muted);
+  font-size: .64rem;
+  text-align: right;
+}
+.showcase .flight-brief-metrics {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  min-width: 0;
+  border-block: 1px solid var(--flight-panel-line);
+}
+.showcase .flight-brief-metric {
+  min-width: 0;
+  padding: .45rem .55rem .4rem;
+}
+.showcase .flight-brief-metric + .flight-brief-metric {
+  border-left: 1px solid var(--flight-panel-line);
+}
+.showcase .flight-brief-metric-heading {
+  display: flex;
+  gap: .35rem;
+  align-items: start;
+  justify-content: space-between;
+  min-width: 0;
+}
+.showcase .flight-brief-metric-heading span,
+.showcase .flight-brief-metric-heading small {
+  display: block;
+  min-width: 0;
+}
+.showcase .flight-brief-metric-heading span {
+  color: var(--flight-white);
+  font-size: .64rem;
+  font-weight: 800;
+  line-height: 1.2;
+}
+.showcase .flight-brief-metric-heading small {
+  margin-top: .08rem;
+  color: var(--flight-on-dark-muted);
+  font-size: .54rem;
+  font-weight: 650;
+}
+.showcase .flight-brief-metric-heading strong {
+  flex: 0 0 auto;
+  margin: 0;
+  color: var(--flight-hero-accent);
+  font-size: .77rem;
   font-variant-numeric: tabular-nums;
 }
-.showcase .flight-brief-facts span {
-  margin-top: .12rem;
+.showcase .flight-brief-paired-bars {
+  display: grid;
+  gap: .22rem;
+  margin-top: .36rem;
+}
+.showcase .flight-brief-paired-bars > div {
+  display: grid;
+  grid-template-columns: 1.25rem minmax(0, 1fr);
+  gap: .3rem;
+  align-items: center;
+  min-width: 0;
+}
+.showcase .flight-brief-paired-bars span {
   color: var(--flight-on-dark-muted);
-  font-size: .67rem;
+  font-family: "SFMono-Regular", Consolas, "Liberation Mono", monospace;
+  font-size: .51rem;
+  font-weight: 800;
+}
+.showcase .flight-brief-paired-bars i {
+  display: block;
+  width: var(--bar-size);
+  height: .24rem;
+  background: var(--flight-slate);
+}
+.showcase .flight-brief-paired-bars .is-alternative {
+  background: var(--flight-hero-accent);
+}
+.showcase .flight-brief-bar-values {
+  display: flex;
+  justify-content: space-between;
+  margin: .15rem 0 0 1.55rem;
+  color: var(--flight-on-dark-muted);
+  font-family: "SFMono-Regular", Consolas, "Liberation Mono", monospace;
+  font-size: .48rem;
+  font-variant-numeric: tabular-nums;
+}
+.showcase .flight-brief-boundary {
+  margin: .4rem 0 0;
+  color: var(--flight-on-dark-muted);
+  font-size: .61rem;
   line-height: 1.35;
 }
-.showcase .flight-brief-facts .is-capacity strong {
-  color: var(--flight-hero-accent);
+.showcase .flight-brief-boundary strong {
+  color: var(--flight-white);
 }
 .showcase .flight-brief-actions {
   display: flex;
@@ -4358,7 +4509,8 @@ html[data-theme="dark"] .showcase {
   .showcase .hero-headline,
   .showcase .hero-proof,
   .showcase .flight-brief,
-  .showcase .flight-brief-facts > div,
+  .showcase .flight-brief-instrument,
+  .showcase .flight-brief-metric,
   .showcase .optimization-stage,
   .showcase .stage-body,
   .showcase .verdict-column {
@@ -4370,9 +4522,19 @@ html[data-theme="dark"] .showcase {
   .showcase .verdict-column h2 {
     overflow-wrap: anywhere;
   }
-  .showcase .flight-brief-facts > div {
+  .showcase .flight-brief-instrument figcaption,
+  .showcase .flight-brief-metrics {
     grid-template-columns: minmax(0, 1fr);
-    gap: .16rem;
+  }
+  .showcase .flight-brief-instrument figcaption {
+    gap: .2rem;
+  }
+  .showcase .flight-brief-instrument figcaption p {
+    text-align: left;
+  }
+  .showcase .flight-brief-metric + .flight-brief-metric {
+    border-top: 1px solid var(--flight-panel-line);
+    border-left: 0;
   }
   .showcase .flight-brief-actions a { flex: 1 1 100%; }
   .showcase .flight-log ol { grid-template-columns: minmax(0, 1fr); }

@@ -6,9 +6,9 @@ recommends a configuration without assuming that an "optimized" build must win.
 
 I designed and built ParetoPilot as a solo Cloud AI entry for the Arm AI Optimization Challenge.
 
-The reusable tool is now version 1.4.0. The canonical Arm64 evidence remains frozen at v1.1.0,
-so the Decision Passport, Optimization Receipt, and presentation layer cannot rewrite the
-measured result.
+The reusable tool is now version 1.4.1. It replays the unchanged v1.4.0 capacity archive; the
+canonical Arm64 evidence remains frozen at v1.1.0, so the Decision Passport, Optimization Receipt,
+capacity receipt, and presentation layer cannot rewrite either measured result.
 
 [Live evidence showcase](https://agrovr.github.io/ParetoPilot/) |
 [Exact canonical v1.1 report](https://agrovr.github.io/ParetoPilot/evidence/report-v1.1.html) |
@@ -16,16 +16,17 @@ measured result.
 [Complete v1.1 evidence](https://github.com/agrovr/ParetoPilot/releases/tag/v1.1.0) |
 [Capacity envelope result](results/published/30144901854/README.md) |
 [Capacity evidence v1.4.0](https://github.com/agrovr/ParetoPilot/releases/tag/v1.4.0) |
+[Replay-capable tooling v1.4.1](https://github.com/agrovr/ParetoPilot/releases/tag/v1.4.1) |
 [CI decision gate](docs/github-action.md) |
 [Reproduction guide](docs/reproducibility.md)
 
 ## 60-second judge path
 
-1. **Read the flight brief and try the policy switch.** Open the
-   [live evidence showcase](https://agrovr.github.io/ParetoPilot/). The first screen states the
-   frozen canonical call, the selected serving envelope, and the proof size. Switch between
-   latency, memory, and first-token priorities to see how the same locked evidence supports
-   different deployment needs.
+1. **See exactly what changed.** Open the
+   [live evidence showcase](https://agrovr.github.io/ParetoPilot/) and follow the first-screen
+   optimization link. The ladder isolates the Q8 generic baseline, Q4 quantization, the
+   KleidiAI-enabled build, and the 512-token micro-batch change before showing the measured
+   tradeoffs and the honest Q8 latency decision.
 2. **Open the measured envelope.** Jump to the
    [supplementary Arm64 capacity board](https://agrovr.github.io/ParetoPilot/#capacity-envelope).
    It shows all 18 tested P/C cells, the selected P4/C4 points, and why cells passed or were
@@ -37,7 +38,7 @@ measured result.
 
 ## 5-minute hands-on test
 
-After the short installation below, run this deliberately synthetic software smoke test:
+After the [Quick start](#quick-start), run this deliberately synthetic software smoke test:
 
 ```bash
 python -m paretopilot ci-gate examples/synthetic-results.json \
@@ -46,6 +47,10 @@ python -m paretopilot ci-gate examples/synthetic-results.json \
   --allow-synthetic \
   --expect-selected-id q4-kleidiai
 ```
+
+Expected: exit code 0 with `q4-kleidiai` selected. Open
+`paretopilot-output/optimization-receipt.md` for the human-readable decision or
+`paretopilot-output/report.html` for the self-contained report.
 
 The fixture demonstrates the decision workflow only. It is explicitly synthetic and is not Arm64
 benchmark evidence.
@@ -153,8 +158,9 @@ Activate it with `.\.venv\Scripts\Activate.ps1` in Windows PowerShell or
 `source .venv/bin/activate` on Linux and macOS, then run:
 
 ```bash
-python -m pip install -e ".[dev]"
+python -m pip install -e .
 python -m paretopilot --version
+python -m paretopilot doctor
 python -m unittest discover -s tests
 python -m paretopilot validate examples/synthetic-results.json
 python -m paretopilot recommend examples/synthetic-results.json --constraints configs/constraints.example.json
@@ -162,6 +168,9 @@ python -m paretopilot recommend examples/synthetic-results.json --constraints co
 
 The example is explicitly synthetic and exists only to exercise the engine. It is not presented
 as Arm64 benchmark evidence.
+
+Contributors who also want the pinned lint, build, and pytest tooling can install
+`python -m pip install -e ".[dev]"`.
 
 ## Use it as a CI decision gate
 
@@ -175,7 +184,7 @@ candidate changes unexpectedly:
   with:
     python-version: "3.12"
 - id: decision
-  uses: agrovr/ParetoPilot@main
+  uses: agrovr/ParetoPilot@v1.4.1
   with:
     benchmarks: benchmarks/benchmark-set.json
     constraints: constraints/deployment.json
@@ -183,7 +192,9 @@ candidate changes unexpectedly:
     require-arm64-provenance: "true"
 ```
 
-Measured evidence is required by default. A native deployment workflow can additionally require
+The versioned `@v1.4.1` reference keeps the example stable; pin the Action to a reviewed commit SHA
+in production. Measured evidence is required by default. A native deployment workflow can
+additionally require
 complete source-declared Arm64 runner, run, source, runtime, model, and evaluation-suite metadata.
 That completeness gate does not authenticate the claims by itself; the canonical release adds
 checksummed source artifacts and exact replay. Synthetic inputs must be explicitly allowed for
