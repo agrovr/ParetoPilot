@@ -7,17 +7,52 @@ import hashlib
 import re
 import unittest
 
-from paretopilot.domain import ValidationError
-from paretopilot.showcase import render_showcase_v11
+from paretopilot.decision_passport import build_decision_passport
+from paretopilot.domain import BenchmarkSet, ValidationError
+from paretopilot.showcase import _optimization_ladder_markup, render_showcase_v11
 
 from test_report_v11 import (
     canonical_benchmarks,
+    canonical_constraints,
     canonical_recommendation,
     derived_profiles,
     measured_load_sweep,
     measured_stability,
     rendered_v11,
 )
+
+
+def attributed_benchmarks() -> BenchmarkSet:
+    benchmarks = canonical_benchmarks()
+    attribution_stages = {
+        "q8-generic": "reference",
+        "q4-generic": "quantization",
+        "q4-kleidiai": "arm-kernel",
+        "q4-kleidiai-tuned": "runtime-tuning",
+    }
+    candidates = []
+    for candidate in benchmarks.candidates:
+        parameters = deepcopy(dict(candidate.parameters))
+        configuration = deepcopy(dict(parameters["configuration"]))
+        configuration["attribution_stage"] = attribution_stages[candidate.candidate_id]
+        parameters["configuration"] = configuration
+        candidates.append(
+            {
+                "id": candidate.candidate_id,
+                "label": candidate.label,
+                "parameters": parameters,
+                "metrics": dict(candidate.metrics),
+            }
+        )
+    return BenchmarkSet.from_mapping(
+        {
+            "schema_version": benchmarks.schema_version,
+            "baseline_id": benchmarks.baseline_id,
+            "synthetic": benchmarks.synthetic,
+            "metadata": dict(benchmarks.metadata),
+            "candidates": candidates,
+        }
+    )
 
 
 def contrast_ratio(foreground: str, background: str) -> float:
@@ -124,24 +159,46 @@ def evidence_lock(
     }
 
 
+def frozen_v11_recommendation(data: BenchmarkSet) -> dict[str, object]:
+    recommendation = canonical_recommendation(data)
+    recommendation["paretopilot_version"] = "1.1.0"
+    return recommendation
+
+
+def frozen_v11_profiles(data: BenchmarkSet) -> dict[str, object]:
+    profiles = derived_profiles(data)
+    for profile in profiles["profiles"]:
+        profile["recommendation"]["paretopilot_version"] = "1.1.0"
+    return profiles
+
+
 def rendered_showcase(
     *,
     lock: bool = True,
     canonical_html: str | None = None,
     load_sweep: dict[str, object] | None = None,
+    benchmarks: BenchmarkSet | None = None,
 ) -> str:
-    benchmarks = canonical_benchmarks()
-    recommendation = canonical_recommendation(benchmarks)
+    data = canonical_benchmarks() if benchmarks is None else benchmarks
+    recommendation = frozen_v11_recommendation(data)
+    profiles = frozen_v11_profiles(data)
     load = measured_load_sweep() if load_sweep is None else load_sweep
-    canonical = rendered_v11(data=benchmarks, load=load)
+    canonical = rendered_v11(data=data, load=load)
     supplied_canonical = (canonical if canonical_html is None else canonical_html) if lock else None
+    lock_payload = evidence_lock() if lock else None
+    if lock_payload is not None:
+        review = lock_payload["review"]
+        assert isinstance(review, dict)
+        artifacts = review["artifacts_sha256"]
+        assert isinstance(artifacts, dict)
+        artifacts["report_v1_1"] = hashlib.sha256(canonical.encode()).hexdigest()
     return render_showcase_v11(
-        benchmarks,
+        data,
         recommendation,
-        policy_profiles=derived_profiles(benchmarks),
+        policy_profiles=profiles,
         load_sweep=load,
-        stability_summary=measured_stability(benchmarks),
-        evidence_lock=evidence_lock() if lock else None,
+        stability_summary=measured_stability(data),
+        evidence_lock=lock_payload,
         canonical_html=supplied_canonical,
         canonical_report_href="evidence/report-v1.1.html",
         benchmarks_sha256="a" * 64,
@@ -181,6 +238,8 @@ class ShowcaseV11Tests(unittest.TestCase):
         self.assertIn("9 authoritative comparisons", first)
         self.assertIn("arm64 vCPUs", first)
         self.assertIn("Open exact canonical report", first)
+        self.assertIn("Open v1.1.0 evidence release", first)
+        self.assertNotIn("Download v1.1.0 evidence", first)
         self.assertIn('href="evidence/report-v1.1.html"', first)
         self.assertIn("Canonical recommendation", first)
         self.assertIn("Derived policy scenario", first)
@@ -189,6 +248,271 @@ class ShowcaseV11Tests(unittest.TestCase):
         self.assertIn("Canonical report SHA-256", first)
         self.assertIn("Evidence archive SHA-256", first)
         self.assertIn("Checksum manifest SHA-256", first)
+
+    def test_optimization_ladder_is_passport_derived_accessible_and_first(self) -> None:
+        benchmarks = attributed_benchmarks()
+        report = rendered_showcase(benchmarks=benchmarks)
+        passport = build_decision_passport(benchmarks, canonical_constraints())
+        ladder = passport["ladder"]
+        self.assertIsInstance(ladder, list)
+
+        main_start = report.index('<main id="main-content" class="report-main" tabindex="-1">')
+        ladder_start = report.index(
+            '<section id="optimization-ladder" class="optimization-ladder" '
+            'aria-labelledby="optimization-ladder-heading">'
+        )
+        canonical_start = report.index(
+            '<section class="report-section" aria-labelledby="why-heading">'
+        )
+        self.assertLess(main_start, ladder_start)
+        self.assertLess(ladder_start, canonical_start)
+        self.assertIn(
+            '<h2 id="optimization-ladder-heading">Four stages. One honest runway.</h2>',
+            report,
+        )
+        self.assertIn(
+            '<ol class="optimization-stages" style="--stage-count: 4" '
+            'aria-label="Measured optimization stages">',
+            report,
+        )
+        self.assertIn(
+            'role="group" aria-label="Honest runway to the current cutoff"',
+            report,
+        )
+        self.assertIn("Canonical selected stage", report)
+        self.assertIn("Closest outside shortlist", report)
+        self.assertIn("inside the current cutoff", report)
+        self.assertIn("outside the current cutoff", report)
+        self.assertIn(
+            "This derived attribution view does not recalculate or replace the canonical decision.",
+            report,
+        )
+        self.assertIn("current measured context", report)
+        self.assertIn(
+            "<span>Evidence grade</span><strong>measured-unattributed</strong>",
+            report,
+        )
+
+        stage_labels = ("Reference", "Quantization", "Arm kernel", "Runtime tuning")
+        stage_positions = [
+            report.index(f'<p class="stage-role">{label}</p>') for label in stage_labels
+        ]
+        self.assertEqual(stage_positions, sorted(stage_positions))
+        for stage in ladder:
+            self.assertIn(f"<h3>{stage['label']}</h3>", report)
+            self.assertIn(f'<code class="stage-id">{stage["candidate_id"]}</code>', report)
+
+        arm_stage = next(stage for stage in ladder if stage["attribution_stage"] == "arm-kernel")
+        objective_metric = str(passport["objective"]["metric"])
+        objective_change = next(
+            change
+            for change in arm_stage["delta_from_previous"]["metrics"]
+            if change["metric"] == objective_metric
+        )
+        expected_direction = "lower" if objective_change["percent"] < 0 else "higher"
+        expected_change = f"{abs(objective_change['percent']):,.2f}% {expected_direction}"
+        self.assertIn(expected_change, report)
+
+        self.assertIn(
+            '<a class="action-secondary" href="#optimization-ladder">'
+            "Trace the optimization ladder</a>",
+            report,
+        )
+        self.assertIn(
+            '<a href="#optimization-ladder"><strong>00</strong>Optimize</a>',
+            report,
+        )
+        scripts = "\n".join(re.findall(r"<script[^>]*>(.*?)</script>", report, re.DOTALL))
+        self.assertNotIn("optimization-ladder", scripts)
+
+    def test_optimization_ladder_adapts_stage_count_and_synthetic_language(self) -> None:
+        measured = attributed_benchmarks()
+        synthetic = BenchmarkSet.from_mapping(
+            {
+                "schema_version": measured.schema_version,
+                "baseline_id": measured.baseline_id,
+                "synthetic": True,
+                "metadata": dict(measured.metadata),
+                "candidates": [
+                    {
+                        "id": candidate.candidate_id,
+                        "label": candidate.label,
+                        "parameters": dict(candidate.parameters),
+                        "metrics": dict(candidate.metrics),
+                    }
+                    for candidate in measured.candidates
+                ],
+            }
+        )
+        passport = deepcopy(build_decision_passport(synthetic, canonical_constraints()))
+        passport["ladder"] = passport["ladder"][:3]
+        passport["ladder"][1]["objective_value"] = None
+
+        markup = _optimization_ladder_markup(passport)
+
+        self.assertIn("00 · Synthetic fixture path", markup)
+        self.assertIn("Three stages. One honest runway.", markup)
+        self.assertIn('style="--stage-count: 3"', markup)
+        self.assertIn('aria-label="Synthetic fixture optimization stages"', markup)
+        self.assertIn("compare that synthetic candidate", markup)
+        self.assertIn("not Arm64 benchmark evidence", markup)
+        self.assertIn("<strong>Unavailable</strong>", markup)
+        self.assertIn("Fixture improvement", markup)
+        self.assertIn("Fixture tradeoff", markup)
+        self.assertIn("Reference fixture", markup)
+        self.assertNotIn("Measured optimization path", markup)
+        self.assertNotIn("Measured improvement", markup)
+        self.assertNotIn("Measured tradeoff", markup)
+        self.assertNotIn("Reference measurement", markup)
+
+        report = render_showcase_v11(
+            synthetic,
+            frozen_v11_recommendation(synthetic),
+            canonical_report_href="evidence/report-v1.1.html",
+            benchmarks_sha256="a" * 64,
+            recommendation_sha256="b" * 64,
+        )
+        self.assertIn("<title>ParetoPilot | synthetic decision preview</title>", report)
+        self.assertIn("4 synthetic fixture candidates", report)
+        self.assertIn("ParetoPilot evaluated 4 synthetic fixture configurations", report)
+        self.assertIn("survives the fixture", report)
+        for measured_claim in (
+            "measured candidates",
+            "ParetoPilot measured",
+            "Measured improvement",
+            "Measured tradeoff",
+            "Measured change",
+            "Reference measurement",
+            "Measured stage",
+            "one measured candidate",
+            "measured objective values",
+        ):
+            self.assertNotIn(measured_claim, report)
+
+    def test_optimization_ladder_has_horizontal_mobile_and_print_compositions(self) -> None:
+        report = rendered_showcase(benchmarks=attributed_benchmarks())
+
+        self.assertIn(
+            "@media (min-width: 48rem) {\n"
+            "  .showcase .optimization-ladder-heading {\n"
+            "    grid-template-columns: minmax(0, .8fr) minmax(0, 1.2fr);",
+            report,
+        )
+        self.assertIn(
+            "  .showcase .optimization-stages {\n"
+            "    grid-template-columns: repeat(var(--stage-count, 4), minmax(0, 1fr));\n"
+            "    gap: 1.25rem;\n"
+            "  }",
+            report,
+        )
+        self.assertIn(
+            "@media (max-width: 47.99rem) {",
+            report,
+        )
+        self.assertIn(
+            "  .showcase .optimization-stages {\n    grid-template-columns: 1fr;\n  }",
+            report,
+        )
+        print_css = report[report.index("@media print {") :]
+        self.assertIn(
+            ".showcase .report-header,\n"
+            "  .showcase .optimization-ladder,\n"
+            "  .showcase .trust-section,",
+            print_css,
+        )
+        self.assertIn(
+            ".showcase .optimization-stages {\n"
+            "    grid-template-columns: repeat(2, minmax(0, 1fr));\n"
+            "  }",
+            print_css,
+        )
+        self.assertNotIn("gradient", report.lower())
+
+    def test_desktop_grids_can_shrink_when_text_is_resized(self) -> None:
+        report = rendered_showcase()
+
+        self.assertIn(
+            "grid-template-columns: minmax(0, 1.05fr) minmax(0, 2fr) minmax(0, .65fr);",
+            css_rule_body(report, ".showcase .tolerance-row"),
+        )
+        self.assertIn(
+            ".showcase .section-heading {\n"
+            "    grid-template-columns: minmax(0, .65fr) minmax(0, 1.35fr);",
+            report,
+        )
+        self.assertIn(
+            ".showcase .why-layout {\n"
+            "    grid-template-columns: minmax(0, .72fr) minmax(0, 1.28fr);",
+            report,
+        )
+        self.assertIn(
+            ".showcase .tradeoff-row {\n    grid-template-columns:\n      minmax(0, 1.1fr)",
+            report,
+        )
+        self.assertIn("      minmax(0, 1fr);", report)
+        self.assertIn(
+            "min-width: 0;",
+            css_rule_body(report, ".showcase .profile-metrics"),
+        )
+        self.assertIn(
+            "overflow-wrap: anywhere;",
+            css_rule_body(
+                report,
+                ".showcase .profile-metrics span,\n.showcase .profile-metrics strong",
+            ),
+        )
+
+    def test_desktop_hero_pairs_headline_with_proof_without_wrapping_full_width_rows(
+        self,
+    ) -> None:
+        report = rendered_showcase()
+        hero_start = report.index('<div class="hero-layout">')
+        headline_start = report.index('<div class="hero-headline"><h1>', hero_start)
+        proof_start = report.index('<div class="hero-proof"><p class="report-lede">', hero_start)
+        actions_start = report.index('<nav class="hero-actions"', proof_start)
+        hero_end = report.index('</div>\n<nav class="flight-log"', actions_start)
+        flight_log_start = report.index('<nav class="flight-log"', hero_end)
+        verdict_start = report.index('<section class="verdict-layout"', flight_log_start)
+
+        self.assertLess(headline_start, proof_start)
+        self.assertLess(proof_start, actions_start)
+        self.assertLess(actions_start, hero_end)
+        self.assertLess(hero_end, flight_log_start)
+        self.assertLess(flight_log_start, verdict_start)
+        self.assertLess(report.index('class="provenance-strip"'), hero_start)
+        self.assertLess(report.index('class="brand-line"'), hero_start)
+
+        desktop_css = css_rule_body(report, "@media (min-width: 64rem)")
+        self.assertIn(
+            ".showcase .hero-layout {\n"
+            "    display: grid;\n"
+            "    width: 100%;\n"
+            "    max-width: 78rem;\n"
+            "    margin-inline: auto;\n"
+            "    grid-template-columns: minmax(0, 1.08fr) minmax(0, .92fr);",
+            desktop_css,
+        )
+        self.assertIn(
+            ".showcase .hero-proof .decision-rail {\n"
+            "    grid-template-columns: repeat(2, minmax(0, 1fr));",
+            desktop_css,
+        )
+        narrow_css = css_rule_body(report, "@media (max-width: 47.99rem)")
+        self.assertNotIn(".hero-layout", narrow_css)
+        self.assertNotIn(".hero-proof", narrow_css)
+
+    def test_ladder_warning_accents_use_inverse_contrast(self) -> None:
+        report = rendered_showcase(benchmarks=attributed_benchmarks())
+
+        for selector in (
+            ".showcase .optimization-stage.is-closest .stage-marker",
+            ".showcase .is-closest .stage-decision-label",
+            ".showcase .stage-changes .is-tradeoff em",
+        ):
+            with self.subTest(selector=selector):
+                rule = css_rule_body(report, selector)
+                self.assertIn("var(--flight-focus-inverse)", rule)
+                self.assertNotIn("var(--flight-amber)", rule)
 
     def test_showcase_preserves_canonical_sections_and_evidence_tables(self) -> None:
         canonical = rendered_v11()
@@ -250,10 +574,30 @@ class ShowcaseV11Tests(unittest.TestCase):
             "  padding: 0;",
             report,
         )
+        self.assertIn("  overflow-x: auto;", css_rule_body(report, ".showcase .profile-tabs"))
         self.assertIn(
-            "@media (min-width: 68rem) {\n  .showcase .profile-tabs {\n    overflow-x: clip;\n  }",
+            '.showcase .profile-tabs[data-overflow="fit"] { overflow-x: clip; }',
             report,
         )
+        self.assertIn(
+            "const overflows = tablist.scrollWidth > tablist.clientWidth + 1;",
+            report,
+        )
+        self.assertIn(
+            'tablist.dataset.overflow = overflows ? "scroll" : "fit";',
+            report,
+        )
+        self.assertIn(
+            "const overflowObserver = new window.ResizeObserver(syncTabOverflow);",
+            report,
+        )
+        self.assertIn("overflowObserver.observe(tablist);", report)
+        self.assertIn("for (const tab of tabs) overflowObserver.observe(tab);", report)
+        self.assertIn(
+            'tab.scrollIntoView({ block: "nearest", inline: "nearest" });',
+            report,
+        )
+        self.assertNotIn("@media (min-width: 56rem)", report)
 
     def test_charts_use_stable_series_tags_and_responsive_html_legends(self) -> None:
         report = rendered_showcase()
@@ -475,6 +819,7 @@ class ShowcaseV11Tests(unittest.TestCase):
             ("link", "--flight-cobalt", "--flight-canvas"),
             ("inverse", "--flight-on-dark", "--flight-panel"),
             ("solid cobalt", "--flight-white", "--flight-cobalt-solid"),
+            ("ladder warning", "--flight-focus-inverse", "--flight-panel"),
             ("table header", "--flight-white", "--flight-panel"),
             ("striped table row", "--flight-ink", "--flight-paper-blue"),
             ("trust table", "--flight-on-dark", "--flight-panel"),
@@ -564,10 +909,10 @@ class ShowcaseV11Tests(unittest.TestCase):
 
     def test_lock_and_canonical_report_are_paired_and_hash_bound(self) -> None:
         benchmarks = canonical_benchmarks()
-        recommendation = canonical_recommendation(benchmarks)
+        recommendation = frozen_v11_recommendation(benchmarks)
         canonical = rendered_v11(data=benchmarks)
         kwargs = {
-            "policy_profiles": derived_profiles(benchmarks),
+            "policy_profiles": frozen_v11_profiles(benchmarks),
             "load_sweep": measured_load_sweep(),
             "stability_summary": measured_stability(benchmarks),
             "benchmarks_sha256": "a" * 64,
@@ -636,7 +981,7 @@ class ShowcaseV11Tests(unittest.TestCase):
 
     def test_showcase_rejects_unverified_or_cross_run_evidence_locks(self) -> None:
         benchmarks = canonical_benchmarks()
-        recommendation = canonical_recommendation(benchmarks)
+        recommendation = frozen_v11_recommendation(benchmarks)
         canonical = rendered_v11(
             data=benchmarks,
             profiles=False,

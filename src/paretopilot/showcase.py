@@ -23,7 +23,8 @@ import re
 from typing import Any
 from urllib.parse import urlsplit
 
-from paretopilot.domain import BenchmarkSet, Candidate, ValidationError
+from paretopilot.decision_passport import build_decision_passport
+from paretopilot.domain import BenchmarkSet, Candidate, Constraints, ValidationError
 from paretopilot.report_v11 import render_report_v11
 
 
@@ -563,6 +564,8 @@ def _label_interactive_regions(
 def _add_load_slo_reference(
     document: str,
     load_sweep: Mapping[str, Any] | None,
+    *,
+    synthetic: bool,
 ) -> str:
     if load_sweep is None:
         return document
@@ -614,15 +617,21 @@ def _add_load_slo_reference(
     old_description = (
         "Measured p95 end-to-end response latency as concurrent request count increases."
     )
+    display_description = (
+        "Synthetic fixture p95 end-to-end response latency as concurrent request count increases."
+        if synthetic
+        else old_description
+    )
     if threshold > y_domain_max:
         new_description = (
-            f"{old_description} The declared {_format_number(threshold, digits=0)} ms "
-            "latency ceiling is above the plotted measured range; a passing level must "
+            f"{display_description} The declared {_format_number(threshold, digits=0)} ms "
+            f"latency ceiling is above the plotted {'fixture' if synthetic else 'measured'} "
+            "range; a passing level must "
             "also satisfy the TTFT and completion-rate gates."
         )
     else:
         new_description = (
-            f"{old_description} The amber line marks the declared "
+            f"{display_description} The amber line marks the declared "
             f"{_format_number(threshold, digits=0)} ms latency ceiling; a passing level "
             "must also satisfy the TTFT and completion-rate gates."
         )
@@ -811,6 +820,7 @@ def _tolerance_visual(
         )
 
     direction_copy = "Lower is better" if direction == "min" else "Higher is better"
+    value_kind = "fixture" if benchmarks.synthetic else "measured"
     return (
         '<figure class="tolerance-visual" aria-labelledby="tolerance-visual-title">'
         '<div class="tolerance-visual-heading">'
@@ -825,9 +835,298 @@ def _tolerance_visual(
         f"<span>Cutoff · {_escape(_metric_value(metric, boundary))}</span>"
         f"<span>{'Slower' if direction == 'min' else 'Higher'}</span></div>"
         f'<ol class="tolerance-list">{"".join(row_markup)}</ol>'
-        "<figcaption>Marker positions show the measured objective values on one shared scale. "
+        f"<figcaption>Marker positions show the {value_kind} objective values on one shared scale. "
         "Exact values and decision roles remain in the evidence table below.</figcaption>"
         "</figure>"
+    )
+
+
+_ATTRIBUTION_STAGE_LABELS = {
+    "reference": "Reference",
+    "quantization": "Quantization",
+    "arm-kernel": "Arm kernel",
+    "runtime-tuning": "Runtime tuning",
+}
+_MEASURED_EFFECT_LABELS = {
+    "improved": "Measured improvement",
+    "tradeoff": "Measured tradeoff",
+    "changed": "Measured change",
+    "held": "Held",
+}
+_SYNTHETIC_EFFECT_LABELS = {
+    "improved": "Fixture improvement",
+    "tradeoff": "Fixture tradeoff",
+    "changed": "Fixture change",
+    "held": "Held",
+}
+
+
+def _decision_passport(
+    benchmarks: BenchmarkSet,
+    recommendation: Mapping[str, Any],
+) -> Mapping[str, Any]:
+    constraints = Constraints.from_mapping(
+        _mapping(recommendation.get("constraints"), "recommendation.constraints")
+    )
+    passport = _mapping(
+        build_decision_passport(benchmarks, constraints),
+        "decision passport",
+    )
+    selected = _mapping(passport.get("selected_decision"), "decision passport selected_decision")
+    if selected.get("candidate_id") != recommendation.get("selected_id"):
+        raise ValidationError(
+            "decision passport selected candidate does not match the supplied recommendation"
+        )
+    return passport
+
+
+def _stage_label(stage: Mapping[str, Any], *, synthetic: bool) -> str:
+    attribution_stage = stage.get("attribution_stage")
+    if stage.get("recognized_attribution_stage") is True:
+        label = _ATTRIBUTION_STAGE_LABELS.get(str(attribution_stage))
+        if label is not None:
+            return label
+    stage_kind = "Synthetic fixture" if synthetic else "Measured"
+    return f"{stage_kind} stage {stage.get('stage')}"
+
+
+def _change_phrase(metric: str, change: Mapping[str, Any]) -> str:
+    raw_percent = change.get("percent")
+    if isinstance(raw_percent, (int, float)) and not isinstance(raw_percent, bool):
+        percent = float(raw_percent)
+        if not math.isfinite(percent):
+            raise ValidationError("decision passport change percent must be finite")
+        if math.isclose(percent, 0.0, rel_tol=1e-9, abs_tol=1e-12):
+            return "held"
+        direction = "lower" if percent < 0 else "higher"
+        return f"{_format_number(abs(percent), digits=2)}% {direction}"
+
+    previous = change.get("previous")
+    current = change.get("current")
+    if (
+        isinstance(previous, (int, float))
+        and not isinstance(previous, bool)
+        and isinstance(current, (int, float))
+        and not isinstance(current, bool)
+    ):
+        return (
+            f"{_metric_value(metric, float(previous))} to {_metric_value(metric, float(current))}"
+        )
+    raise ValidationError("decision passport change is missing comparable metric values")
+
+
+def _representative_changes(
+    stage: Mapping[str, Any],
+    *,
+    objective_metric: str,
+) -> tuple[Mapping[str, Any], ...]:
+    raw_delta = stage.get("delta_from_previous")
+    if raw_delta is None:
+        return ()
+    delta = _mapping(raw_delta, "decision passport ladder delta")
+    raw_metrics = delta.get("metrics")
+    if not isinstance(raw_metrics, Sequence) or isinstance(raw_metrics, (str, bytes)):
+        raise ValidationError("decision passport ladder metrics must be an array")
+
+    changes: list[Mapping[str, Any]] = []
+    for raw_change in raw_metrics:
+        change = _mapping(raw_change, "decision passport ladder metric")
+        if change.get("effect") == "held":
+            continue
+        raw_percent = change.get("percent")
+        if raw_percent is not None and (
+            isinstance(raw_percent, bool)
+            or not isinstance(raw_percent, (int, float))
+            or not math.isfinite(float(raw_percent))
+        ):
+            raise ValidationError("decision passport ladder metric percent must be finite")
+        changes.append(change)
+
+    def magnitude(change: Mapping[str, Any]) -> tuple[float, str]:
+        raw_percent = change.get("percent")
+        percent = abs(float(raw_percent)) if raw_percent is not None else -1.0
+        return (-percent, str(change.get("metric")))
+
+    objective_changes = [
+        change for change in changes if str(change.get("metric")) == objective_metric
+    ]
+    other_changes = [change for change in changes if str(change.get("metric")) != objective_metric]
+    ordered = objective_changes[:1] + sorted(other_changes, key=magnitude)
+    return tuple(ordered[:3])
+
+
+def _optimization_ladder_markup(passport: Mapping[str, Any]) -> str:
+    objective = _mapping(passport.get("objective"), "decision passport objective")
+    selected = _mapping(
+        passport.get("selected_decision"),
+        "decision passport selected_decision",
+    )
+    raw_ladder = passport.get("ladder")
+    if not isinstance(raw_ladder, Sequence) or isinstance(raw_ladder, (str, bytes)):
+        raise ValidationError("decision passport ladder must be an array")
+    if not raw_ladder:
+        raise ValidationError("decision passport ladder must contain at least one stage")
+
+    evidence_grade = str(passport.get("evidence_grade"))
+    synthetic_evidence = evidence_grade == "synthetic"
+    stage_count = len(raw_ladder)
+    stage_count_label = {
+        1: "One",
+        2: "Two",
+        3: "Three",
+        4: "Four",
+        5: "Five",
+        6: "Six",
+    }.get(stage_count, str(stage_count))
+    stage_noun = "stage" if stage_count == 1 else "stages"
+    stage_heading = f"{stage_count_label} {stage_noun}. One honest runway."
+    path_label = "Synthetic fixture path" if synthetic_evidence else "Measured optimization path"
+    candidate_kind = "synthetic" if synthetic_evidence else "measured"
+    effect_labels = _SYNTHETIC_EFFECT_LABELS if synthetic_evidence else _MEASURED_EFFECT_LABELS
+    stages_label = (
+        "Synthetic fixture optimization stages"
+        if synthetic_evidence
+        else "Measured optimization stages"
+    )
+    metric = str(objective.get("metric"))
+    direction = str(objective.get("direction"))
+    boundary = float(objective.get("shortlist_boundary"))
+    selected_runway = _mapping(
+        objective.get("selected_runway"),
+        "decision passport selected runway",
+    )
+    runway_value = float(selected_runway.get("absolute"))
+    cutoff_symbol = "≤" if direction == "min" else "≥"
+    runway_text = (
+        "on the current cutoff"
+        if math.isclose(runway_value, 0.0, rel_tol=1e-9, abs_tol=1e-12)
+        else f"{_metric_value(metric, runway_value)} inside the current cutoff"
+    )
+
+    raw_closest = passport.get("closest_outside_shortlist")
+    closest = (
+        _mapping(raw_closest, "decision passport closest outside shortlist")
+        if raw_closest is not None
+        else None
+    )
+    closest_id = str(closest.get("candidate_id")) if closest is not None else None
+    if closest is None:
+        closest_markup = (
+            "<div><dt>Closest outside-shortlist stage</dt>"
+            "<dd>Every frontier stage is inside the current shortlist.</dd></div>"
+        )
+    else:
+        shortfall = _mapping(
+            closest.get("shortfall_to_shortlist"),
+            "decision passport shortlist shortfall",
+        )
+        closest_markup = (
+            "<div><dt>Closest outside-shortlist stage</dt>"
+            f"<dd>{_escape(closest.get('label'))}"
+            f"<span>{_escape(_metric_value(metric, float(shortfall.get('absolute'))))} "
+            "outside the current cutoff</span></dd></div>"
+        )
+
+    stage_markup: list[str] = []
+    for raw_stage in raw_ladder:
+        stage = _mapping(raw_stage, "decision passport ladder stage")
+        candidate_id = str(stage.get("candidate_id"))
+        stage_number = int(stage.get("stage"))
+        stage_classes = ["optimization-stage"]
+        if stage.get("selected") is True:
+            stage_classes.append("is-selected")
+            decision_label = "Canonical selected stage"
+        elif candidate_id == closest_id:
+            stage_classes.append("is-closest")
+            decision_label = "Closest outside shortlist"
+        elif stage.get("shortlisted") is True:
+            decision_label = "Inside current shortlist"
+        elif stage.get("eligible") is True and stage.get("frontier") is True:
+            decision_label = "Eligible frontier stage"
+        elif stage.get("eligible") is True:
+            decision_label = f"Eligible {candidate_kind} stage"
+        else:
+            decision_label = "Outside declared constraints"
+
+        objective_value = stage.get("objective_value")
+        objective_text = (
+            _metric_value(metric, float(objective_value))
+            if isinstance(objective_value, (int, float)) and not isinstance(objective_value, bool)
+            else "Unavailable"
+        )
+        changes = _representative_changes(stage, objective_metric=metric)
+        if changes:
+            change_items = []
+            for change in changes:
+                change_metric = str(change.get("metric"))
+                effect = str(change.get("effect"))
+                effect_label = effect_labels.get(
+                    effect,
+                    "Fixture change" if synthetic_evidence else "Measured change",
+                )
+                change_items.append(
+                    f'<li class="is-{_escape(effect)}">'
+                    f"<span>{_escape(_metric_label(change_metric))}</span>"
+                    f"<strong>{_escape(_change_phrase(change_metric, change))}</strong>"
+                    f"<em>{_escape(effect_label)}</em></li>"
+                )
+            changes_markup = (
+                f'<ul class="stage-changes" aria-label="Largest {candidate_kind} changes from the '
+                f'previous stage">{"".join(change_items)}</ul>'
+            )
+        else:
+            reference_kind = "fixture" if synthetic_evidence else "measurement"
+            changes_markup = (
+                f'<p class="stage-reference-note">Reference {reference_kind} for every later '
+                "stage-to-stage comparison.</p>"
+            )
+
+        stage_markup.append(
+            f'<li class="{" ".join(stage_classes)}">'
+            f'<span class="stage-marker" aria-hidden="true">{stage_number:02d}</span>'
+            '<div class="stage-body">'
+            f'<p class="stage-role">{_escape(_stage_label(stage, synthetic=synthetic_evidence))}</p>'
+            f"<h3>{_escape(stage.get('label'))}</h3>"
+            f'<code class="stage-id">{_escape(candidate_id)}</code>'
+            f'<span class="stage-decision-label">{_escape(decision_label)}</span>'
+            '<p class="stage-objective">'
+            f"<span>{_escape(_metric_label(metric))}</span>"
+            f"<strong>{_escape(objective_text)}"
+            "</strong></p>"
+            f"{changes_markup}</div></li>"
+        )
+
+    method = _mapping(passport.get("method"), "decision passport method")
+    boundary_caveat = str(method.get("current_boundary_caveat"))
+    return (
+        '<section id="optimization-ladder" class="optimization-ladder" '
+        'aria-labelledby="optimization-ladder-heading">'
+        '<div class="optimization-ladder-inner">'
+        '<header class="optimization-ladder-heading">'
+        f'<div class="section-title"><p class="section-kicker">00 · {_escape(path_label)}</p>'
+        f'<h2 id="optimization-ladder-heading">{_escape(stage_heading)}</h2>'
+        '</div><div class="ladder-intro-copy">'
+        "<p>Each stop comes from the deterministic decision passport. Its highlighted changes "
+        f"compare that {candidate_kind} candidate with the previous stage; the objective is "
+        "always shown."
+        '</p><p class="ladder-evidence-grade"><span>Evidence grade</span>'
+        f"<strong>{_escape(evidence_grade)}</strong></p></div></header>"
+        '<div class="ladder-runway" role="group" aria-label="Honest runway to the current cutoff">'
+        '<p class="runway-call-sign">Current objective runway</p><dl>'
+        "<div><dt>Current shortlist cutoff</dt>"
+        f"<dd>{_escape(cutoff_symbol)} {_escape(_metric_value(metric, boundary))}"
+        f"<span>{_escape(_metric_label(metric))}</span></dd></div>"
+        "<div><dt>Canonical selected stage</dt>"
+        f"<dd>{_escape(selected.get('label'))}"
+        f"<span>{_escape(runway_text)}</span></dd></div>"
+        f"{closest_markup}</dl></div>"
+        f'<ol class="optimization-stages" style="--stage-count: {stage_count}" '
+        f'aria-label="{_escape(stages_label)}">'
+        f"{''.join(stage_markup)}</ol>"
+        '<p class="optimization-ladder-caveat"><strong>Decision boundary:</strong> '
+        "This derived attribution view does not recalculate or replace the canonical decision. "
+        f"{_escape(boundary_caveat)}</p>"
+        "</div></section>\n"
     )
 
 
@@ -847,11 +1146,12 @@ def _hero_markup(
     metric = str(objective.get("metric"))
     selected_value = float(selected.metrics[metric])
 
+    candidate_kind = "synthetic fixture" if benchmarks.synthetic else "measured"
     provenance_items = [
         f"{'Canonical' if proof else 'Source'} run {source['run_id']}",
         source["cpu"],
         f"{source['cpu_count']} {source['architecture']} vCPUs",
-        f"{len(benchmarks.candidates)} measured candidates",
+        f"{len(benchmarks.candidates)} {candidate_kind} candidates",
     ]
     if proof:
         provenance_items.extend(
@@ -867,8 +1167,15 @@ def _hero_markup(
     )
 
     headline = (
-        "<h1>Choose the Arm64 deployment that "
-        '<span class="hero-selection">survives the evidence.</span></h1>\n'
+        (
+            "<h1>Explore the deployment decision that "
+            '<span class="hero-selection">survives the fixture.</span></h1>\n'
+        )
+        if benchmarks.synthetic
+        else (
+            "<h1>Choose the Arm64 deployment that "
+            '<span class="hero-selection">survives the evidence.</span></h1>\n'
+        )
     )
     evidence_copy = (
         "This presentation view is derived from the byte-verified, locked v1.1 evidence."
@@ -878,10 +1185,14 @@ def _hero_markup(
             "canonical report was supplied."
         )
     )
+    study_verb = "evaluated"
+    study_kind = "synthetic fixture" if benchmarks.synthetic else "Arm64"
+    if not benchmarks.synthetic:
+        study_verb = "measured"
     lede = (
-        f'<p class="report-lede">ParetoPilot measured {len(benchmarks.candidates)} Arm64 '
-        f"configurations and retained {_escape(selected.label)} after quality, Pareto-frontier, "
-        f"and {_escape(_metric_label(metric))} checks. "
+        f'<p class="report-lede">ParetoPilot {study_verb} {len(benchmarks.candidates)} '
+        f"{study_kind} configurations and retained {_escape(selected.label)} after quality, "
+        f"Pareto-frontier, and {_escape(_metric_label(metric))} checks. "
         f"{_escape(evidence_copy)}</p>\n"
     )
     decision_rail = (
@@ -893,6 +1204,11 @@ def _hero_markup(
         "</dl>\n"
     )
     actions = [
+        (
+            "#optimization-ladder",
+            "Trace the optimization ladder",
+            "secondary",
+        ),
         (
             "https://github.com/agrovr/ParetoPilot/blob/main/docs/github-action.md",
             "Use the GitHub Action",
@@ -913,7 +1229,7 @@ def _hero_markup(
             ),
             (
                 proof["release_url"],
-                f"Download {proof['release_tag']} evidence",
+                f"Open {proof['release_tag']} evidence release",
                 "secondary",
             ),
         )
@@ -926,6 +1242,7 @@ def _hero_markup(
         + "</nav>\n"
     )
     section_links = (
+        ("optimization-ladder", "00", "Optimize"),
         ("why-heading", "01", "Decision"),
         ("tradeoffs-heading", "02", "Tradeoffs"),
         ("policies-heading", "03", "Policies"),
@@ -944,7 +1261,12 @@ def _hero_markup(
         )
         + "</ol></nav>\n"
     )
-    return provenance, headline + lede, decision_rail + action_markup + flight_log
+    hero = (
+        '<div class="hero-layout"><div class="hero-headline">'
+        f"{headline}</div>"
+        f'<div class="hero-proof">{lede}{decision_rail}{action_markup}</div></div>\n'
+    )
+    return provenance, hero, flight_log
 
 
 _SHOWCASE_CSS = r"""
@@ -1153,6 +1475,9 @@ html[data-theme="dark"] .showcase {
   line-height: .95;
   letter-spacing: -.035em;
 }
+.showcase .hero-layout { width: 100%; }
+.showcase .hero-headline,
+.showcase .hero-proof { min-width: 0; }
 .showcase .hero-selection { color: var(--flight-hero-accent); }
 .showcase .report-lede {
   max-width: 58ch;
@@ -1270,6 +1595,250 @@ html[data-theme="dark"] .showcase {
   max-width: none;
   margin: 0;
 }
+.showcase .optimization-ladder {
+  width: 100%;
+  padding: clamp(3.6rem, 7vw, 6.4rem) 0;
+  border-block: 1px solid var(--flight-panel-line);
+  background: var(--flight-panel);
+  color: var(--flight-on-dark);
+}
+.showcase .optimization-ladder-inner {
+  width: min(calc(100% - 2rem), 78rem);
+  margin-inline: auto;
+}
+.showcase .optimization-ladder-heading {
+  display: grid;
+  gap: .8rem 2.5rem;
+  align-items: end;
+  margin-bottom: 2.2rem;
+}
+.showcase .optimization-ladder .section-kicker {
+  color: var(--flight-hero-accent);
+}
+.showcase .optimization-ladder-heading h2 {
+  max-width: 15ch;
+  color: var(--flight-white);
+  font-size: clamp(2.2rem, 5vw, 3.8rem);
+  line-height: .98;
+}
+.showcase .ladder-intro-copy > p {
+  max-width: 62ch;
+  margin: 0;
+  color: var(--flight-on-dark-muted);
+  font-size: 1.03rem;
+}
+.showcase .ladder-intro-copy > .ladder-evidence-grade {
+  display: flex;
+  flex-wrap: wrap;
+  gap: .35rem .65rem;
+  align-items: baseline;
+  margin-top: .85rem;
+  font-size: .76rem;
+}
+.showcase .ladder-evidence-grade span {
+  font-family: "SFMono-Regular", Consolas, "Liberation Mono", monospace;
+  font-size: .7rem;
+  font-weight: 800;
+  letter-spacing: .04em;
+  text-transform: uppercase;
+}
+.showcase .ladder-evidence-grade strong {
+  color: var(--flight-hero-accent);
+  font-weight: 780;
+}
+.showcase .ladder-runway {
+  margin-bottom: 2.6rem;
+  border-block: 1px solid var(--flight-panel-line);
+}
+.showcase .runway-call-sign {
+  margin: 0;
+  padding: .72rem 0;
+  color: var(--flight-hero-accent);
+  font-family: "SFMono-Regular", Consolas, "Liberation Mono", monospace;
+  font-size: .72rem;
+  font-weight: 800;
+  letter-spacing: .055em;
+  text-transform: uppercase;
+}
+.showcase .ladder-runway dl {
+  display: grid;
+  margin: 0;
+  border-top: 1px solid var(--flight-panel-line);
+}
+.showcase .ladder-runway dl > div {
+  min-width: 0;
+  padding: 1rem 0;
+}
+.showcase .ladder-runway dl > div + div {
+  border-top: 1px solid var(--flight-panel-line);
+}
+.showcase .ladder-runway dt {
+  color: var(--flight-on-dark-muted);
+  font-size: .75rem;
+  font-weight: 700;
+  letter-spacing: .035em;
+  text-transform: uppercase;
+}
+.showcase .ladder-runway dd {
+  margin: .3rem 0 0;
+  color: var(--flight-white);
+  font-size: 1.02rem;
+  font-weight: 780;
+}
+.showcase .ladder-runway dd span {
+  display: block;
+  margin-top: .3rem;
+  color: var(--flight-on-dark-muted);
+  font-size: .82rem;
+  font-weight: 600;
+}
+.showcase .optimization-stages {
+  position: relative;
+  display: grid;
+  gap: 2rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.showcase .optimization-stages::before {
+  position: absolute;
+  z-index: 0;
+  top: 1.5rem;
+  bottom: 1.5rem;
+  left: 1.45rem;
+  border-left: 2px dashed var(--flight-control-border);
+  content: "";
+}
+.showcase .optimization-stage {
+  position: relative;
+  z-index: 1;
+  display: grid;
+  grid-template-columns: 3rem minmax(0, 1fr);
+  gap: 1rem;
+  min-width: 0;
+}
+.showcase .stage-marker {
+  display: grid;
+  width: 3rem;
+  height: 3rem;
+  place-items: center;
+  border: 2px solid var(--flight-control-border);
+  background: var(--flight-panel);
+  color: var(--flight-on-dark-muted);
+  font-family: "SFMono-Regular", Consolas, "Liberation Mono", monospace;
+  font-size: .75rem;
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+}
+.showcase .optimization-stage.is-selected .stage-marker {
+  border-color: var(--flight-hero-accent);
+  background: var(--flight-hero-accent);
+  color: var(--flight-on-light);
+}
+.showcase .optimization-stage.is-closest .stage-marker {
+  border-color: var(--flight-focus-inverse);
+  color: var(--flight-focus-inverse);
+}
+.showcase .stage-body {
+  min-width: 0;
+  padding-bottom: .2rem;
+}
+.showcase .stage-role {
+  margin: 0 0 .35rem;
+  color: var(--flight-hero-accent);
+  font-size: .78rem;
+  font-weight: 780;
+}
+.showcase .stage-body h3 {
+  max-width: 20ch;
+  margin: 0;
+  color: var(--flight-white);
+  font-size: clamp(1.18rem, 2vw, 1.45rem);
+  line-height: 1.08;
+}
+.showcase .stage-id {
+  display: block;
+  margin-top: .45rem;
+  color: var(--flight-on-dark-muted);
+  font-size: .72rem;
+  overflow-wrap: anywhere;
+}
+.showcase .stage-decision-label {
+  display: inline-block;
+  margin-top: .75rem;
+  padding: .3rem .45rem;
+  border: 1px solid var(--flight-control-border);
+  color: var(--flight-on-dark-muted);
+  font-size: .72rem;
+  font-weight: 760;
+}
+.showcase .is-selected .stage-decision-label {
+  border-color: var(--flight-hero-accent);
+  background: var(--flight-hero-accent);
+  color: var(--flight-on-light);
+}
+.showcase .is-closest .stage-decision-label {
+  border-color: var(--flight-focus-inverse);
+  color: var(--flight-focus-inverse);
+}
+.showcase .stage-objective {
+  display: grid;
+  gap: .2rem;
+  margin: 1rem 0 0;
+  padding-block: .75rem;
+  border-block: 1px solid var(--flight-panel-line);
+}
+.showcase .stage-objective span {
+  color: var(--flight-on-dark-muted);
+  font-size: .75rem;
+}
+.showcase .stage-objective strong {
+  color: var(--flight-white);
+  font-size: 1.05rem;
+  font-variant-numeric: tabular-nums;
+}
+.showcase .stage-changes {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.showcase .stage-changes li {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: .22rem .6rem;
+  padding: .68rem 0;
+  border-bottom: 1px solid var(--flight-panel-line);
+}
+.showcase .stage-changes span {
+  color: var(--flight-on-dark-muted);
+  font-size: .76rem;
+}
+.showcase .stage-changes strong {
+  color: var(--flight-white);
+  font-size: .82rem;
+  font-variant-numeric: tabular-nums;
+}
+.showcase .stage-changes em {
+  grid-column: 1 / -1;
+  color: var(--flight-on-dark-muted);
+  font-size: .7rem;
+  font-style: normal;
+}
+.showcase .stage-changes .is-improved em { color: var(--flight-hero-accent); }
+.showcase .stage-changes .is-tradeoff em { color: var(--flight-focus-inverse); }
+.showcase .stage-reference-note {
+  margin: .8rem 0 0;
+  color: var(--flight-on-dark-muted);
+  font-size: .8rem;
+}
+.showcase .optimization-ladder-caveat {
+  margin: 2.25rem 0 0;
+  padding-top: 1rem;
+  border-top: 1px solid var(--flight-panel-line);
+  color: var(--flight-on-dark-muted);
+  font-size: .85rem;
+}
+.showcase .optimization-ladder-caveat strong { color: var(--flight-white); }
 .showcase .report-section {
   width: min(calc(100% - 2rem), 78rem);
   margin-inline: auto;
@@ -1341,7 +1910,7 @@ html[data-theme="dark"] .showcase {
 .showcase .tolerance-list { margin: 0; padding: 0; list-style: none; }
 .showcase .tolerance-row {
   display: grid;
-  grid-template-columns: minmax(13rem, 1.05fr) minmax(15rem, 2fr) minmax(7rem, .65fr);
+  grid-template-columns: minmax(0, 1.05fr) minmax(0, 2fr) minmax(0, .65fr);
   gap: 1rem;
   align-items: center;
   min-height: 4.15rem;
@@ -1576,12 +2145,21 @@ html[data-theme="dark"] .showcase {
 .showcase .profile-tabs button[aria-selected="true"]:focus-visible {
   outline-color: var(--flight-focus-inverse);
 }
+.showcase .profile-tabs[data-overflow="fit"] { overflow-x: clip; }
 .showcase .profile-panel {
   padding-top: 2rem;
   border-bottom: 2px solid var(--flight-ink);
 }
-.showcase .profile-metrics { border-color: var(--flight-line-strong); }
+.showcase .profile-metrics {
+  min-width: 0;
+  border-color: var(--flight-line-strong);
+}
 .showcase .profile-metrics li { border-color: var(--flight-line); }
+.showcase .profile-metrics span,
+.showcase .profile-metrics strong {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
 .showcase .profile-metrics span { color: var(--flight-text-subtle); }
 .showcase .series-key-wrap {
   margin: 1.2rem 0;
@@ -1831,6 +2409,36 @@ html[data-theme="dark"] .showcase {
   color: var(--flight-on-dark-muted);
 }
 @media (min-width: 48rem) {
+  .showcase .optimization-ladder-heading {
+    grid-template-columns: minmax(0, .8fr) minmax(0, 1.2fr);
+  }
+  .showcase .ladder-runway dl {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+  .showcase .ladder-runway dl > div {
+    padding: 1rem;
+  }
+  .showcase .ladder-runway dl > div:first-child { padding-left: 0; }
+  .showcase .ladder-runway dl > div + div {
+    border-top: 0;
+    border-left: 1px solid var(--flight-panel-line);
+  }
+  .showcase .optimization-stages {
+    grid-template-columns: repeat(var(--stage-count, 4), minmax(0, 1fr));
+    gap: 1.25rem;
+  }
+  .showcase .optimization-stages::before {
+    top: 1.45rem;
+    right: 1.5rem;
+    bottom: auto;
+    left: 1.5rem;
+    border-top: 2px dashed var(--flight-control-border);
+    border-left: 0;
+  }
+  .showcase .optimization-stage {
+    display: block;
+  }
+  .showcase .stage-body { margin-top: 1rem; }
   .showcase .decision-rail { grid-template-columns: repeat(4, minmax(0, 1fr)); }
   .showcase .decision-rail div + div {
     padding-left: 1rem;
@@ -1839,17 +2447,55 @@ html[data-theme="dark"] .showcase {
   .showcase .flight-log ol { grid-template-columns: repeat(4, minmax(0, 1fr)); }
   .showcase .verdict-column { padding: 1.75rem; }
   .showcase .section-heading {
-    grid-template-columns: minmax(15rem, .65fr) minmax(22rem, 1.35fr);
+    grid-template-columns: minmax(0, .65fr) minmax(0, 1.35fr);
     align-items: end;
   }
   .showcase .tolerance-visual-heading {
-    grid-template-columns: minmax(15rem, .8fr) minmax(22rem, 1.2fr);
+    grid-template-columns: minmax(0, .8fr) minmax(0, 1.2fr);
+  }
+  .showcase .why-layout {
+    grid-template-columns: minmax(0, .72fr) minmax(0, 1.28fr);
+  }
+  .showcase .profile-panel {
+    grid-template-columns: minmax(0, 1.2fr) minmax(0, .8fr);
   }
 }
-@media (min-width: 68rem) {
-  .showcase .profile-tabs {
-    overflow-x: clip;
+@media (min-width: 52rem) {
+  .showcase .tradeoff-row {
+    grid-template-columns:
+      minmax(0, 1.1fr)
+      minmax(0, .8fr)
+      4.5rem
+      minmax(0, .8fr)
+      minmax(0, 1fr);
   }
+}
+@media (min-width: 64rem) {
+  .showcase .hero-layout {
+    display: grid;
+    width: 100%;
+    max-width: 78rem;
+    margin-inline: auto;
+    grid-template-columns: minmax(0, 1.08fr) minmax(0, .92fr);
+    gap: clamp(2.5rem, 5vw, 5.5rem);
+    align-items: start;
+  }
+  .showcase .hero-proof { padding-top: .35rem; }
+  .showcase .hero-proof .report-lede { margin-top: 0; }
+  .showcase .hero-proof .decision-rail {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    margin-top: 1.5rem;
+  }
+  .showcase .hero-proof .decision-rail div:nth-child(3) {
+    padding-left: 0;
+    border-left: 0;
+  }
+  .showcase .hero-proof .decision-rail div:nth-child(n + 3) {
+    border-top: 1px solid var(--flight-panel-line);
+  }
+  .showcase .flight-log { margin-top: 2rem; }
+}
+@media (min-width: 68rem) {
   .showcase .load-context-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
@@ -1876,6 +2522,12 @@ html[data-theme="dark"] .showcase {
   .showcase .provenance-strip li + li::before { content: none; }
   .showcase .brand-line { margin: 1.6rem 0 2.4rem; }
   .showcase h1 { font-size: clamp(3rem, 15vw, 4.5rem); }
+  .showcase .optimization-ladder-inner {
+    width: min(calc(100% - 2rem), 78rem);
+  }
+  .showcase .optimization-stages {
+    grid-template-columns: 1fr;
+  }
   .showcase .decision-rail div:nth-child(odd) { padding-left: 0; border-left: 0; }
   .showcase .decision-rail div:nth-child(even) { padding-left: .85rem; }
   .showcase .verdict-layout { margin-top: 2rem; }
@@ -1939,6 +2591,7 @@ html[data-theme="dark"] .showcase {
     --flight-cyan: #246f91;
   }
   .showcase .report-header,
+  .showcase .optimization-ladder,
   .showcase .trust-section,
   .showcase .report-footer {
     background: var(--flight-white);
@@ -1953,10 +2606,32 @@ html[data-theme="dark"] .showcase {
   .showcase .hero-actions { display: none; }
   .showcase .theme-toggle { display: none; }
   .showcase .report-header *,
+  .showcase .optimization-ladder *,
   .showcase .trust-section *,
   .showcase .report-footer *,
   .showcase .canonical-column * {
     color: var(--flight-ink) !important;
+  }
+  .showcase .optimization-ladder {
+    padding-block: 1.5rem;
+    border-color: var(--flight-ink);
+  }
+  .showcase .optimization-ladder-heading {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .showcase .optimization-stages {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .showcase .optimization-stages::before { display: none; }
+  .showcase .stage-marker,
+  .showcase .optimization-stage.is-selected .stage-marker {
+    border-color: var(--flight-ink);
+    background: var(--flight-white);
+  }
+  .showcase .stage-decision-label,
+  .showcase .is-selected .stage-decision-label {
+    border-color: var(--flight-ink);
+    background: var(--flight-white);
   }
   .showcase .flight-log { display: none; }
   .showcase .data-disclosure:not([open]) > :not(summary),
@@ -2061,7 +2736,27 @@ _SHOWCASE_SCRIPT = r"""
       });
     }
     const tabs = Array.from(document.querySelectorAll("[data-profile-target]"));
+    const tablist = document.querySelector(".profile-tabs");
+    const syncTabOverflow = () => {
+      if (!tablist) return;
+      const overflows = tablist.scrollWidth > tablist.clientWidth + 1;
+      tablist.dataset.overflow = overflows ? "scroll" : "fit";
+    };
+    syncTabOverflow();
+    if (tablist && typeof window.ResizeObserver === "function") {
+      const overflowObserver = new window.ResizeObserver(syncTabOverflow);
+      overflowObserver.observe(tablist);
+      for (const tab of tabs) overflowObserver.observe(tab);
+    } else {
+      window.addEventListener("resize", syncTabOverflow);
+    }
     for (const tab of tabs) {
+      tab.addEventListener("click", () => {
+        window.requestAnimationFrame(() => {
+          tab.scrollIntoView({ block: "nearest", inline: "nearest" });
+          syncTabOverflow();
+        });
+      });
       tab.addEventListener("keydown", (event) => {
         if (event.key !== "Home" && event.key !== "End") return;
         event.preventDefault();
@@ -2129,6 +2824,8 @@ def render_showcase_v11(
         load_sha256=load_sha256,
         stability_sha256=stability_sha256,
     )
+    passport = _decision_passport(benchmarks, recommendation)
+    optimization_ladder = _optimization_ladder_markup(passport)
     provenance, hero, hero_tail = _hero_markup(
         benchmarks,
         recommendation,
@@ -2173,10 +2870,15 @@ def render_showcase_v11(
     )
     if brand_control_count != 1:
         raise ValidationError("canonical brand line is missing")
+    document_title = (
+        "<title>ParetoPilot | synthetic decision preview</title>"
+        if benchmarks.synthetic
+        else "<title>ParetoPilot | Arm64 measured flight log</title>"
+    )
     document = _replace_once(
         document,
         "<title>ParetoPilot v1.1 deployment decision report</title>",
-        "<title>ParetoPilot | Arm64 measured flight log</title>",
+        document_title,
         "document title",
     )
     meta_description = (
@@ -2230,6 +2932,12 @@ def render_showcase_v11(
     )
     document = _replace_once(
         document,
+        '<main id="main-content" class="report-main">\n',
+        (f'<main id="main-content" class="report-main">\n{optimization_ladder}'),
+        "optimization ladder",
+    )
+    document = _replace_once(
+        document,
         '<div class="why-layout">',
         f'{tolerance}<div class="why-layout">',
         "objective tolerance layout",
@@ -2263,7 +2971,11 @@ def render_showcase_v11(
         document = _wrap_table_region(
             document,
             aria_label="Scrollable load sweep evidence",
-            summary="Inspect every measured load row",
+            summary=(
+                "Inspect every synthetic fixture load row"
+                if benchmarks.synthetic
+                else "Inspect every measured load row"
+            ),
         )
     if stability_summary is not None:
         document = _wrap_table_region(
@@ -2272,7 +2984,11 @@ def render_showcase_v11(
             summary="Inspect pass-level values and deltas",
         )
     document = _correct_load_axis_ceilings(document, load_sweep)
-    document = _add_load_slo_reference(document, load_sweep)
+    document = _add_load_slo_reference(
+        document,
+        load_sweep,
+        synthetic=benchmarks.synthetic,
+    )
     document = _add_stability_explainer(document, stability_summary)
     document = _label_interactive_regions(document, benchmarks, load_sweep)
     document = _replace_once(
@@ -2289,13 +3005,14 @@ def render_showcase_v11(
         "candidate evidence table",
     )
     document = _add_release_hashes(document, proof)
+    scatter_kind = "synthetic fixture" if benchmarks.synthetic else "measured"
     document = document.replace(
         (
             "Each labeled point is one measured candidate. Left is lower p95 end-to-end "
             "latency; higher is greater generation throughput."
         ),
         (
-            "Each point is one measured candidate; the candidate legend carries the full "
+            f"Each point is one {scatter_kind} candidate; the candidate legend carries the full "
             "names. Left is lower p95 end-to-end latency; higher is greater generation "
             "throughput."
         ),

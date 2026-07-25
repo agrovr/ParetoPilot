@@ -8,12 +8,39 @@ I designed and built ParetoPilot as a solo Cloud AI entry for the Arm AI Optimiz
 Arm Performix is an optional profiling enhancement; it is not required by the product or its
 evidence pipeline.
 
+The reusable tool is now version 1.2.0. The canonical Arm64 evidence remains frozen at v1.1.0,
+so the new Decision Passport and presentation layer cannot rewrite the measured result.
+
 [Live evidence showcase](https://agrovr.github.io/ParetoPilot/) |
 [Exact canonical v1.1 report](https://agrovr.github.io/ParetoPilot/evidence/report-v1.1.html) |
 [Canonical v1.1 result](results/published/30055662526/README.md) |
 [Complete v1.1 evidence](https://github.com/agrovr/ParetoPilot/releases/tag/v1.1.0) |
 [CI decision gate](docs/github-action.md) |
 [Reproduction guide](docs/reproducibility.md)
+
+## 60-second judge path
+
+1. **See the measured decision.** Start with the
+   [optimization ladder](https://agrovr.github.io/ParetoPilot/#optimization-ladder) to see why the
+   measured baseline remained the deployment choice and where each optimization helped.
+2. **See the reusable gate pass.**
+   Open the
+   [latest green main-branch CI run](https://github.com/agrovr/ParetoPilot/actions/workflows/ci.yml?query=branch%3Amain)
+   and inspect `action-smoke`, which exercises the four-artifact composite Action contract and its
+   fail-closed measured-evidence guard.
+3. **Try the engine locally.** After the short installation below, run this deliberately synthetic
+   software smoke test:
+
+```bash
+python -m paretopilot ci-gate examples/synthetic-results.json \
+  --constraints configs/constraints.example.json \
+  --output-dir paretopilot-output \
+  --allow-synthetic \
+  --expect-selected-id q4-kleidiai
+```
+
+The fixture demonstrates the decision workflow only. It is explicitly synthetic and is not Arm64
+benchmark evidence.
 
 The Pages homepage is a judge-facing presentation of the locked v1.1 inputs. Pages generates it
 only after verifying the pinned v1.1.0 release, replaying every authoritative output, and matching
@@ -31,7 +58,8 @@ into an inspectable deployment decision:
 2. reject configurations that miss declared quality or resource limits;
 3. compute the non-dominated candidates across latency, throughput, memory, size, and quality;
 4. select against a declared objective and practical-effect tolerance; and
-5. export deterministic JSON recommendations and a self-contained HTML report.
+5. export deterministic recommendations, an Arm64 decision passport, and a self-contained HTML
+   report.
 
 The baseline is allowed to win. An honest no-change result is more useful than extra deployment
 complexity when the measured alternatives do not improve the declared objective.
@@ -45,7 +73,7 @@ compared four configurations in balanced order from commit
 
 | Candidate | E2E p95 | TTFT p95 | Prompt tok/s | Generation tok/s | Peak RSS | Model size | Quality |
 | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
-| **Q8 generic reference** | **2231.933 ms** | 545.374 ms | 102.6185 | **38.7265** | 3437.598 MiB | 1806.767 MiB | **21/24** |
+| **Q8 generic reference** | **2231.933 ms** | 545.374 ms | 102.6185 | **38.7264** | 3437.598 MiB | 1806.767 MiB | **21/24** |
 | Q4 generic | 2311.125 ms | 483.113 ms | 113.8210 | 35.0124 | **1966.473 MiB** | **1016.834 MiB** | 20/24 |
 | Q4 + KleidiAI | 2299.454 ms | 470.402 ms | 114.4480 | 35.3764 | 1966.484 MiB | **1016.834 MiB** | 20/24 |
 | Q4 + KleidiAI tuned | 2307.715 ms | **469.968 ms** | **131.4565** | 35.0959 | 1966.480 MiB | **1016.834 MiB** | 20/24 |
@@ -129,8 +157,8 @@ as Arm64 benchmark evidence.
 ## Use it as a CI decision gate
 
 ParetoPilot includes a composite GitHub Action that validates inputs, generates a machine-readable
-recommendation and self-contained report, publishes SHA-256 receipts, and can fail a deployment
-job when the selected candidate changes unexpectedly:
+recommendation, supplementary decision passport, and self-contained report, publishes SHA-256
+receipts, and can fail a deployment job when the selected candidate changes unexpectedly:
 
 ```yaml
 - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
@@ -142,10 +170,14 @@ job when the selected candidate changes unexpectedly:
     benchmarks: benchmarks/benchmark-set.json
     constraints: constraints/deployment.json
     expected-selected-id: q4-kleidiai
+    require-arm64-provenance: "true"
 ```
 
-Measured evidence is required by default. Synthetic inputs must be explicitly allowed for smoke
-testing, so a fixture cannot silently pass as deployment proof. See the
+Measured evidence is required by default. A native deployment workflow can additionally require
+complete source-declared Arm64 runner, run, source, runtime, model, and evaluation-suite metadata.
+That completeness gate does not authenticate the claims by itself; the canonical release adds
+checksummed source artifacts and exact replay. Synthetic inputs must be explicitly allowed for
+smoke testing, so a fixture cannot silently pass as deployment proof. See the
 [GitHub Action guide](docs/github-action.md) for every input, output, artifact, and a native
 Arm64 workflow example. Pin the Action to a reviewed commit SHA in production.
 
@@ -204,7 +236,7 @@ trees, or credentials. Only compact evidence is retained.
 ## Project map
 
 ```text
-src/paretopilot/                 validation, assembly, selection, replay, and reporting
+src/paretopilot/                 validation, assembly, selection, passports, replay, and reporting
 evals/                           versioned behavior and latency suites
 configs/                         decision, policy-profile, and bounded-load declarations
 results/published/30055662526/   current v1.1 canonical summary and release lock

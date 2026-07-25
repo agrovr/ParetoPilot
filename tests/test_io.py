@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import json
 from pathlib import Path
 from tempfile import TemporaryDirectory
@@ -8,6 +9,7 @@ import unittest
 from paretopilot.domain import ValidationError
 from paretopilot.io import (
     load_benchmarks,
+    load_benchmarks_snapshot,
     load_json_object,
     sha256_file,
     write_json,
@@ -86,6 +88,17 @@ class StrictJsonInputTests(unittest.TestCase):
         with TemporaryDirectory() as directory:
             with self.assertRaisesRegex(ValidationError, "could not read"):
                 load_benchmarks(Path(directory))
+
+    def test_snapshot_digest_matches_the_exact_parsed_bytes(self) -> None:
+        with TemporaryDirectory() as directory:
+            path = Path(directory) / "benchmark-set.json"
+            serialized = (valid_benchmark_json() + "\r\n").encode("utf-8")
+            path.write_bytes(serialized)
+
+            benchmarks, digest = load_benchmarks_snapshot(path)
+
+            self.assertEqual(benchmarks.baseline_id, "baseline")
+            self.assertEqual(digest, hashlib.sha256(serialized).hexdigest())
 
 
 class StrictJsonOutputTests(unittest.TestCase):

@@ -94,13 +94,8 @@ def _json_compatible(
     )
 
 
-def _load_json(path: Path) -> Mapping[str, Any]:
-    try:
-        text = path.read_text(encoding="utf-8")
-    except UnicodeDecodeError as exc:
-        raise ValidationError(f"file must contain UTF-8 text: {path}") from exc
-    except OSError as exc:
-        raise ValidationError(f"could not read {path}: {exc}") from exc
+def _parse_json_text(text: str, path: Path) -> Mapping[str, Any]:
+    """Parse one already-captured UTF-8 JSON document using the strict rules."""
 
     try:
         raw = json.loads(
@@ -119,6 +114,24 @@ def _load_json(path: Path) -> Mapping[str, Any]:
     if not isinstance(normalized, Mapping):
         raise ValidationError(f"top-level value in {path} must be an object")
     return normalized
+
+
+def _load_json_snapshot(path: Path) -> tuple[Mapping[str, Any], str]:
+    """Read, hash, decode, and parse one immutable byte snapshot."""
+
+    try:
+        serialized = path.read_bytes()
+        text = serialized.decode("utf-8")
+    except UnicodeDecodeError as exc:
+        raise ValidationError(f"file must contain UTF-8 text: {path}") from exc
+    except OSError as exc:
+        raise ValidationError(f"could not read {path}: {exc}") from exc
+
+    return _parse_json_text(text, path), hashlib.sha256(serialized).hexdigest()
+
+
+def _load_json(path: Path) -> Mapping[str, Any]:
+    return _load_json_snapshot(path)[0]
 
 
 def load_json_object(path: Path) -> Mapping[str, Any]:
@@ -143,10 +156,34 @@ def load_benchmarks(path: Path) -> BenchmarkSet:
         raise ValidationError(f"invalid benchmark data in {path}: {exc}") from exc
 
 
+def load_benchmarks_snapshot(path: Path) -> tuple[BenchmarkSet, str]:
+    """Load a benchmark set and the SHA-256 of the exact parsed bytes."""
+
+    raw, digest = _load_json_snapshot(path)
+    try:
+        return BenchmarkSet.from_mapping(raw), digest
+    except ValidationError:
+        raise
+    except (OverflowError, RecursionError, TypeError, ValueError) as exc:
+        raise ValidationError(f"invalid benchmark data in {path}: {exc}") from exc
+
+
 def load_constraints(path: Path) -> Constraints:
     raw = _load_json(path)
     try:
         return Constraints.from_mapping(raw)
+    except ValidationError:
+        raise
+    except (OverflowError, RecursionError, TypeError, ValueError) as exc:
+        raise ValidationError(f"invalid constraints in {path}: {exc}") from exc
+
+
+def load_constraints_snapshot(path: Path) -> tuple[Constraints, str]:
+    """Load constraints and the SHA-256 of the exact parsed bytes."""
+
+    raw, digest = _load_json_snapshot(path)
+    try:
+        return Constraints.from_mapping(raw), digest
     except ValidationError:
         raise
     except (OverflowError, RecursionError, TypeError, ValueError) as exc:

@@ -41,8 +41,9 @@ historical experiment.
    verifies safe paths and checksums, rebuilds the core and extension outputs, and compares both
    self-contained reports without rerunning inference.
 9. **Gate downstream deployment.** The reusable GitHub Action consumes any validated benchmark
-   set and constraints, rejects synthetic inputs by default, writes a recommendation and
-   self-contained report, and can fail CI when the selected candidate changes unexpectedly.
+   set and constraints, rejects synthetic inputs by default, writes a recommendation, decision
+   passport, and self-contained report, and can fail CI when the selected candidate changes or
+   complete native Arm64 attribution is required but missing.
 
 ## Candidate attribution
 
@@ -118,6 +119,11 @@ light/dark preference changes semantic color tokens only; it never alters the bo
 - A run is canonical only when it uses the default branch, the declared ten repetitions, and
   every measurement, integrity, selection, and reporting gate passes. Changed inputs remain
   exploratory.
+- The decision passport recomputes and describes the supplied decision for CI and presentation.
+  It is supplementary: it cannot change the selected candidate or any locked canonical artifact.
+- Its `arm64-attributed` grade checks source-declared metadata completeness only. The passport
+  explicitly does not authenticate those claims or bind them to candidate artifacts; canonical
+  trust comes from the separately checksummed evidence bundle and exact replay.
 - Arm Performix is an optional follow-up for hotspot analysis. It never blocks measurement,
   selection, replay, or report generation.
 
@@ -135,6 +141,7 @@ light/dark preference changes semantic color tokens only; it never alters the bo
 | [`src/paretopilot/server_eval.py`](../src/paretopilot/server_eval.py) | Exact-match behavior and streamed latency evaluation |
 | [`src/paretopilot/experiment.py`](../src/paretopilot/experiment.py) | Strict multi-candidate manifest and artifact assembly |
 | [`src/paretopilot/analysis.py`](../src/paretopilot/analysis.py) | Constraint filtering, Pareto frontier, and deterministic selection |
+| [`src/paretopilot/decision_passport.py`](../src/paretopilot/decision_passport.py) | Supplementary Arm64 provenance grade, optimization-stage attribution, cutoff runway, and resource-alternative summary |
 | [`src/paretopilot/pass_eval.py`](../src/paretopilot/pass_eval.py) | Raw repeat-pass verification and reconstruction |
 | [`src/paretopilot/load_eval.py`](../src/paretopilot/load_eval.py) | Bounded multi-client evaluation and command binding |
 | [`src/paretopilot/profiles.py`](../src/paretopilot/profiles.py) | Precomputed canonical and derived policy decisions |
@@ -143,7 +150,7 @@ light/dark preference changes semantic color tokens only; it never alters the bo
 | [`src/paretopilot/report.py`](../src/paretopilot/report.py) | Deterministic core HTML decision report |
 | [`src/paretopilot/report_v11.py`](../src/paretopilot/report_v11.py) | Deterministic additive evidence report |
 | [`src/paretopilot/showcase.py`](../src/paretopilot/showcase.py) | Judge-facing presentation generated from verified v1.1 inputs without changing the canonical report |
-| [`action.yml`](../action.yml) | Reusable CI decision gate with measured-evidence protection, expected-selection enforcement, and hashed receipts |
+| [`action.yml`](../action.yml) | Reusable CI decision gate with measured-evidence and source-declared Arm64 metadata protection, expected-selection enforcement, a decision passport, and hashed receipts |
 | [`.github/workflows/pages.yml`](../.github/workflows/pages.yml) | Release verification, exact replay, canonical-report preservation, and showcase publication |
 
 ## Published identity

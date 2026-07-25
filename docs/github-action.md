@@ -1,16 +1,39 @@
 # ParetoPilot GitHub Action
 
-The ParetoPilot decision gate turns a validated benchmark set and declared constraints into three
+The ParetoPilot decision gate turns a validated benchmark set and declared constraints into four
 CI artifacts:
 
 - `recommendation.json`: the machine-readable selection, frontier, rejections, deltas, and input
   fingerprints;
+- `decision-passport.json`: supplementary source-declared attribution grade, optimization ladder,
+  cutoff runway, and eligible measured resource alternative;
 - `report.html`: the self-contained decision report; and
 - `gate.json`: a compact receipt with the selected candidate and artifact SHA-256 digests.
 
 Measured evidence is required by default. An explicitly synthetic benchmark is accepted only when
 `require-measured` is set to `false`, which keeps smoke tests from being mistaken for deployment
-evidence.
+evidence. The passport describes the decision but never replaces or changes the recommendation.
+
+## 60-second proof path
+
+1. Review the measured result in the
+   [optimization ladder](https://agrovr.github.io/ParetoPilot/#optimization-ladder).
+2. Open the
+   [latest green main-branch CI run](https://github.com/agrovr/ParetoPilot/actions/workflows/ci.yml?query=branch%3Amain)
+   and inspect `action-smoke`, which exercises all four artifacts and verifies the fail-closed
+   measured-evidence guard.
+3. From an installed ParetoPilot checkout, run the bundled synthetic software smoke test:
+
+```bash
+python -m paretopilot ci-gate examples/synthetic-results.json \
+  --constraints configs/constraints.example.json \
+  --output-dir paretopilot-output \
+  --allow-synthetic \
+  --expect-selected-id q4-kleidiai
+```
+
+The bundled fixture demonstrates the gate contract only. It is explicitly synthetic and is not
+Arm64 benchmark evidence.
 
 ## Workflow example
 
@@ -44,6 +67,7 @@ jobs:
           constraints: constraints/deployment.json
           output-dir: paretopilot-output
           expected-selected-id: q4-kleidiai
+          require-arm64-provenance: "true"
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: paretopilot-decision
@@ -58,6 +82,13 @@ above keeps the introductory example easy to try.
 different candidate. This makes the Action useful as a deployment-regression gate without
 assuming that an optimized candidate must beat the baseline.
 
+`require-arm64-provenance` is also optional. Enable it for a native Arm64 deployment gate to
+require complete source-declared runner, run, source, runtime, model, and evaluation-suite
+identities. This is a metadata-completeness gate, not authentication of those claims or a
+cryptographic binding to candidate artifacts. The canonical release supplies the stronger layer:
+checksummed source artifacts, a frozen evidence lock, and exact replay. Leave the input off for
+the explicitly synthetic software smoke path above.
+
 ## Inputs
 
 | Input | Required | Default | Meaning |
@@ -67,6 +98,7 @@ assuming that an optimized candidate must beat the baseline.
 | `output-dir` | no | `paretopilot-output` | New or empty artifact directory |
 | `require-measured` | no | `true` | Reject explicitly synthetic inputs |
 | `expected-selected-id` | no | empty | Optional selected-candidate regression check |
+| `require-arm64-provenance` | no | `false` | Require complete source-declared Arm64 attribution metadata |
 
 ## Outputs
 
@@ -76,9 +108,12 @@ assuming that an optimized candidate must beat the baseline.
 | `synthetic-source` | `true` only for an explicitly allowed synthetic smoke test |
 | `recommendation` | Path to `recommendation.json` |
 | `report` | Path to `report.html` |
+| `decision-passport` | Path to `decision-passport.json` |
+| `evidence-grade` | `synthetic`, `measured-unattributed`, or `arm64-attributed`; the last grade means source-declared metadata is complete, not independently authenticated |
 | `receipt` | Path to `gate.json` |
 | `recommendation-sha256` | Recommendation digest |
 | `report-sha256` | Report digest |
+| `decision-passport-sha256` | Decision-passport digest |
 | `receipt-sha256` | Receipt digest |
 
 The Action also writes a compact decision table to the GitHub Actions job summary.
@@ -91,7 +126,17 @@ The same gate is available without GitHub Actions:
 python -m paretopilot ci-gate benchmarks/benchmark-set.json \
   --constraints constraints/deployment.json \
   --output-dir paretopilot-output \
+  --require-arm64-provenance \
   --expect-selected-id q4-kleidiai
+```
+
+To export only the supplementary machine-readable context:
+
+```bash
+python -m paretopilot passport benchmarks/benchmark-set.json \
+  --constraints constraints/deployment.json \
+  --output decision-passport.json \
+  --require-arm64-provenance
 ```
 
 Use `--allow-synthetic` only for a deliberately synthetic software smoke test. Invalid JSON,

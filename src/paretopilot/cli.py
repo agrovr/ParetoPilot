@@ -11,12 +11,15 @@ from typing import Any, Mapping, Sequence
 
 from paretopilot import __version__
 from paretopilot.analysis import recommend
+from paretopilot.decision_passport import build_decision_passport
 from paretopilot.doctor import inspect_environment
 from paretopilot.domain import BenchmarkSet, Constraints, ValidationError
 from paretopilot.experiment import assemble_experiment
 from paretopilot.io import (
     load_benchmarks,
+    load_benchmarks_snapshot,
     load_constraints,
+    load_constraints_snapshot,
     load_json_object,
     sha256_file,
     write_json,
@@ -85,6 +88,30 @@ def _parser() -> argparse.ArgumentParser:
     ci_gate_parser.add_argument(
         "--expect-selected-id",
         help="return a nonzero status unless this candidate is selected",
+    )
+    ci_gate_parser.add_argument(
+        "--require-arm64-provenance",
+        action="store_true",
+        help=(
+            "return a nonzero status unless the passport has complete source-declared "
+            "Arm64 attribution metadata"
+        ),
+    )
+
+    passport_parser = subparsers.add_parser(
+        "passport",
+        help="export supplementary Arm64 provenance and optimization-stage context",
+    )
+    passport_parser.add_argument("results", type=Path)
+    passport_parser.add_argument("--constraints", required=True, type=Path)
+    passport_parser.add_argument("--output", required=True, type=Path)
+    passport_parser.add_argument(
+        "--require-arm64-provenance",
+        action="store_true",
+        help=(
+            "return a nonzero status unless the passport has complete source-declared "
+            "Arm64 attribution metadata"
+        ),
     )
 
     validate_parser = subparsers.add_parser("validate", help="validate a benchmark result file")
@@ -345,15 +372,15 @@ def _parser() -> argparse.ArgumentParser:
 def _build_decision_artifacts(
     results_path: Path,
     constraints_path: Path,
-) -> tuple[BenchmarkSet, dict[str, Any], str]:
+) -> tuple[BenchmarkSet, Constraints, dict[str, Any], str]:
     """Build one recommendation and report from the same validated inputs."""
 
-    benchmarks = load_benchmarks(results_path)
-    constraints = load_constraints(constraints_path)
+    benchmarks, benchmarks_sha256 = load_benchmarks_snapshot(results_path)
+    constraints, constraints_sha256 = load_constraints_snapshot(constraints_path)
     recommendation = dict(recommend(benchmarks, constraints))
     recommendation["input_fingerprints"] = {
-        "benchmarks_sha256": sha256_file(results_path),
-        "constraints_sha256": sha256_file(constraints_path),
+        "benchmarks_sha256": benchmarks_sha256,
+        "constraints_sha256": constraints_sha256,
     }
     report_html = render_report(
         benchmarks,
@@ -362,7 +389,36 @@ def _build_decision_artifacts(
         benchmarks_sha256=recommendation["input_fingerprints"]["benchmarks_sha256"],
         constraints_sha256=recommendation["input_fingerprints"]["constraints_sha256"],
     )
-    return benchmarks, recommendation, report_html
+    return benchmarks, constraints, recommendation, report_html
+
+
+def _build_passport_artifact(
+    benchmarks: BenchmarkSet,
+    constraints: Constraints,
+    *,
+    input_fingerprints: Mapping[str, str],
+) -> dict[str, Any]:
+    """Bind a deterministic passport to the exact serialized CI inputs."""
+
+    passport = dict(build_decision_passport(benchmarks, constraints))
+    passport["input_fingerprints"] = dict(input_fingerprints)
+    return passport
+
+
+def _require_arm64_attribution(passport: Mapping[str, Any]) -> None:
+    if passport.get("evidence_grade") == "arm64-attributed":
+        return
+    provenance = passport.get("provenance")
+    issues: list[str] = []
+    if isinstance(provenance, Mapping):
+        raw_issues = provenance.get("issues")
+        if isinstance(raw_issues, Sequence) and not isinstance(raw_issues, (str, bytes, bytearray)):
+            issues = [str(issue) for issue in raw_issues]
+    detail = f": {'; '.join(issues)}" if issues else ""
+    raise ValidationError(
+        "complete source-declared Arm64 attribution metadata is required; "
+        f"decision passport grade is {passport.get('evidence_grade')!r}{detail}"
+    )
 
 
 def main(argv: Sequence[str] | None = None) -> int:
@@ -375,15 +431,22 @@ def main(argv: Sequence[str] | None = None) -> int:
                 write_json(args.output, payload)
             exit_code = 3 if args.require_evidence_host and not report.evidence_eligible else 0
         elif args.command == "ci-gate":
-            benchmarks, recommendation, report_html = _build_decision_artifacts(
+            benchmarks, constraints, recommendation, report_html = _build_decision_artifacts(
                 args.results,
                 args.constraints,
+            )
+            passport = _build_passport_artifact(
+                benchmarks,
+                constraints,
+                input_fingerprints=recommendation["input_fingerprints"],
             )
             if benchmarks.synthetic and not args.allow_synthetic:
                 raise ValidationError(
                     "ci-gate requires measured evidence; use --allow-synthetic only "
                     "for an explicit smoke test"
                 )
+            if args.require_arm64_provenance:
+                _require_arm64_attribution(passport)
             expected_selected_id = args.expect_selected_id
             if expected_selected_id is not None:
                 if not expected_selected_id.strip():
@@ -398,15 +461,17 @@ def main(argv: Sequence[str] | None = None) -> int:
             output_dir = args.output_dir
             recommendation_path = output_dir / "recommendation.json"
             report_path = output_dir / "report.html"
+            passport_path = output_dir / "decision-passport.json"
             receipt_path = output_dir / "gate.json"
-            destinations = [recommendation_path, report_path, receipt_path]
+            destinations = [recommendation_path, report_path, passport_path, receipt_path]
             _require_new_distinct_outputs(destinations)
             _require_new_or_empty_directory(output_dir)
 
             write_json(recommendation_path, recommendation)
             write_text(report_path, report_html)
+            write_json(passport_path, passport)
             receipt = {
-                "schema_version": "1.0",
+                "schema_version": "1.1",
                 "valid": True,
                 "selected_id": recommendation["selected_id"],
                 "baseline_id": recommendation["baseline_id"],
@@ -423,12 +488,38 @@ def main(argv: Sequence[str] | None = None) -> int:
                 "recommendation_sha256": sha256_file(recommendation_path),
                 "report": str(report_path),
                 "report_sha256": sha256_file(report_path),
+                "decision_passport": str(passport_path),
+                "decision_passport_sha256": sha256_file(passport_path),
+                "evidence_grade": passport["evidence_grade"],
             }
             write_json(receipt_path, receipt)
             payload = {
                 **receipt,
                 "receipt": str(receipt_path),
                 "receipt_sha256": sha256_file(receipt_path),
+            }
+            exit_code = 0
+        elif args.command == "passport":
+            _require_new_distinct_outputs([args.output])
+            benchmarks, benchmarks_sha256 = load_benchmarks_snapshot(args.results)
+            constraints, constraints_sha256 = load_constraints_snapshot(args.constraints)
+            passport = _build_passport_artifact(
+                benchmarks,
+                constraints,
+                input_fingerprints={
+                    "benchmarks_sha256": benchmarks_sha256,
+                    "constraints_sha256": constraints_sha256,
+                },
+            )
+            if args.require_arm64_provenance:
+                _require_arm64_attribution(passport)
+            write_json(args.output, passport)
+            payload = {
+                "valid": True,
+                "evidence_grade": passport["evidence_grade"],
+                "selected_id": passport["selected_decision"]["candidate_id"],
+                "passport": str(args.output),
+                "passport_sha256": sha256_file(args.output),
             }
             exit_code = 0
         elif args.command == "validate":
@@ -610,7 +701,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             if args.recommendation_output is not None:
                 destinations.append(args.recommendation_output)
             _require_new_distinct_outputs(destinations)
-            benchmarks, recommendation, report_html = _build_decision_artifacts(
+            benchmarks, _, recommendation, report_html = _build_decision_artifacts(
                 args.results,
                 args.constraints,
             )
@@ -759,12 +850,12 @@ def main(argv: Sequence[str] | None = None) -> int:
             write_json(args.output, payload)
             exit_code = 0
         elif args.command == "recommend":
-            benchmarks = load_benchmarks(args.results)
-            constraints = load_constraints(args.constraints)
+            benchmarks, benchmarks_sha256 = load_benchmarks_snapshot(args.results)
+            constraints, constraints_sha256 = load_constraints_snapshot(args.constraints)
             payload = dict(recommend(benchmarks, constraints))
             payload["input_fingerprints"] = {
-                "benchmarks_sha256": sha256_file(args.results),
-                "constraints_sha256": sha256_file(args.constraints),
+                "benchmarks_sha256": benchmarks_sha256,
+                "constraints_sha256": constraints_sha256,
             }
             if args.output:
                 write_json(args.output, payload)

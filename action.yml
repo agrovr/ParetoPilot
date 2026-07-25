@@ -14,7 +14,7 @@ inputs:
     description: Path to a ParetoPilot constraints JSON file.
     required: true
   output-dir:
-    description: New or empty directory for the recommendation, report, and gate receipt.
+    description: New or empty directory for the recommendation, passport, report, and receipt.
     required: false
     default: paretopilot-output
   require-measured:
@@ -25,6 +25,10 @@ inputs:
     description: Optional candidate ID that must remain selected for the gate to pass.
     required: false
     default: ""
+  require-arm64-provenance:
+    description: Reject evidence without complete source-declared Arm64 attribution metadata.
+    required: false
+    default: "false"
 
 outputs:
   selected-id:
@@ -39,6 +43,12 @@ outputs:
   report:
     description: Path to the generated self-contained HTML report.
     value: ${{ steps.receipt.outputs.report }}
+  decision-passport:
+    description: Path to the supplementary Arm64 decision passport.
+    value: ${{ steps.receipt.outputs.decision-passport }}
+  evidence-grade:
+    description: Passport evidence grade.
+    value: ${{ steps.receipt.outputs.evidence-grade }}
   receipt:
     description: Path to the generated CI gate receipt.
     value: ${{ steps.receipt.outputs.receipt }}
@@ -48,6 +58,9 @@ outputs:
   report-sha256:
     description: SHA-256 of the HTML report.
     value: ${{ steps.receipt.outputs.report-sha256 }}
+  decision-passport-sha256:
+    description: SHA-256 of the decision passport.
+    value: ${{ steps.receipt.outputs.decision-passport-sha256 }}
   receipt-sha256:
     description: SHA-256 of the gate receipt.
     value: ${{ steps.receipt.outputs.receipt-sha256 }}
@@ -67,6 +80,7 @@ runs:
         PARETOPILOT_OUTPUT_DIR: ${{ inputs.output-dir }}
         PARETOPILOT_REQUIRE_MEASURED: ${{ inputs.require-measured }}
         PARETOPILOT_EXPECTED_SELECTED_ID: ${{ inputs.expected-selected-id }}
+        PARETOPILOT_REQUIRE_ARM64_PROVENANCE: ${{ inputs.require-arm64-provenance }}
       run: |
         set -euo pipefail
         args=(
@@ -86,6 +100,14 @@ runs:
         if [[ -n "$PARETOPILOT_EXPECTED_SELECTED_ID" ]]; then
           args+=(--expect-selected-id "$PARETOPILOT_EXPECTED_SELECTED_ID")
         fi
+        case "$PARETOPILOT_REQUIRE_ARM64_PROVENANCE" in
+          true) args+=(--require-arm64-provenance) ;;
+          false) ;;
+          *)
+            echo "require-arm64-provenance must be true or false" >&2
+            exit 2
+            ;;
+        esac
         python -m paretopilot "${args[@]}"
 
     - name: Publish decision receipt
@@ -107,8 +129,10 @@ runs:
         output_dir = Path(os.environ["PARETOPILOT_OUTPUT_DIR"])
         receipt_path = output_dir / "gate.json"
         recommendation_path = output_dir / "recommendation.json"
+        passport_path = output_dir / "decision-passport.json"
         receipt = json.loads(receipt_path.read_text(encoding="utf-8"))
         recommendation = json.loads(recommendation_path.read_text(encoding="utf-8"))
+        passport = json.loads(passport_path.read_text(encoding="utf-8"))
 
         def emit(name: str, value: object) -> None:
             text = str(value).lower() if isinstance(value, bool) else str(value)
@@ -120,9 +144,12 @@ runs:
         emit("synthetic-source", receipt["synthetic_source"])
         emit("recommendation", receipt["recommendation"])
         emit("report", receipt["report"])
+        emit("decision-passport", receipt["decision_passport"])
+        emit("evidence-grade", receipt["evidence_grade"])
         emit("receipt", receipt_path)
         emit("recommendation-sha256", receipt["recommendation_sha256"])
         emit("report-sha256", receipt["report_sha256"])
+        emit("decision-passport-sha256", receipt["decision_passport_sha256"])
 
         receipt_digest = hashlib.sha256(receipt_path.read_bytes()).hexdigest()
         emit("receipt-sha256", receipt_digest)
@@ -134,17 +161,31 @@ runs:
         if summary_path:
             selected = recommendation["selected"]
             selection = recommendation["selection"]
-            evidence_class = (
-                "Synthetic smoke test" if receipt["synthetic_source"] else "Measured evidence"
+            provenance = passport.get("provenance")
+            closest = passport.get("closest_outside_shortlist")
+            alternative = passport.get("resource_alternative")
+            attribution_scope = (
+                provenance.get("verification_scope")
+                if isinstance(provenance, dict)
+                else "Not supplied"
             )
             rows = (
                 ("Gate", "Passed"),
                 ("Selected candidate", selected["label"]),
                 ("Selected ID", receipt["selected_id"]),
-                ("Evidence class", evidence_class),
+                ("Evidence grade", receipt["evidence_grade"]),
+                ("Attribution scope", attribution_scope),
                 ("Eligible candidates", receipt["eligible_count"]),
                 ("Pareto-frontier candidates", receipt["frontier_count"]),
                 ("Decision reason", selection["reason"]),
+                (
+                    "Closest outside shortlist",
+                    closest["label"] if isinstance(closest, dict) else "None",
+                ),
+                (
+                    "Eligible measured resource alternative",
+                    alternative["label"] if isinstance(alternative, dict) else "None",
+                ),
             )
             lines = [
                 "## ParetoPilot decision gate",
@@ -156,6 +197,8 @@ runs:
                 f"Recommendation SHA-256: `{receipt['recommendation_sha256']}`",
                 "",
                 f"Report SHA-256: `{receipt['report_sha256']}`",
+                "",
+                f"Decision passport SHA-256: `{receipt['decision_passport_sha256']}`",
                 "",
             ]
             with Path(summary_path).open("a", encoding="utf-8", newline="\n") as handle:
