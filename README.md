@@ -5,8 +5,6 @@ benchmark provenance, applies quality and resource guardrails, computes the Pare
 recommends a configuration without assuming that an "optimized" build must win.
 
 I designed and built ParetoPilot as a solo Cloud AI entry for the Arm AI Optimization Challenge.
-Arm Performix is an optional profiling enhancement; it is not required by the product or its
-evidence pipeline.
 
 The reusable tool is now version 1.3.0. The canonical Arm64 evidence remains frozen at v1.1.0,
 so the Decision Passport, Optimization Receipt, and presentation layer cannot rewrite the
