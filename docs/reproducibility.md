@@ -392,4 +392,3 @@ memory, load, or checksums. Missing Performix output does not invalidate ParetoP
 
 For the experimental design and decision rules, see
 [`benchmark-methodology.md`](benchmark-methodology.md).
-
