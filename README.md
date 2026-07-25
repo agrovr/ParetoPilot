@@ -192,6 +192,11 @@ candidate changes unexpectedly:
     require-arm64-provenance: "true"
 ```
 
+The `benchmarks/benchmark-set.json` and `constraints/deployment.json` paths are placeholders for
+files in the repository that consumes the Action; they are not files in this source checkout. To
+try ParetoPilot here, use the synthetic smoke command in the
+[5-minute hands-on test](#5-minute-hands-on-test).
+
 The versioned `@v1.4.1` reference keeps the example stable; pin the Action to a reviewed commit SHA
 in production. Measured evidence is required by default. A native deployment workflow can
 additionally require

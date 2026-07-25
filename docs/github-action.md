@@ -77,6 +77,11 @@ jobs:
           if-no-files-found: error
 ```
 
+The two input paths in this workflow are placeholders for measured benchmark and constraint files
+in the repository that consumes the Action. They do not exist in the ParetoPilot source checkout.
+To test this checkout itself, use the synthetic command in the
+[60-second proof path](#60-second-proof-path).
+
 Pin `agrovr/ParetoPilot` to a reviewed commit SHA in a production workflow. The versioned
 `@v1.4.1` reference above keeps the introductory example stable and easy to try.
 
@@ -124,7 +129,9 @@ The Action also writes the human-readable Optimization Receipt to the GitHub Act
 
 ## Local equivalent
 
-The same gate is available without GitHub Actions:
+The same gate is available without GitHub Actions. Replace the example
+`benchmarks/benchmark-set.json` and `constraints/deployment.json` paths below with files from your
+consuming repository; use the 60-second synthetic proof command when working in this checkout:
 
 ```bash
 python -m paretopilot ci-gate benchmarks/benchmark-set.json \

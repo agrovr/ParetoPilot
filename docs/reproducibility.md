@@ -95,6 +95,19 @@ unzip paretopilot-v1.1.0-arm64-evidence-30055662526.zip -d evidence
 (cd evidence && sha256sum --check SHA256SUMS)
 ```
 
+In Windows PowerShell:
+
+```powershell
+New-Item -ItemType Directory -Path .\evidence
+Expand-Archive `
+  -LiteralPath .\paretopilot-v1.1.0-arm64-evidence-30055662526.zip `
+  -DestinationPath .\evidence
+```
+
+The cross-platform `paretopilot replay` command in the next step verifies every entry in
+`SHA256SUMS` and rejects missing, extra, changed, or unsafe payload paths before rebuilding
+anything. Windows users therefore do not need a separate `sha256sum` installation.
+
 The bundle's `status.json` must report:
 
 ```json
@@ -182,6 +195,22 @@ cmp output/pass-1.json evidence/extensions/benchmark-set-pass-1.json
 cmp output/pass-2.json evidence/extensions/benchmark-set-pass-2.json
 ```
 
+The byte comparisons in Windows PowerShell are:
+
+```powershell
+$Pass1 = (Get-FileHash -Algorithm SHA256 .\output\pass-1.json).Hash
+$ExpectedPass1 = (
+  Get-FileHash -Algorithm SHA256 .\evidence\extensions\benchmark-set-pass-1.json
+).Hash
+$Pass2 = (Get-FileHash -Algorithm SHA256 .\output\pass-2.json).Hash
+$ExpectedPass2 = (
+  Get-FileHash -Algorithm SHA256 .\evidence\extensions\benchmark-set-pass-2.json
+).Hash
+if ($Pass1 -ne $ExpectedPass1 -or $Pass2 -ne $ExpectedPass2) {
+  throw "Reconstructed pass evidence does not match the archive."
+}
+```
+
 The command follows only artifact paths and SHA-256 digests bound by the canonical benchmark. It
 does not derive a pass by splitting pooled metrics. Replay does not rerun inference.
 
@@ -206,6 +235,24 @@ mkdir capacity-evidence
 unzip paretopilot-v1.4.0-arm64-capacity-30144901854.zip -d capacity-evidence
 (cd capacity-evidence && sha256sum --check SHA256SUMS)
 ```
+
+In Windows PowerShell:
+
+```powershell
+(Get-Item .\paretopilot-v1.4.0-arm64-capacity-30144901854.zip).Length
+(Get-FileHash `
+  -Algorithm SHA256 `
+  .\paretopilot-v1.4.0-arm64-capacity-30144901854.zip).Hash
+New-Item -ItemType Directory -Path .\capacity-evidence
+Expand-Archive `
+  -LiteralPath .\paretopilot-v1.4.0-arm64-capacity-30144901854.zip `
+  -DestinationPath .\capacity-evidence
+```
+
+The expected size is `794681`, and the hash is
+`A73D801BC3997F1C0B0158E92C8305987DA8638501B74C5ECD2AF3AACA57AAA7`.
+As with the canonical archive, `replay-capacity` verifies all 121 `SHA256SUMS` entries and exact
+file coverage before reconstruction, so no separate Unix checksum tool is required on Windows.
 
 Replay into a new directory outside the evidence bundle:
 

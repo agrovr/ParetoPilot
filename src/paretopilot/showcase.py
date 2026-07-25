@@ -474,6 +474,159 @@ def _wrap_table_region(document: str, *, aria_label: str, summary: str) -> str:
     return document[:start] + disclosure + document[end:]
 
 
+def _matching_div_end(document: str, start: int, *, context: str) -> int:
+    """Return the exclusive end of one balanced div subtree."""
+
+    opening_end = document.find(">", start)
+    if opening_end == -1 or not document[start:opening_end].startswith("<div"):
+        raise ValidationError(f"{context} does not start with a div")
+    depth = 0
+    for match in re.finditer(r"</?div\b[^>]*>", document[start:], flags=re.IGNORECASE):
+        tag = match.group(0)
+        depth += -1 if tag.startswith("</") else 1
+        if depth == 0:
+            return start + match.end()
+    raise ValidationError(f"{context} is not closed")
+
+
+def _load_takeaway_markup(
+    benchmarks: BenchmarkSet,
+    load_sweep: Mapping[str, Any],
+) -> str:
+    """Summarize the measured load result without recomputing or ranking it."""
+
+    sentences: list[str] = []
+    highest = load_sweep.get("highest_slo_concurrency")
+    if isinstance(highest, Mapping) and highest:
+        levels = tuple(highest.get(candidate.candidate_id) for candidate in benchmarks.candidates)
+        if levels and all(level == levels[0] for level in levels):
+            level = levels[0]
+            if level is None:
+                sentences.append("No candidate met every declared load gate.")
+            elif isinstance(level, int) and not isinstance(level, bool):
+                sentences.append(
+                    "Every candidate’s highest measured all-gates passing concurrency "
+                    f"was C{level}."
+                )
+        else:
+            labels = []
+            for candidate, level in zip(benchmarks.candidates, levels, strict=True):
+                value = (
+                    f"C{level}"
+                    if isinstance(level, int) and not isinstance(level, bool)
+                    else "none"
+                )
+                labels.append(f"{candidate.label}: {value}")
+            if labels:
+                sentences.append(
+                    "Highest measured all-gates passing concurrency: " + "; ".join(labels) + "."
+                )
+
+    rows = load_sweep.get("rows")
+    slo = load_sweep.get("slo")
+    if (
+        isinstance(rows, Sequence)
+        and not isinstance(rows, (str, bytes))
+        and isinstance(slo, Mapping)
+    ):
+        raw_threshold = slo.get("max_e2e_latency_ms_p95")
+        concurrency_levels = [
+            raw_row.get("concurrency")
+            for raw_row in rows
+            if isinstance(raw_row, Mapping)
+            and isinstance(raw_row.get("concurrency"), int)
+            and not isinstance(raw_row.get("concurrency"), bool)
+        ]
+        if (
+            isinstance(raw_threshold, (int, float))
+            and not isinstance(raw_threshold, bool)
+            and concurrency_levels
+        ):
+            maximum_concurrency = max(concurrency_levels)
+            maximum_rows = [
+                raw_row
+                for raw_row in rows
+                if isinstance(raw_row, Mapping)
+                and raw_row.get("concurrency") == maximum_concurrency
+                and isinstance(raw_row.get("e2e_latency_ms_p95"), (int, float))
+                and not isinstance(raw_row.get("e2e_latency_ms_p95"), bool)
+            ]
+            crossed = [
+                raw_row
+                for raw_row in maximum_rows
+                if float(raw_row["e2e_latency_ms_p95"]) > float(raw_threshold)
+            ]
+            threshold = _format_number(float(raw_threshold), digits=0)
+            if maximum_rows and len(crossed) == len(maximum_rows):
+                sentences.append(
+                    f"At C{maximum_concurrency}, every candidate crossed the declared "
+                    f"{threshold} ms p95 end-to-end ceiling."
+                )
+            elif maximum_rows and not crossed:
+                sentences.append(
+                    f"At C{maximum_concurrency}, every candidate remained within the declared "
+                    f"{threshold} ms p95 end-to-end ceiling."
+                )
+            elif maximum_rows:
+                sentences.append(
+                    f"At C{maximum_concurrency}, {len(crossed)} of {len(maximum_rows)} candidates "
+                    f"crossed the declared {threshold} ms p95 end-to-end ceiling."
+                )
+
+    if not sentences:
+        sentences.append(
+            "Validated curves are shown first; exact commands, gates, prompts, and hashes remain "
+            "available below."
+        )
+    return (
+        '<div class="load-takeaway" role="note" aria-label="Measured load takeaway">'
+        "<strong>Measured takeaway</strong>"
+        f"<span>{_escape(' '.join(sentences))}</span></div>"
+    )
+
+
+def _prioritize_load_results(
+    document: str,
+    benchmarks: BenchmarkSet,
+    load_sweep: Mapping[str, Any] | None,
+) -> str:
+    """Move load charts ahead of the exact contract in the showcase only."""
+
+    if load_sweep is None:
+        return document
+    section_start = document.find('<section class="report-section" aria-labelledby="load-heading">')
+    if section_start == -1:
+        raise ValidationError("measured load section is missing")
+    section_end = document.find('<section class="report-section"', section_start + 1)
+    if section_end == -1:
+        raise ValidationError("measured load section has no following report section")
+    section = document[section_start:section_end]
+
+    context_start = section.find('<div class="load-context-grid">')
+    chart_start = section.find('<div class="chart-grid-layout">')
+    heading_start = section.find('<div class="section-heading">')
+    if context_start == -1 or chart_start == -1 or heading_start == -1:
+        raise ValidationError("measured load showcase structure is incomplete")
+    context_end = _matching_div_end(section, context_start, context="load contract")
+    context_markup = section[context_start:context_end]
+    section = section[:context_start] + section[context_end:]
+
+    heading_start = section.find('<div class="section-heading">')
+    heading_end = _matching_div_end(section, heading_start, context="load section heading")
+    takeaway = _load_takeaway_markup(benchmarks, load_sweep)
+    section = section[:heading_end] + takeaway + section[heading_end:]
+
+    chart_start = section.find('<div class="chart-grid-layout">')
+    chart_end = _matching_div_end(section, chart_start, context="load chart grid")
+    contract = (
+        '<details class="load-contract-disclosure">'
+        "<summary>Inspect exact load contract and prompts</summary>"
+        f"{context_markup}</details>"
+    )
+    section = section[:chart_end] + contract + section[chart_end:]
+    return document[:section_start] + section + document[section_end:]
+
+
 def _add_section_kickers(document: str) -> str:
     stages = (
         ("why-heading", "01 · Decision rule"),
@@ -4199,6 +4352,45 @@ html[data-theme="dark"] .showcase {
   --series-dash: 11 4;
   --series-line-style: solid;
 }
+.showcase .load-takeaway {
+  display: grid;
+  grid-template-columns: minmax(10rem, .32fr) minmax(0, 1fr);
+  gap: 1rem 2rem;
+  align-items: baseline;
+  margin: 1.5rem 0 2rem;
+  padding: 1rem 0;
+  border-block: 1px solid var(--flight-line-strong);
+}
+.showcase .load-takeaway strong {
+  color: var(--flight-ink);
+  font-size: .78rem;
+  letter-spacing: .06em;
+  text-transform: uppercase;
+}
+.showcase .load-takeaway span {
+  color: var(--flight-text-muted);
+  font-size: 1rem;
+  line-height: 1.55;
+}
+.showcase .load-contract-disclosure {
+  margin: 2rem 0 0;
+  border-block: 1px solid var(--flight-line-strong);
+}
+.showcase .load-contract-disclosure > summary {
+  display: flex;
+  min-height: 44px;
+  align-items: center;
+  padding: .75rem 0;
+  color: var(--flight-cobalt);
+  font-weight: 800;
+  cursor: pointer;
+}
+.showcase .load-contract-disclosure[open] > summary {
+  border-bottom: 1px solid var(--flight-line);
+}
+.showcase .load-contract-disclosure > .load-context-grid {
+  padding: 1.5rem 0 .5rem;
+}
 .showcase .load-context-grid {
   grid-template-columns: minmax(0, 1fr);
   gap: 1.6rem;
@@ -4592,6 +4784,10 @@ html[data-theme="dark"] .showcase {
   .showcase .tolerance-value { grid-column: 2; grid-row: 1; }
   .showcase .tolerance-row.is-selected { margin-inline: -.5rem; padding-inline: .5rem; }
   .showcase .series-key { grid-template-columns: 1fr; }
+  .showcase .load-takeaway {
+    grid-template-columns: minmax(0, 1fr);
+    gap: .35rem;
+  }
   .showcase .chart-figure { padding: .6rem; }
   .showcase .chart-tick,
   .showcase .chart-axis-label { font-size: 14px; }
@@ -4687,6 +4883,10 @@ html[data-theme="dark"] .showcase {
     background: var(--flight-white);
   }
   .showcase .flight-log { display: none; }
+  .showcase .load-takeaway {
+    grid-template-columns: minmax(0, 1fr);
+    gap: .35rem;
+  }
   .showcase .data-disclosure:not([open]) > :not(summary),
   .showcase details:not([open]) > :not(summary) {
     display: block;
@@ -5119,6 +5319,7 @@ def render_showcase_v11(
             aria_label="Scrollable pass-level stability evidence",
             summary="Inspect pass-level values and deltas",
         )
+    document = _prioritize_load_results(document, benchmarks, load_sweep)
     document = _correct_load_axis_ceilings(document, load_sweep)
     document = _add_load_slo_reference(
         document,
