@@ -34,6 +34,7 @@ from paretopilot.load_eval import (
     evaluate_llama_server_load,
     load_load_plan,
 )
+from paretopilot.optimization_receipt import render_optimization_receipt
 from paretopilot.pass_eval import assemble_repeat_pass
 from paretopilot.profiles import evaluate_policy_profiles, load_policy_set
 from paretopilot.replay import replay_evidence
@@ -110,6 +111,22 @@ def _parser() -> argparse.ArgumentParser:
         action="store_true",
         help=(
             "return a nonzero status unless the passport has complete source-declared "
+            "Arm64 attribution metadata"
+        ),
+    )
+
+    optimization_receipt_parser = subparsers.add_parser(
+        "optimization-receipt",
+        help="export a deterministic Markdown optimization proof from the decision passport",
+    )
+    optimization_receipt_parser.add_argument("results", type=Path)
+    optimization_receipt_parser.add_argument("--constraints", required=True, type=Path)
+    optimization_receipt_parser.add_argument("--output", required=True, type=Path)
+    optimization_receipt_parser.add_argument(
+        "--require-arm64-provenance",
+        action="store_true",
+        help=(
+            "return a nonzero status unless the receipt has complete source-declared "
             "Arm64 attribution metadata"
         ),
     )
@@ -462,16 +479,25 @@ def main(argv: Sequence[str] | None = None) -> int:
             recommendation_path = output_dir / "recommendation.json"
             report_path = output_dir / "report.html"
             passport_path = output_dir / "decision-passport.json"
-            receipt_path = output_dir / "gate.json"
-            destinations = [recommendation_path, report_path, passport_path, receipt_path]
+            optimization_receipt_path = output_dir / "optimization-receipt.md"
+            gate_receipt_path = output_dir / "gate.json"
+            destinations = [
+                recommendation_path,
+                report_path,
+                passport_path,
+                optimization_receipt_path,
+                gate_receipt_path,
+            ]
             _require_new_distinct_outputs(destinations)
             _require_new_or_empty_directory(output_dir)
 
+            optimization_receipt = render_optimization_receipt(passport)
             write_json(recommendation_path, recommendation)
             write_text(report_path, report_html)
             write_json(passport_path, passport)
+            write_text(optimization_receipt_path, optimization_receipt)
             receipt = {
-                "schema_version": "1.1",
+                "schema_version": "1.2",
                 "valid": True,
                 "selected_id": recommendation["selected_id"],
                 "baseline_id": recommendation["baseline_id"],
@@ -490,13 +516,15 @@ def main(argv: Sequence[str] | None = None) -> int:
                 "report_sha256": sha256_file(report_path),
                 "decision_passport": str(passport_path),
                 "decision_passport_sha256": sha256_file(passport_path),
+                "optimization_receipt": str(optimization_receipt_path),
+                "optimization_receipt_sha256": sha256_file(optimization_receipt_path),
                 "evidence_grade": passport["evidence_grade"],
             }
-            write_json(receipt_path, receipt)
+            write_json(gate_receipt_path, receipt)
             payload = {
                 **receipt,
-                "receipt": str(receipt_path),
-                "receipt_sha256": sha256_file(receipt_path),
+                "receipt": str(gate_receipt_path),
+                "receipt_sha256": sha256_file(gate_receipt_path),
             }
             exit_code = 0
         elif args.command == "passport":
@@ -520,6 +548,29 @@ def main(argv: Sequence[str] | None = None) -> int:
                 "selected_id": passport["selected_decision"]["candidate_id"],
                 "passport": str(args.output),
                 "passport_sha256": sha256_file(args.output),
+            }
+            exit_code = 0
+        elif args.command == "optimization-receipt":
+            _require_new_distinct_outputs([args.output])
+            benchmarks, benchmarks_sha256 = load_benchmarks_snapshot(args.results)
+            constraints, constraints_sha256 = load_constraints_snapshot(args.constraints)
+            passport = _build_passport_artifact(
+                benchmarks,
+                constraints,
+                input_fingerprints={
+                    "benchmarks_sha256": benchmarks_sha256,
+                    "constraints_sha256": constraints_sha256,
+                },
+            )
+            if args.require_arm64_provenance:
+                _require_arm64_attribution(passport)
+            write_text(args.output, render_optimization_receipt(passport))
+            payload = {
+                "valid": True,
+                "evidence_grade": passport["evidence_grade"],
+                "selected_id": passport["selected_decision"]["candidate_id"],
+                "optimization_receipt": str(args.output),
+                "optimization_receipt_sha256": sha256_file(args.output),
             }
             exit_code = 0
         elif args.command == "validate":

@@ -1,12 +1,14 @@
 # ParetoPilot GitHub Action
 
-The ParetoPilot decision gate turns a validated benchmark set and declared constraints into four
+The ParetoPilot decision gate turns a validated benchmark set and declared constraints into five
 CI artifacts:
 
 - `recommendation.json`: the machine-readable selection, frontier, rejections, deltas, and input
   fingerprints;
 - `decision-passport.json`: supplementary source-declared attribution grade, optimization ladder,
   cutoff runway, and eligible measured resource alternative;
+- `optimization-receipt.md`: a deterministic, human-readable decision receipt with the selected
+  candidate, objective, stage attribution, tradeoffs, provenance, and source fingerprints;
 - `report.html`: the self-contained decision report; and
 - `gate.json`: a compact receipt with the selected candidate and artifact SHA-256 digests.
 
@@ -20,7 +22,7 @@ evidence. The passport describes the decision but never replaces or changes the 
    [optimization ladder](https://agrovr.github.io/ParetoPilot/#optimization-ladder).
 2. Open the
    [latest green main-branch CI run](https://github.com/agrovr/ParetoPilot/actions/workflows/ci.yml?query=branch%3Amain)
-   and inspect `action-smoke`, which exercises all four artifacts and verifies the fail-closed
+   and inspect `action-smoke`, which exercises all five artifacts and verifies the fail-closed
    measured-evidence guard.
 3. From an installed ParetoPilot checkout, run the bundled synthetic software smoke test:
 
@@ -109,14 +111,16 @@ the explicitly synthetic software smoke path above.
 | `recommendation` | Path to `recommendation.json` |
 | `report` | Path to `report.html` |
 | `decision-passport` | Path to `decision-passport.json` |
+| `optimization-receipt` | Path to `optimization-receipt.md` |
 | `evidence-grade` | `synthetic`, `measured-unattributed`, or `arm64-attributed`; the last grade means source-declared metadata is complete, not independently authenticated |
 | `receipt` | Path to `gate.json` |
 | `recommendation-sha256` | Recommendation digest |
 | `report-sha256` | Report digest |
 | `decision-passport-sha256` | Decision-passport digest |
+| `optimization-receipt-sha256` | Optimization-receipt digest |
 | `receipt-sha256` | Receipt digest |
 
-The Action also writes a compact decision table to the GitHub Actions job summary.
+The Action also writes the human-readable Optimization Receipt to the GitHub Actions job summary.
 
 ## Local equivalent
 
@@ -136,6 +140,15 @@ To export only the supplementary machine-readable context:
 python -m paretopilot passport benchmarks/benchmark-set.json \
   --constraints constraints/deployment.json \
   --output decision-passport.json \
+  --require-arm64-provenance
+```
+
+To export the same context as a deterministic Markdown receipt:
+
+```bash
+python -m paretopilot optimization-receipt benchmarks/benchmark-set.json \
+  --constraints constraints/deployment.json \
+  --output optimization-receipt.md \
   --require-arm64-provenance
 ```
 

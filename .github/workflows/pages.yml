@@ -368,6 +368,11 @@ jobs:
           PY
           mkdir -p _site/evidence
           cp output/pages/replayed/report-v1.1.html _site/evidence/report-v1.1.html
+          PYTHONPATH=src python -m paretopilot optimization-receipt \
+            output/pages/evidence/experiment/benchmark-set.json \
+            --constraints output/pages/evidence/experiment/constraints.json \
+            --output _site/evidence/optimization-receipt.md \
+            --require-arm64-provenance
           PYTHONPATH=src python -m paretopilot showcase-v11 \
             output/pages/evidence/experiment/benchmark-set.json \
             --recommendation output/pages/evidence/experiment/recommendation.json \
@@ -378,7 +383,7 @@ jobs:
             --canonical-report output/pages/replayed/report-v1.1.html \
             --canonical-report-href evidence/report-v1.1.html \
             --output _site/index.html
-          test "$(find _site -type f | wc -l)" -eq 2
+          test "$(find _site -type f | wc -l)" -eq 3
 
       - name: Upload Pages artifact
         uses: actions/upload-pages-artifact@fc324d3547104276b827a68afc52ff2a11cc49c9 # v5.0.0

@@ -1,5 +1,5 @@
 name: ParetoPilot decision gate
-description: Validate benchmark evidence, select a deployment candidate, and publish a CI receipt.
+description: Validate benchmark evidence, select a deployment candidate, and publish audit-ready receipts.
 author: Ashmit Grover
 
 branding:
@@ -14,7 +14,7 @@ inputs:
     description: Path to a ParetoPilot constraints JSON file.
     required: true
   output-dir:
-    description: New or empty directory for the recommendation, passport, report, and receipt.
+    description: New or empty directory for the recommendation, passport, report, optimization receipt, and gate receipt.
     required: false
     default: paretopilot-output
   require-measured:
@@ -46,6 +46,9 @@ outputs:
   decision-passport:
     description: Path to the supplementary Arm64 decision passport.
     value: ${{ steps.receipt.outputs.decision-passport }}
+  optimization-receipt:
+    description: Path to the deterministic human-readable optimization receipt.
+    value: ${{ steps.receipt.outputs.optimization-receipt }}
   evidence-grade:
     description: Passport evidence grade.
     value: ${{ steps.receipt.outputs.evidence-grade }}
@@ -61,6 +64,9 @@ outputs:
   decision-passport-sha256:
     description: SHA-256 of the decision passport.
     value: ${{ steps.receipt.outputs.decision-passport-sha256 }}
+  optimization-receipt-sha256:
+    description: SHA-256 of the Markdown optimization receipt.
+    value: ${{ steps.receipt.outputs.optimization-receipt-sha256 }}
   receipt-sha256:
     description: SHA-256 of the gate receipt.
     value: ${{ steps.receipt.outputs.receipt-sha256 }}
@@ -130,9 +136,11 @@ runs:
         receipt_path = output_dir / "gate.json"
         recommendation_path = output_dir / "recommendation.json"
         passport_path = output_dir / "decision-passport.json"
+        optimization_receipt_path = output_dir / "optimization-receipt.md"
         receipt = json.loads(receipt_path.read_text(encoding="utf-8"))
         recommendation = json.loads(recommendation_path.read_text(encoding="utf-8"))
         passport = json.loads(passport_path.read_text(encoding="utf-8"))
+        optimization_receipt = optimization_receipt_path.read_text(encoding="utf-8")
 
         def emit(name: str, value: object) -> None:
             text = str(value).lower() if isinstance(value, bool) else str(value)
@@ -145,11 +153,13 @@ runs:
         emit("recommendation", receipt["recommendation"])
         emit("report", receipt["report"])
         emit("decision-passport", receipt["decision_passport"])
+        emit("optimization-receipt", receipt["optimization_receipt"])
         emit("evidence-grade", receipt["evidence_grade"])
         emit("receipt", receipt_path)
         emit("recommendation-sha256", receipt["recommendation_sha256"])
         emit("report-sha256", receipt["report_sha256"])
         emit("decision-passport-sha256", receipt["decision_passport_sha256"])
+        emit("optimization-receipt-sha256", receipt["optimization_receipt_sha256"])
 
         receipt_digest = hashlib.sha256(receipt_path.read_bytes()).hexdigest()
         emit("receipt-sha256", receipt_digest)
@@ -203,4 +213,6 @@ runs:
             ]
             with Path(summary_path).open("a", encoding="utf-8", newline="\n") as handle:
                 handle.write("\n".join(lines))
+                handle.write("\n")
+                handle.write(optimization_receipt)
         PY

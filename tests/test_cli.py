@@ -242,9 +242,11 @@ class CliTests(unittest.TestCase):
             recommendation_path = output_dir / "recommendation.json"
             report_path = output_dir / "report.html"
             passport_path = output_dir / "decision-passport.json"
+            optimization_receipt_path = output_dir / "optimization-receipt.md"
             receipt_path = output_dir / "gate.json"
             recommendation = json.loads(recommendation_path.read_text(encoding="utf-8"))
             passport = json.loads(passport_path.read_text(encoding="utf-8"))
+            optimization_receipt = optimization_receipt_path.read_text(encoding="utf-8")
             receipt = json.loads(receipt_path.read_text(encoding="utf-8"))
 
             self.assertEqual(exit_code, 0)
@@ -253,9 +255,11 @@ class CliTests(unittest.TestCase):
             self.assertTrue(payload["synthetic_source"])
             self.assertEqual(recommendation["selected_id"], "q4-kleidiai")
             self.assertEqual(receipt["selected_id"], "q4-kleidiai")
-            self.assertEqual(receipt["schema_version"], "1.1")
+            self.assertEqual(receipt["schema_version"], "1.2")
             self.assertEqual(receipt["evidence_grade"], "synthetic")
             self.assertEqual(passport["evidence_grade"], "synthetic")
+            self.assertIn("Synthetic", optimization_receipt)
+            self.assertNotIn("Measured improvement", optimization_receipt)
             self.assertEqual(
                 receipt["recommendation_sha256"],
                 cli.sha256_file(recommendation_path),
@@ -264,6 +268,14 @@ class CliTests(unittest.TestCase):
             self.assertEqual(
                 receipt["decision_passport_sha256"],
                 cli.sha256_file(passport_path),
+            )
+            self.assertEqual(
+                receipt["optimization_receipt_sha256"],
+                cli.sha256_file(optimization_receipt_path),
+            )
+            self.assertEqual(
+                receipt["optimization_receipt"],
+                str(optimization_receipt_path),
             )
             self.assertEqual(payload["receipt_sha256"], cli.sha256_file(receipt_path))
 
@@ -310,6 +322,9 @@ class CliTests(unittest.TestCase):
             passport = json.loads(
                 (output_dir / "decision-passport.json").read_text(encoding="utf-8")
             )
+            optimization_receipt = (output_dir / "optimization-receipt.md").read_text(
+                encoding="utf-8"
+            )
             self.assertEqual(exit_code, 0)
             snapshot_loader.assert_called_once_with(constraints_path)
             self.assertEqual(
@@ -320,6 +335,50 @@ class CliTests(unittest.TestCase):
                 recommendation["input_fingerprints"]["constraints_sha256"],
                 original_constraints_sha256,
             )
+            self.assertIn(original_constraints_sha256, optimization_receipt)
+
+    def test_optimization_receipt_cli_exports_a_deterministic_human_artifact(self) -> None:
+        with TemporaryDirectory() as directory:
+            output_path = Path(directory) / "optimization-receipt.md"
+            stdout = io.StringIO()
+            with patch("sys.stdout", stdout):
+                exit_code = cli.main(
+                    [
+                        "optimization-receipt",
+                        "examples/synthetic-results.json",
+                        "--constraints",
+                        "configs/constraints.example.json",
+                        "--output",
+                        str(output_path),
+                    ]
+                )
+
+            payload = json.loads(stdout.getvalue())
+            receipt = output_path.read_text(encoding="utf-8")
+            self.assertEqual(exit_code, 0)
+            self.assertEqual(payload["selected_id"], "q4-kleidiai")
+            self.assertEqual(payload["evidence_grade"], "synthetic")
+            self.assertEqual(payload["optimization_receipt"], str(output_path))
+            self.assertEqual(
+                payload["optimization_receipt_sha256"],
+                cli.sha256_file(output_path),
+            )
+            self.assertIn("# ParetoPilot Optimization Receipt", receipt)
+            self.assertIn("Synthetic", receipt)
+            self.assertTrue(receipt.endswith("\n"))
+
+            with patch("sys.stdout", io.StringIO()), patch("sys.stderr", io.StringIO()):
+                overwrite_exit = cli.main(
+                    [
+                        "optimization-receipt",
+                        "examples/synthetic-results.json",
+                        "--constraints",
+                        "configs/constraints.example.json",
+                        "--output",
+                        str(output_path),
+                    ]
+                )
+            self.assertEqual(overwrite_exit, 2)
 
     def test_passport_cli_exports_strict_arm64_attribution_for_canonical_fixture(self) -> None:
         with TemporaryDirectory() as directory:
