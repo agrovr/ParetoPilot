@@ -1505,6 +1505,45 @@ class ShowcaseV11Tests(unittest.TestCase):
         self.assertIn('class="slo-reference-label"', report)
         self.assertIn('text-anchor="start">SLO', report)
 
+    def test_load_section_puts_measured_results_before_exact_contract(self) -> None:
+        report = rendered_showcase()
+        load_start = report.index('<section class="report-section" aria-labelledby="load-heading">')
+        load_end = report.index('<section class="report-section"', load_start + 1)
+        load_section = report[load_start:load_end]
+
+        self.assertIn(
+            '<div class="load-takeaway" role="note" aria-label="Measured load takeaway">',
+            load_section,
+        )
+        self.assertIn(
+            "Every candidate’s highest measured all-gates passing concurrency was C4.",
+            load_section,
+        )
+        self.assertIn(
+            "At C4, every candidate remained within the declared 3,000 ms p95 end-to-end ceiling.",
+            load_section,
+        )
+        self.assertIn(
+            '<details class="load-contract-disclosure">'
+            "<summary>Inspect exact load contract and prompts</summary>"
+            '<div class="load-context-grid">',
+            load_section,
+        )
+        self.assertLess(
+            load_section.index('class="series-key-wrap"'),
+            load_section.index('<div class="chart-grid-layout">'),
+        )
+        self.assertLess(
+            load_section.index('<div class="chart-grid-layout">'),
+            load_section.index('<details class="load-contract-disclosure">'),
+        )
+        self.assertLess(
+            load_section.index('<details class="load-contract-disclosure">'),
+            load_section.index("Inspect every measured load row"),
+        )
+        self.assertEqual(load_section.count("Command and plan binding"), 1)
+        self.assertEqual(load_section.count("Load sweep methodology"), 1)
+
     def test_out_of_range_slo_is_annotated_without_a_false_reference_line(self) -> None:
         load = deepcopy(measured_load_sweep())
         maximum = max(float(row["e2e_latency_ms_p95"]) for row in load["rows"])
@@ -1845,3 +1884,4 @@ class ShowcaseV11Tests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
