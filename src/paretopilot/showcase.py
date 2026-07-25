@@ -23,6 +23,7 @@ import re
 from typing import Any
 from urllib.parse import urlsplit
 
+from paretopilot.capacity_eval import validate_capacity_study
 from paretopilot.decision_passport import build_decision_passport
 from paretopilot.domain import BenchmarkSet, Candidate, Constraints, ValidationError
 from paretopilot.report_v11 import render_report_v11
@@ -687,22 +688,46 @@ def _correct_load_axis_ceilings(
     return result
 
 
-def _validated_report_href(value: str) -> str:
+def _validated_href(value: str, *, label: str) -> str:
     if not isinstance(value, str) or not value:
-        raise ValidationError("canonical_report_href must be a non-empty string")
+        raise ValidationError(f"{label} must be a non-empty string")
     if "\\" in value:
-        raise ValidationError("canonical_report_href must use URL path separators")
+        raise ValidationError(f"{label} must use URL path separators")
     parsed = urlsplit(value)
+    if parsed.query or parsed.fragment:
+        raise ValidationError(f"{label} must not contain a query or fragment")
+    if "%" in parsed.path:
+        raise ValidationError(f"{label} must not contain encoded path segments")
     if parsed.scheme:
-        if parsed.scheme != "https" or not parsed.netloc:
-            raise ValidationError("canonical_report_href must be a relative path or an HTTPS URL")
-        return value
-    if parsed.netloc or value.startswith(("/", "#")):
-        raise ValidationError("canonical_report_href must be a relative path or an HTTPS URL")
-    path_parts = tuple(part for part in parsed.path.split("/") if part)
-    if not path_parts or ".." in path_parts:
-        raise ValidationError("canonical_report_href must be a safe relative path")
+        if (
+            parsed.scheme != "https"
+            or not parsed.netloc
+            or parsed.username is not None
+            or parsed.password is not None
+        ):
+            raise ValidationError(f"{label} must be a relative path or an HTTPS URL")
+        raw_parts = parsed.path.split("/")[1:]
+    else:
+        if parsed.netloc or value.startswith(("/", "#")):
+            raise ValidationError(f"{label} must be a relative path or an HTTPS URL")
+        raw_parts = parsed.path.split("/")
+    if not raw_parts or any(part in {"", ".", ".."} for part in raw_parts):
+        raise ValidationError(f"{label} must be a safe file path")
     return value
+
+
+def _validated_evidence_href(value: str, *, label: str, filename: str) -> str:
+    validated = _validated_href(value, label=label)
+    if urlsplit(validated).path.rsplit("/", 1)[-1] != filename:
+        raise ValidationError(f"{label} must point to {filename}")
+    return validated
+
+
+def _validated_report_href(value: str) -> str:
+    validated = _validated_href(value, label="canonical_report_href")
+    if urlsplit(validated).path.rsplit("/", 1)[-1] != "report-v1.1.html":
+        raise ValidationError("canonical_report_href must point to report-v1.1.html")
+    return validated
 
 
 def _add_release_hashes(document: str, proof: Mapping[str, str]) -> str:
@@ -844,7 +869,7 @@ def _tolerance_visual(
 _ATTRIBUTION_STAGE_LABELS = {
     "reference": "Reference",
     "quantization": "Quantization",
-    "arm-kernel": "Arm kernel",
+    "arm-kernel": "KleidiAI build",
     "runtime-tuning": "Runtime tuning",
 }
 _MEASURED_EFFECT_LABELS = {
@@ -1130,6 +1155,722 @@ def _optimization_ladder_markup(passport: Mapping[str, Any]) -> str:
     )
 
 
+def _locked_sha256(value: object, label: str) -> str:
+    if not isinstance(value, str) or _SHA256_RE.fullmatch(value) is None:
+        raise ValidationError(f"{label} must be a lowercase SHA-256 digest")
+    return value
+
+
+def _require_true_flags(
+    source: Mapping[str, Any],
+    names: Sequence[str],
+    *,
+    label: str,
+) -> None:
+    for name in names:
+        if source.get(name) is not True:
+            raise ValidationError(f"{label} flag is not true: {name}")
+
+
+def _capacity_result_from_study(study: Mapping[str, Any]) -> Mapping[str, Any]:
+    """Recompute the compact publication result from validated study data."""
+
+    plan = _mapping(study.get("plan"), "capacity study plan")
+    load_contract = _mapping(study.get("load_contract"), "capacity load contract")
+    methodology = _mapping(
+        load_contract.get("methodology"),
+        "capacity load methodology",
+    )
+    candidates = [
+        _mapping(candidate, "capacity candidate") for candidate in plan.get("candidates", ())
+    ]
+    cells = [_mapping(cell, "capacity cell") for cell in study.get("cells", ())]
+    selections = [
+        _mapping(selection, "capacity selection") for selection in study.get("selections", ())
+    ]
+    quality_checks = [
+        _mapping(check, "capacity quality check") for check in study.get("quality_checks", ())
+    ]
+    passes = list(plan.get("passes", ()))
+
+    cell_index = {
+        (
+            str(cell.get("candidate_id")),
+            int(cell.get("server_parallel")),
+            int(cell.get("client_concurrency")),
+        ): cell
+        for cell in cells
+    }
+    selection_index = {str(selection.get("candidate_id")): selection for selection in selections}
+    selected_points: dict[str, Any] = {}
+    selected_summaries: dict[str, Mapping[str, Any]] = {}
+
+    for candidate in candidates:
+        candidate_id = str(candidate.get("id"))
+        role = str(candidate.get("role"))
+        selection = _mapping(
+            selection_index.get(candidate_id),
+            f"capacity selection for {candidate_id}",
+        )
+        selected = _mapping(
+            selection.get("selected_cell"),
+            f"capacity selected cell for {candidate_id}",
+        )
+        selected_key = (
+            candidate_id,
+            int(selected.get("server_parallel")),
+            int(selected.get("client_concurrency")),
+        )
+        selected_cell = cell_index.get(selected_key)
+        if selected_cell is None:
+            raise ValidationError(f"capacity selected cell is missing: {candidate_id}")
+        summary = _mapping(
+            selected_cell.get("summary"),
+            f"capacity selected summary for {candidate_id}",
+        )
+        selected_summaries[role] = summary
+
+        selected_quality = [
+            check
+            for check in quality_checks
+            if str(check.get("candidate_id")) == candidate_id
+            and int(check.get("server_parallel")) == selected_key[1]
+        ]
+        if len(selected_quality) != 1:
+            raise ValidationError(f"capacity selected quality check must be unique: {candidate_id}")
+        quality = selected_quality[0]
+        candidate_quality = [
+            check for check in quality_checks if str(check.get("candidate_id")) == candidate_id
+        ]
+        outcomes_consistent = (
+            bool(candidate_quality)
+            and len({str(check.get("outcomes_sha256")) for check in candidate_quality}) == 1
+        )
+        comparison = _mapping(
+            selection.get("comparison_to_reference_percent"),
+            f"capacity reference comparison for {candidate_id}",
+        )
+
+        selected_points[candidate_id] = {
+            "label": candidate.get("label"),
+            "role": candidate.get("role"),
+            "server_parallel": selected_key[1],
+            "client_concurrency": selected_key[2],
+            "eligible_cell_count": int(selection.get("eligible_cell_count")),
+            "within_tolerance_cell_count": int(selection.get("within_tolerance_cell_count")),
+            "generated_tokens_per_second_median": summary.get("generated_tokens_per_second_median"),
+            "ttft_ms_p95_median": summary.get("ttft_ms_p95_median"),
+            "e2e_latency_ms_p95_median": summary.get("e2e_latency_ms_p95_median"),
+            "server_peak_rss_mib_max": summary.get("server_peak_rss_mib_max"),
+            "gain_vs_own_p1c1_percent": comparison.get("generated_tokens_per_second_median"),
+            "quality": {
+                "passed": int(quality.get("passed")),
+                "total": int(quality.get("total")),
+                "score": quality.get("score"),
+                "retention_vs_reference": quality.get("retention_vs_reference"),
+                "outcomes_consistent_across_parallel": outcomes_consistent,
+                "gate_met": quality.get("gate_met"),
+            },
+        }
+
+    canonical = selected_summaries.get("canonical-reference")
+    alternative = selected_summaries.get("resource-alternative")
+    if canonical is None or alternative is None:
+        raise ValidationError("capacity result requires canonical and alternative roles")
+    comparison_metrics = (
+        "generated_tokens_per_second_median",
+        "ttft_ms_p95_median",
+        "e2e_latency_ms_p95_median",
+        "server_peak_rss_mib_max",
+    )
+    selected_comparison: dict[str, float] = {}
+    for metric in comparison_metrics:
+        delta = _percent_delta(
+            float(alternative.get(metric)),
+            float(canonical.get(metric)),
+        )
+        if delta is None:
+            raise ValidationError(f"capacity selected comparison has zero baseline: {metric}")
+        selected_comparison[metric] = delta
+
+    measured_requests = sum(
+        int(_mapping(metric, "capacity pass metric").get("request_count"))
+        for cell in cells
+        for metric in cell.get("pass_metrics", ())
+    )
+    warmups_per_level = int(methodology.get("warmup_requests_per_level"))
+    return {
+        "pass_count": len(passes),
+        "candidate_count": len(candidates),
+        "cell_count": len(cells),
+        "eligible_cell_count": sum(
+            int(selection.get("eligible_cell_count")) for selection in selections
+        ),
+        "measured_request_count": measured_requests,
+        "warmup_request_count": len(cells) * len(passes) * warmups_per_level,
+        "output_tokens_per_request": int(methodology.get("output_tokens")),
+        "selected_operating_points": selected_points,
+        "q4_vs_q8_at_selected_points_percent": selected_comparison,
+    }
+
+
+def _capacity_values_match(locked: object, expected: object) -> bool:
+    if isinstance(expected, Mapping):
+        if not isinstance(locked, Mapping) or set(locked) != set(expected):
+            return False
+        return all(_capacity_values_match(locked[name], expected[name]) for name in expected)
+    if isinstance(expected, Sequence) and not isinstance(expected, (str, bytes)):
+        if (
+            not isinstance(locked, Sequence)
+            or isinstance(locked, (str, bytes))
+            or len(locked) != len(expected)
+        ):
+            return False
+        return all(
+            _capacity_values_match(locked_value, expected_value)
+            for locked_value, expected_value in zip(locked, expected, strict=True)
+        )
+    if isinstance(expected, bool):
+        return locked is expected
+    if isinstance(expected, float):
+        return (
+            isinstance(locked, (int, float))
+            and not isinstance(locked, bool)
+            and math.isfinite(float(locked))
+            and math.isclose(float(locked), expected, rel_tol=1e-12, abs_tol=1e-12)
+        )
+    if isinstance(expected, int):
+        return isinstance(locked, int) and not isinstance(locked, bool) and locked == expected
+    return locked == expected
+
+
+def _capacity_proof_context(
+    study: Mapping[str, Any],
+    capacity_lock: Mapping[str, Any],
+    canonical_lock: Mapping[str, Any],
+    *,
+    study_sha256: str,
+    canonical_lock_sha256: str,
+) -> Mapping[str, str]:
+    """Bind a validated capacity study to both reviewed release locks."""
+
+    validate_capacity_study(study)
+    study_digest = _locked_sha256(study_sha256, "capacity_study_sha256")
+    canonical_lock_digest = _locked_sha256(
+        canonical_lock_sha256,
+        "evidence_lock_sha256",
+    )
+
+    lock = _mapping(capacity_lock, "capacity_evidence_lock")
+    if (
+        lock.get("schema_version") != "1.4"
+        or lock.get("classification") != "supplementary-capacity"
+    ):
+        raise ValidationError("capacity_evidence_lock must be supplementary-capacity schema 1.4")
+
+    study_provenance = _mapping(study.get("provenance"), "capacity study provenance")
+    study_source = _mapping(study_provenance.get("source"), "capacity study source")
+    lock_source = _mapping(lock.get("source"), "capacity_evidence_lock.source")
+    source_pairs = {
+        "run_id": "run_id",
+        "run_attempt": "run_attempt",
+        "revision": "head_sha",
+        "workflow": "workflow",
+    }
+    for study_name, lock_name in source_pairs.items():
+        if study_source.get(study_name) != lock_source.get(lock_name):
+            raise ValidationError(f"capacity evidence source does not match study: {lock_name}")
+    if lock_source.get("runner") != study_provenance.get("runner"):
+        raise ValidationError("capacity evidence runner does not match study")
+
+    review = _mapping(lock.get("review"), "capacity_evidence_lock.review")
+    _require_true_flags(
+        review,
+        (
+            "all_checksums_verified",
+            "archive_digest_matches_actions_digest",
+            "exact_file_coverage",
+            "status_complete",
+            "measurement_valid",
+            "valid_evidence",
+        ),
+        label="capacity_evidence_lock.review",
+    )
+    if review.get("synthetic") is not False or study.get("synthetic") is not False:
+        raise ValidationError("capacity evidence must be measured, not synthetic")
+    if (
+        review.get("canonical_outputs_modified") is not False
+        or study.get("canonical_outputs_modified") is not False
+    ):
+        raise ValidationError("capacity evidence must not modify canonical outputs")
+
+    checksum_entries = review.get("checksum_entries")
+    if (
+        not isinstance(checksum_entries, int)
+        or isinstance(checksum_entries, bool)
+        or checksum_entries <= 0
+    ):
+        raise ValidationError("capacity checksum_entries must be a positive integer")
+    checksum_digest = _locked_sha256(
+        review.get("checksum_manifest_sha256"),
+        "capacity checksum manifest",
+    )
+    artifacts = _mapping(
+        review.get("artifacts_sha256"),
+        "capacity_evidence_lock.review.artifacts_sha256",
+    )
+    for name, digest in artifacts.items():
+        _locked_sha256(digest, f"capacity artifact {name}")
+    if artifacts.get("capacity_study") != study_digest:
+        raise ValidationError("capacity study digest does not match its evidence lock")
+
+    recomputation = _mapping(
+        review.get("recomputation"),
+        "capacity_evidence_lock.review.recomputation",
+    )
+    _require_true_flags(
+        recomputation,
+        (
+            "raw_inputs_reassembled",
+            "capacity_study_exact_match",
+            "capacity_receipt_regenerated",
+            "capacity_receipt_exact_match",
+        ),
+        label="capacity_evidence_lock.review.recomputation",
+    )
+    if recomputation.get("mismatched_cell_count") != 0:
+        raise ValidationError("capacity recomputation contains mismatched cells")
+    if recomputation.get("failed_request_count") != 0:
+        raise ValidationError("capacity recomputation contains request errors")
+
+    locked_result = _mapping(lock.get("result"), "capacity_evidence_lock.result")
+    expected_result = _capacity_result_from_study(study)
+    if not _capacity_values_match(locked_result, expected_result):
+        raise ValidationError("capacity locked result does not match the validated study")
+    if recomputation.get("recomputed_cell_count") != expected_result["cell_count"]:
+        raise ValidationError("capacity recomputation cell count does not match the study")
+    if recomputation.get("measured_request_count") != expected_result["measured_request_count"]:
+        raise ValidationError("capacity recomputation request count does not match the study")
+    if recomputation.get("completed_request_count") != expected_result["measured_request_count"]:
+        raise ValidationError("capacity recomputation did not complete every request")
+
+    replay = _mapping(review.get("replay"), "capacity_evidence_lock.review.replay")
+    _require_true_flags(
+        replay,
+        (
+            "valid",
+            "decision_reproduced",
+            "fully_reproduced",
+            "authoritative_outputs_match",
+            "report_matches_archive",
+        ),
+        label="capacity_evidence_lock.review.replay",
+    )
+    if replay.get("differences") != [] or replay.get("warnings") != []:
+        raise ValidationError("capacity embedded canonical replay is not clean")
+
+    capacity_canonical = _mapping(
+        lock.get("canonical_evidence"),
+        "capacity_evidence_lock.canonical_evidence",
+    )
+    study_canonical = _mapping(
+        study_provenance.get("canonical_evidence"),
+        "capacity study canonical evidence",
+    )
+    if capacity_canonical.get("outputs_modified") is not False:
+        raise ValidationError("capacity lock says canonical outputs were modified")
+    for field in ("run_id", "release_tag", "release_sha256", "lock_sha256"):
+        if capacity_canonical.get(field) != study_canonical.get(field):
+            raise ValidationError(f"capacity lock canonical linkage does not match study: {field}")
+
+    canonical_source = _mapping(canonical_lock.get("source"), "evidence_lock.source")
+    canonical_archive = _mapping(canonical_lock.get("archive"), "evidence_lock.archive")
+    canonical_expectations = {
+        "run_id": str(canonical_source.get("run_id")),
+        "release_tag": canonical_archive.get("release_tag"),
+        "release_sha256": canonical_archive.get("sha256"),
+        "lock_sha256": canonical_lock_digest,
+    }
+    for field, expected in canonical_expectations.items():
+        if capacity_canonical.get(field) != expected:
+            raise ValidationError(f"capacity evidence does not match canonical lock: {field}")
+
+    archive = _mapping(lock.get("archive"), "capacity_evidence_lock.archive")
+    archive_digest = _locked_sha256(
+        archive.get("sha256"),
+        "capacity release archive",
+    )
+    if archive.get("actions_digest") != f"sha256:{archive_digest}":
+        raise ValidationError("capacity release archive does not match the Actions digest")
+    archive_size = archive.get("size_bytes")
+    if not isinstance(archive_size, int) or isinstance(archive_size, bool) or archive_size <= 0:
+        raise ValidationError("capacity release archive size must be a positive integer")
+    release_tag = archive.get("release_tag")
+    if not isinstance(release_tag, str) or not release_tag:
+        raise ValidationError("capacity release tag must be non-empty")
+    asset_name = archive.get("release_asset_name")
+    if not isinstance(asset_name, str) or not asset_name or "/" in asset_name or "\\" in asset_name:
+        raise ValidationError("capacity release asset name must be a safe filename")
+    raw_archive_url = archive.get("release_asset_url")
+    if not isinstance(raw_archive_url, str):
+        raise ValidationError("capacity release asset URL must be a non-empty string")
+    archive_url = _validated_href(
+        raw_archive_url,
+        label="capacity release asset URL",
+    )
+    repository = study_source.get("repository")
+    if not isinstance(repository, str) or repository.count("/") != 1:
+        raise ValidationError("capacity study repository must be owner/name")
+    expected_archive_url = (
+        f"https://github.com/{repository}/releases/download/{release_tag}/{asset_name}"
+    )
+    if archive_url != expected_archive_url:
+        raise ValidationError("capacity release asset URL does not match its repository lock")
+
+    return {
+        "archive_sha256": archive_digest,
+        "archive_url": archive_url,
+        "checksum_entries": str(checksum_entries),
+        "checksum_manifest_sha256": checksum_digest,
+        "release_tag": release_tag,
+        "study_sha256": study_digest,
+    }
+
+
+def _relative_measure_phrase(
+    delta_percent: float,
+    metric: str,
+) -> str:
+    if delta_percent == 0:
+        return f"no change in {metric}"
+    direction = "more" if delta_percent > 0 else "less"
+    return f"{_format_number(abs(delta_percent), digits=2)}% {direction} {metric}"
+
+
+def _capacity_failure_label(reasons: object) -> tuple[str, str]:
+    if not isinstance(reasons, Sequence) or isinstance(reasons, (str, bytes)):
+        raise ValidationError("capacity failure reasons must be an array")
+    normalized = [str(reason) for reason in reasons]
+    labels: list[str] = []
+    if any("ttft_ms_p95_above_maximum" in reason for reason in normalized):
+        labels.append("TTFT")
+    if any("e2e_latency_ms_p95_above_maximum" in reason for reason in normalized):
+        labels.append("E2E")
+    if not labels:
+        labels.append("Gate")
+    short = " + ".join(labels)
+    expanded = " and ".join(
+        {
+            "TTFT": "time to first token",
+            "E2E": "end-to-end latency",
+            "Gate": "one or more declared gates",
+        }[label]
+        for label in labels
+    )
+    return short, expanded
+
+
+def _capacity_envelope_markup(
+    study: Mapping[str, Any],
+    proof: Mapping[str, str],
+    *,
+    study_href: str,
+    receipt_href: str,
+) -> str:
+    """Render the measured 3 by 3 operating envelope without browser-side math."""
+
+    study_href = _validated_evidence_href(
+        study_href,
+        label="capacity_study_href",
+        filename="capacity-study.json",
+    )
+    receipt_href = _validated_evidence_href(
+        receipt_href,
+        label="capacity_receipt_href",
+        filename="capacity-receipt.md",
+    )
+    plan = _mapping(study.get("plan"), "capacity study plan")
+    raw_candidates = plan.get("candidates")
+    raw_cells = study.get("cells")
+    raw_selections = study.get("selections")
+    raw_quality = study.get("quality_checks")
+    raw_passes = plan.get("passes")
+    if any(
+        not isinstance(value, Sequence) or isinstance(value, (str, bytes))
+        for value in (raw_candidates, raw_cells, raw_selections, raw_quality, raw_passes)
+    ):
+        raise ValidationError("capacity study presentation arrays are invalid")
+
+    candidates = [_mapping(item, "capacity candidate") for item in raw_candidates]
+    cells = [_mapping(item, "capacity cell") for item in raw_cells]
+    selections = {
+        str(item.get("candidate_id")): item
+        for item in (_mapping(raw_item, "capacity selection") for raw_item in raw_selections)
+    }
+    quality_checks = [_mapping(raw_item, "capacity quality check") for raw_item in raw_quality]
+    levels_parallel = [int(value) for value in plan.get("server_parallel_levels", ())]
+    levels_concurrency = [int(value) for value in plan.get("client_concurrency_levels", ())]
+    if levels_parallel != [1, 2, 4] or levels_concurrency != [1, 2, 4]:
+        raise ValidationError("capacity presentation requires the reviewed 1, 2, 4 matrix")
+
+    cell_index = {
+        (
+            str(cell.get("candidate_id")),
+            int(cell.get("server_parallel")),
+            int(cell.get("client_concurrency")),
+        ): cell
+        for cell in cells
+    }
+    measured_request_count = sum(
+        int(pass_metric.get("request_count"))
+        for cell in cells
+        for pass_metric in (
+            _mapping(item, "capacity pass metric") for item in cell.get("pass_metrics", ())
+        )
+    )
+    blocked_count = sum(
+        _mapping(cell.get("summary"), "capacity cell summary").get("capacity_gate_met") is not True
+        for cell in cells
+    )
+
+    candidate_boards: list[str] = []
+    selected_summaries: dict[str, Mapping[str, Any]] = {}
+    selected_points_by_role: dict[str, tuple[int, int]] = {}
+    candidate_by_role = {str(candidate.get("role")): candidate for candidate in candidates}
+    for candidate in candidates:
+        candidate_id = str(candidate.get("id"))
+        selection = _mapping(
+            selections.get(candidate_id),
+            f"capacity selection for {candidate_id}",
+        )
+        selected = _mapping(selection.get("selected_cell"), "capacity selected cell")
+        reference = _mapping(selection.get("reference_cell"), "capacity reference cell")
+        selected_key = (
+            candidate_id,
+            int(selected.get("server_parallel")),
+            int(selected.get("client_concurrency")),
+        )
+        reference_key = (
+            candidate_id,
+            int(reference.get("server_parallel")),
+            int(reference.get("client_concurrency")),
+        )
+        selected_cell = cell_index.get(selected_key)
+        if selected_cell is None:
+            raise ValidationError(f"capacity selected cell is missing: {candidate_id}")
+        selected_summary = _mapping(
+            selected_cell.get("summary"),
+            "capacity selected cell summary",
+        )
+        selected_summaries[str(candidate.get("role"))] = selected_summary
+        selected_points_by_role[str(candidate.get("role"))] = (
+            selected_key[1],
+            selected_key[2],
+        )
+
+        quality = next(
+            (
+                check
+                for check in quality_checks
+                if str(check.get("candidate_id")) == candidate_id
+                and int(check.get("server_parallel")) == selected_key[1]
+            ),
+            None,
+        )
+        if quality is None:
+            raise ValidationError(f"capacity selected quality check is missing: {candidate_id}")
+
+        rows: list[str] = []
+        blocked_items: list[str] = []
+        for server_parallel in levels_parallel:
+            row_cells: list[str] = []
+            for client_concurrency in levels_concurrency:
+                key = (candidate_id, server_parallel, client_concurrency)
+                cell = cell_index.get(key)
+                if cell is None:
+                    raise ValidationError(f"capacity matrix cell is missing: {key!r}")
+                summary = _mapping(cell.get("summary"), "capacity matrix summary")
+                gate_met = summary.get("capacity_gate_met") is True
+                is_selected = key == selected_key
+                is_reference = key == reference_key
+                if is_selected:
+                    state = "Selected"
+                    state_class = "is-selected"
+                    reason_markup = ""
+                elif gate_met:
+                    state = "Pass"
+                    state_class = "is-pass"
+                    reason_markup = ""
+                else:
+                    state = "Blocked"
+                    state_class = "is-blocked"
+                    reason, expanded_reason = _capacity_failure_label(
+                        summary.get("failure_reasons")
+                    )
+                    reason_markup = (
+                        f'<span class="capacity-failure" aria-label="Blocked by '
+                        f'{_escape(expanded_reason)}">{_escape(reason)}</span>'
+                    )
+                    blocked_items.append(
+                        f"<li><strong>P{server_parallel} / C{client_concurrency}</strong>"
+                        f"<span>{_escape(expanded_reason.capitalize())} exceeded the "
+                        "predeclared limit.</span></li>"
+                    )
+
+                reference_markup = (
+                    '<span class="capacity-reference">Reference</span>' if is_reference else ""
+                )
+                row_cells.append(
+                    f'<td class="capacity-cell {state_class}" '
+                    f'data-capacity-state="{state.lower()}">'
+                    '<div class="capacity-cell-top">'
+                    f'<span class="capacity-state">{_escape(state)}</span>{reference_markup}'
+                    "</div>"
+                    '<p class="capacity-rate">'
+                    f"<strong>{_format_number(float(summary.get('generated_tokens_per_second_median')), digits=2)}</strong>"
+                    "<span>tok/s</span></p>"
+                    '<dl class="capacity-cell-metrics">'
+                    "<div><dt>E2E</dt>"
+                    f"<dd>{_format_number(float(summary.get('e2e_latency_ms_p95_median')), digits=0)} ms</dd></div>"
+                    "<div><dt>TTFT</dt>"
+                    f"<dd>{_format_number(float(summary.get('ttft_ms_p95_median')), digits=0)} ms</dd></div>"
+                    "</dl>"
+                    f"{reason_markup}</td>"
+                )
+            rows.append(
+                f'<tr><th scope="row"><span>Server slots</span>P{server_parallel}</th>'
+                f"{''.join(row_cells)}</tr>"
+            )
+
+        role = str(candidate.get("role"))
+        role_label = {
+            "canonical-reference": "Canonical reference",
+            "resource-alternative": "Resource alternative",
+        }.get(role, role.replace("-", " ").title())
+        accent_class = "is-q8" if role == "canonical-reference" else "is-q4"
+        candidate_boards.append(
+            f'<article class="capacity-board {accent_class}">'
+            '<header class="capacity-board-heading">'
+            f"<p>{_escape(role_label)}</p><h3>{_escape(candidate.get('label'))}</h3>"
+            '<dl class="capacity-selected-summary">'
+            f"<div><dt>Selected point</dt><dd>P{selected_key[1]} / C{selected_key[2]}</dd></div>"
+            "<div><dt>Peak RSS</dt>"
+            f"<dd>{_format_number(float(selected_summary.get('server_peak_rss_mib_max')), digits=1)} MiB</dd></div>"
+            "<div><dt>Quality</dt>"
+            f"<dd>{int(quality.get('passed'))}/{int(quality.get('total'))}</dd></div>"
+            f"<div><dt>Eligible</dt><dd>{int(selection.get('eligible_cell_count'))}/9</dd></div>"
+            "</dl></header>"
+            '<div class="capacity-table-wrap">'
+            f'<table class="capacity-matrix"><caption>{_escape(candidate.get("label"))} '
+            "serving-capacity matrix</caption>"
+            '<thead><tr><th scope="col">P × C</th>'
+            + "".join(
+                f'<th scope="col"><span>Clients</span>C{level}</th>' for level in levels_concurrency
+            )
+            + f"</tr></thead><tbody>{''.join(rows)}</tbody></table></div>"
+            '<details class="capacity-blocked-details"><summary>Why cells were blocked</summary>'
+            f"<ul>{''.join(blocked_items)}</ul></details></article>"
+        )
+
+    canonical_candidate = candidate_by_role.get("canonical-reference")
+    alternative_candidate = candidate_by_role.get("resource-alternative")
+    canonical_summary = selected_summaries.get("canonical-reference")
+    alternative_summary = selected_summaries.get("resource-alternative")
+    canonical_point = selected_points_by_role.get("canonical-reference")
+    alternative_point = selected_points_by_role.get("resource-alternative")
+    if (
+        canonical_candidate is None
+        or alternative_candidate is None
+        or canonical_summary is None
+        or alternative_summary is None
+        or canonical_point is None
+        or alternative_point is None
+    ):
+        raise ValidationError("capacity study must include canonical and alternative roles")
+    alternative_label = str(alternative_candidate.get("label"))
+    throughput_delta = _percent_delta(
+        float(alternative_summary.get("generated_tokens_per_second_median")),
+        float(canonical_summary.get("generated_tokens_per_second_median")),
+    )
+    rss_delta = _percent_delta(
+        float(alternative_summary.get("server_peak_rss_mib_max")),
+        float(canonical_summary.get("server_peak_rss_mib_max")),
+    )
+    if throughput_delta is None or rss_delta is None:
+        raise ValidationError("capacity selected-point comparison cannot use a zero baseline")
+    throughput_phrase = _relative_measure_phrase(
+        throughput_delta,
+        "generation throughput",
+    )
+    rss_phrase = _relative_measure_phrase(rss_delta, "peak RSS")
+    if canonical_point == alternative_point:
+        parallel, concurrency = canonical_point
+        heading = f"The envelope opens at {parallel} × {concurrency}."
+        selection_summary = (
+            "The predeclared gate-and-tiebreaker policy selected "
+            f"P{parallel}/C{concurrency} for both candidates."
+        )
+        comparison_label = f"At separately selected P{parallel}/C{concurrency} points:"
+    else:
+        heading = "Two candidates. Two selected envelopes."
+        selection_summary = (
+            "The predeclared gate-and-tiebreaker policy selected "
+            f"Q8 P{canonical_point[0]}/C{canonical_point[1]} and "
+            f"Q4 P{alternative_point[0]}/C{alternative_point[1]}."
+        )
+        comparison_label = (
+            f"At Q8 P{canonical_point[0]}/C{canonical_point[1]} and "
+            f"Q4 P{alternative_point[0]}/C{alternative_point[1]}:"
+        )
+
+    load_slo = _mapping(plan.get("load_slo"), "capacity load SLO")
+    capacity_gate = _mapping(plan.get("capacity_gate"), "capacity gate")
+    return (
+        '<section id="capacity-envelope" class="capacity-envelope" '
+        'aria-labelledby="capacity-heading">'
+        '<div class="capacity-envelope-inner">'
+        '<header class="capacity-heading"><div class="section-title">'
+        '<p class="section-kicker">S1 · Supplementary capacity</p>'
+        f'<h2 id="capacity-heading">{_escape(heading)}</h2></div>'
+        f"<div><p>{_escape(selection_summary)} This sizes each candidate; it does "
+        "not replace the canonical Q8 model decision.</p>"
+        f'<p class="capacity-compare"><strong>{_escape(comparison_label)}</strong> '
+        f"compared with Q8, {_escape(alternative_label)} measured {throughput_phrase} "
+        f"and {rss_phrase}.</p></div></header>"
+        '<dl class="capacity-facts" aria-label="Capacity study at a glance">'
+        f"<div><dt>Operating points</dt><dd>{len(cells)}</dd></div>"
+        f"<div><dt>Measured requests</dt><dd>{measured_request_count}</dd></div>"
+        f"<div><dt>Exact-reversal passes</dt><dd>{len(raw_passes)}</dd></div>"
+        f"<div><dt>Latency-blocked cells</dt><dd>{blocked_count}</dd></div>"
+        "</dl>"
+        f'<div class="capacity-boards">{"".join(candidate_boards)}</div>'
+        '<dl class="capacity-slo-strip" aria-label="Predeclared capacity limits">'
+        "<div><dt>TTFT p95</dt>"
+        f"<dd>≤ {_format_number(float(load_slo.get('max_ttft_ms_p95')), digits=0)} ms</dd></div>"
+        "<div><dt>E2E p95</dt>"
+        f"<dd>≤ {_format_number(float(load_slo.get('max_e2e_latency_ms_p95')), digits=0)} ms</dd></div>"
+        "<div><dt>Peak RSS</dt>"
+        f"<dd>≤ {_format_number(float(capacity_gate.get('max_server_peak_rss_mib')), digits=0)} MiB</dd></div>"
+        "<div><dt>Completion</dt>"
+        f"<dd>{float(load_slo.get('min_completion_rate')) * 100:.0f}%</dd></div></dl>"
+        '<nav class="capacity-actions" aria-label="Capacity evidence links">'
+        f'<a href="{_escape(receipt_href)}">Open capacity receipt</a>'
+        f'<a href="{_escape(study_href)}">Inspect validated JSON</a>'
+        f'<a href="{_escape(proof["archive_url"])}">Download {_escape(proof["release_tag"])} evidence</a>'
+        "</nav>"
+        '<p class="capacity-proof-line"><strong>Locked proof:</strong> '
+        f"{_escape(proof['checksum_entries'])} payload checksums · study "
+        f"<code>{_escape(proof['study_sha256'][:12])}…</code> · archive "
+        f"<code>{_escape(proof['archive_sha256'][:12])}…</code></p>"
+        '<p class="capacity-boundary"><strong>Boundary:</strong> This is a bounded, closed-loop '
+        "study on one native Arm64 runner. Each displayed p95 is the median of two pass-level "
+        "p95 values; within each pass, eight measured requests make p95 the observed maximum. "
+        "The KleidiAI marker confirms the enabled model-buffer path, not universal microkernel "
+        "execution.</p>"
+        "</div></section>\n"
+    )
+
+
 _COCKPIT_PROFILES = (
     ("canonical-latency", "Latency first", "Canonical"),
     ("memory-first", "Memory first", "Derived"),
@@ -1362,6 +2103,7 @@ def _hero_markup(
     *,
     canonical_report_href: str,
     policy_cockpit: str = "",
+    capacity_available: bool = False,
 ) -> tuple[str, str, str]:
     source = _source_context(benchmarks)
     selected = benchmarks.by_id(str(recommendation["selected_id"]))
@@ -1467,7 +2209,7 @@ def _hero_markup(
         )
         + "</nav>\n"
     )
-    section_links = (
+    section_links = [
         ("optimization-ladder", "00", "Optimize"),
         ("why-heading", "01", "Decision"),
         ("tradeoffs-heading", "02", "Tradeoffs"),
@@ -1477,7 +2219,9 @@ def _hero_markup(
         ("scatter-heading", "06", "Two-metric"),
         ("evidence-heading", "07", "Evidence"),
         ("trust-heading", "08", "Reproduce"),
-    )
+    ]
+    if capacity_available:
+        section_links.insert(1, ("capacity-envelope", "S1", "Capacity"))
     flight_log = (
         '<nav class="flight-log" aria-label="Report sections">'
         '<span class="flight-log-label">Flight log</span><ol>'
@@ -2258,6 +3002,328 @@ html[data-theme="dark"] .showcase {
   font-size: .85rem;
 }
 .showcase .optimization-ladder-caveat strong { color: var(--flight-white); }
+.showcase .capacity-envelope {
+  width: 100%;
+  padding: clamp(3.8rem, 7vw, 6.5rem) 0;
+  border-bottom: 1px solid var(--flight-line-strong);
+  background: var(--flight-canvas);
+  color: var(--flight-ink);
+}
+.showcase .capacity-envelope-inner {
+  width: min(calc(100% - 2rem), 78rem);
+  margin-inline: auto;
+}
+.showcase .capacity-heading {
+  display: grid;
+  gap: 1rem 2.5rem;
+  align-items: end;
+}
+.showcase .capacity-heading h2 {
+  max-width: 13ch;
+  font-size: clamp(2.3rem, 5.8vw, 4.5rem);
+  line-height: .92;
+}
+.showcase .capacity-heading > div:last-child > p {
+  margin: 0;
+  color: var(--flight-text-muted);
+  font-size: 1.03rem;
+}
+.showcase .capacity-heading .capacity-compare {
+  margin-top: 1rem;
+  padding-left: .9rem;
+  border-left: 4px solid var(--flight-teal);
+}
+.showcase .capacity-compare strong { color: var(--flight-ink); }
+.showcase .capacity-facts {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  margin: 2.4rem 0;
+  border-block: 2px solid var(--flight-ink);
+}
+.showcase .capacity-facts > div {
+  min-width: 0;
+  padding: .9rem .75rem;
+}
+.showcase .capacity-facts > div:nth-child(even) {
+  border-left: 1px solid var(--flight-line-strong);
+}
+.showcase .capacity-facts > div:nth-child(n + 3) {
+  border-top: 1px solid var(--flight-line-strong);
+}
+.showcase .capacity-facts dt,
+.showcase .capacity-selected-summary dt,
+.showcase .capacity-slo-strip dt {
+  color: var(--flight-text-subtle);
+  font-size: .67rem;
+  font-weight: 800;
+  letter-spacing: .04em;
+  text-transform: uppercase;
+}
+.showcase .capacity-facts dd {
+  margin: .2rem 0 0;
+  color: var(--flight-ink);
+  font-family: "SFMono-Regular", Consolas, "Liberation Mono", monospace;
+  font-size: clamp(1.25rem, 3vw, 1.75rem);
+  font-weight: 850;
+  font-variant-numeric: tabular-nums;
+}
+.showcase .capacity-boards {
+  display: grid;
+  gap: 2rem;
+}
+.showcase .capacity-board {
+  --capacity-accent: var(--flight-cobalt);
+  --capacity-accent-soft: var(--flight-cobalt-soft);
+  min-width: 0;
+  border: 2px solid var(--flight-ink);
+  border-top: 8px solid var(--capacity-accent);
+  background: var(--flight-paper);
+  box-shadow: .55rem .55rem 0 var(--capacity-accent-soft);
+}
+.showcase .capacity-board.is-q4 {
+  --capacity-accent: var(--flight-teal);
+  --capacity-accent-soft: var(--flight-teal-soft);
+}
+.showcase .capacity-board-heading {
+  padding: 1rem;
+  border-bottom: 1px solid var(--flight-line-strong);
+}
+.showcase .capacity-board-heading > p {
+  margin: 0 0 .35rem;
+  color: var(--capacity-accent);
+  font-family: "SFMono-Regular", Consolas, "Liberation Mono", monospace;
+  font-size: .7rem;
+  font-weight: 850;
+  letter-spacing: .055em;
+  text-transform: uppercase;
+}
+.showcase .capacity-board-heading h3 {
+  max-width: 24ch;
+  margin: 0;
+  font-size: clamp(1.2rem, 2.7vw, 1.65rem);
+  line-height: 1.05;
+}
+.showcase .capacity-selected-summary {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: .65rem 1rem;
+  margin: 1rem 0 0;
+}
+.showcase .capacity-selected-summary dd,
+.showcase .capacity-slo-strip dd {
+  margin: .18rem 0 0;
+  color: var(--flight-ink);
+  font-size: .86rem;
+  font-weight: 780;
+  font-variant-numeric: tabular-nums;
+}
+.showcase .capacity-table-wrap {
+  width: 100%;
+  padding: .75rem;
+}
+.showcase .capacity-matrix {
+  width: 100%;
+  table-layout: fixed;
+  border-collapse: separate;
+  border-spacing: .25rem;
+  font-variant-numeric: tabular-nums;
+}
+.showcase .capacity-matrix caption {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+  border: 0;
+}
+.showcase .capacity-matrix th,
+.showcase .capacity-matrix td {
+  border: 0;
+  text-align: left;
+}
+.showcase .capacity-matrix thead th {
+  padding: .35rem .2rem;
+  background: transparent;
+  color: var(--flight-text-subtle);
+  font-size: .72rem;
+  text-align: center;
+}
+.showcase .capacity-matrix thead th:first-child { width: 2.65rem; }
+.showcase .capacity-matrix thead th span {
+  display: block;
+  font-size: .56rem;
+  font-weight: 650;
+}
+.showcase .capacity-matrix tbody th {
+  padding: .45rem .1rem;
+  background: transparent;
+  color: var(--flight-text-subtle);
+  font-family: "SFMono-Regular", Consolas, "Liberation Mono", monospace;
+  font-size: .72rem;
+  text-align: center;
+  vertical-align: middle;
+}
+.showcase .capacity-matrix tbody th span {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+  border: 0;
+}
+.showcase .capacity-cell {
+  position: relative;
+  min-width: 0;
+  padding: clamp(.35rem, 1.3vw, .68rem);
+  border: 1px solid var(--flight-line-strong) !important;
+  background: var(--flight-paper-blue);
+  vertical-align: top;
+}
+.showcase .capacity-cell.is-blocked {
+  border-color: var(--flight-danger) !important;
+  background: var(--flight-danger-soft);
+}
+.showcase .capacity-cell.is-selected {
+  border: 3px solid var(--capacity-accent) !important;
+  background: var(--capacity-accent-soft);
+  box-shadow: inset 0 -.32rem 0 var(--capacity-accent);
+}
+.showcase .capacity-cell-top {
+  display: flex;
+  flex-wrap: wrap;
+  gap: .2rem .35rem;
+  align-items: baseline;
+}
+.showcase .capacity-state,
+.showcase .capacity-reference,
+.showcase .capacity-failure {
+  font-family: "SFMono-Regular", Consolas, "Liberation Mono", monospace;
+  font-size: clamp(.55rem, 1.45vw, .68rem);
+  font-weight: 850;
+  letter-spacing: .02em;
+  text-transform: uppercase;
+}
+.showcase .capacity-state { color: var(--flight-text-subtle); }
+.showcase .is-blocked .capacity-state,
+.showcase .capacity-failure { color: var(--flight-danger); }
+.showcase .is-selected .capacity-state { color: var(--capacity-accent); }
+.showcase .capacity-reference {
+  color: var(--flight-cobalt);
+  font-size: .56rem;
+}
+.showcase .capacity-rate {
+  display: flex;
+  flex-wrap: wrap;
+  gap: .05rem .28rem;
+  align-items: baseline;
+  margin: .45rem 0;
+}
+.showcase .capacity-rate strong {
+  color: var(--flight-ink);
+  font-size: clamp(.9rem, 2.5vw, 1.22rem);
+  line-height: 1;
+}
+.showcase .capacity-rate span {
+  color: var(--flight-text-subtle);
+  font-size: clamp(.54rem, 1.35vw, .66rem);
+  font-weight: 700;
+}
+.showcase .capacity-cell-metrics {
+  margin: 0;
+  color: var(--flight-text-subtle);
+  font-size: clamp(.56rem, 1.35vw, .68rem);
+}
+.showcase .capacity-cell-metrics > div {
+  display: flex;
+  flex-wrap: wrap;
+  gap: .15rem .3rem;
+  justify-content: space-between;
+}
+.showcase .capacity-cell-metrics dt { font-weight: 750; }
+.showcase .capacity-cell-metrics dd {
+  margin: 0;
+  color: var(--flight-ink);
+  font-weight: 680;
+}
+.showcase .capacity-failure {
+  display: block;
+  margin-top: .4rem;
+  overflow-wrap: anywhere;
+}
+.showcase .capacity-blocked-details {
+  margin: 0 1rem 1rem;
+  padding-top: .75rem;
+  border-top: 1px solid var(--flight-line-strong);
+}
+.showcase .capacity-blocked-details summary {
+  color: var(--capacity-accent);
+  font-size: .82rem;
+  font-weight: 780;
+  cursor: pointer;
+}
+.showcase .capacity-blocked-details ul {
+  display: grid;
+  gap: .45rem;
+  margin: .7rem 0 0;
+  padding: 0;
+  list-style: none;
+}
+.showcase .capacity-blocked-details li {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: .55rem;
+  color: var(--flight-text-muted);
+  font-size: .75rem;
+}
+.showcase .capacity-blocked-details li strong {
+  color: var(--flight-danger);
+  font-family: "SFMono-Regular", Consolas, "Liberation Mono", monospace;
+}
+.showcase .capacity-slo-strip {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  margin: 2.5rem 0 0;
+  border-block: 1px solid var(--flight-line-strong);
+}
+.showcase .capacity-slo-strip > div { padding: .8rem .75rem; }
+.showcase .capacity-slo-strip > div:nth-child(even) {
+  border-left: 1px solid var(--flight-line-strong);
+}
+.showcase .capacity-slo-strip > div:nth-child(n + 3) {
+  border-top: 1px solid var(--flight-line-strong);
+}
+.showcase .capacity-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: .65rem 1.25rem;
+  margin-top: 1.4rem;
+}
+.showcase .capacity-actions a {
+  font-size: .82rem;
+  font-weight: 780;
+}
+.showcase .capacity-proof-line,
+.showcase .capacity-boundary {
+  max-width: 88ch;
+  color: var(--flight-text-muted);
+  font-size: .78rem;
+}
+.showcase .capacity-proof-line { margin: 1rem 0 0; }
+.showcase .capacity-boundary {
+  margin: .75rem 0 0;
+  padding-top: .75rem;
+  border-top: 1px solid var(--flight-line);
+}
+.showcase .capacity-proof-line strong,
+.showcase .capacity-boundary strong { color: var(--flight-ink); }
+.showcase .capacity-proof-line code {
+  color: var(--flight-ink);
+  overflow-wrap: anywhere;
+}
 .showcase .report-section {
   width: min(calc(100% - 2rem), 78rem);
   margin-inline: auto;
@@ -2838,6 +3904,18 @@ html[data-theme="dark"] .showcase {
   .showcase .optimization-ladder-heading {
     grid-template-columns: minmax(0, .8fr) minmax(0, 1.2fr);
   }
+  .showcase .capacity-heading {
+    grid-template-columns: minmax(0, .82fr) minmax(0, 1.18fr);
+  }
+  .showcase .capacity-facts,
+  .showcase .capacity-slo-strip {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+  .showcase .capacity-facts > div + div,
+  .showcase .capacity-slo-strip > div + div {
+    border-top: 0;
+    border-left: 1px solid var(--flight-line-strong);
+  }
   .showcase .ladder-runway dl {
     grid-template-columns: repeat(3, minmax(0, 1fr));
   }
@@ -2922,6 +4000,10 @@ html[data-theme="dark"] .showcase {
   .showcase .flight-log { margin-top: 2rem; }
 }
 @media (min-width: 68rem) {
+  .showcase .capacity-boards {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 2.2rem;
+  }
   .showcase .load-context-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
@@ -2964,6 +4046,9 @@ html[data-theme="dark"] .showcase {
     border-left: 0;
   }
   .showcase .optimization-ladder-inner {
+    width: min(calc(100% - 2rem), 78rem);
+  }
+  .showcase .capacity-envelope-inner {
     width: min(calc(100% - 2rem), 78rem);
   }
   .showcase .optimization-stages {
@@ -3055,6 +4140,16 @@ html[data-theme="dark"] .showcase {
   .showcase .optimization-ladder {
     padding-block: 1.5rem;
     border-color: var(--flight-ink);
+  }
+  .showcase .capacity-envelope { padding-block: 1.5rem; }
+  .showcase .capacity-envelope,
+  .showcase .capacity-envelope * {
+    background-color: var(--flight-white);
+    color: var(--flight-ink) !important;
+  }
+  .showcase .capacity-board {
+    break-inside: avoid;
+    box-shadow: none;
   }
   .showcase .optimization-ladder-heading {
     grid-template-columns: minmax(0, 1fr);
@@ -3262,8 +4357,14 @@ def render_showcase_v11(
     load_sweep: Mapping[str, Any] | None = None,
     stability_summary: Mapping[str, Any] | None = None,
     evidence_lock: Mapping[str, Any] | None = None,
+    evidence_lock_sha256: str = "",
     canonical_html: str | None = None,
     canonical_report_href: str = "evidence/report-v1.1.html",
+    capacity_study: Mapping[str, Any] | None = None,
+    capacity_evidence_lock: Mapping[str, Any] | None = None,
+    capacity_study_sha256: str = "",
+    capacity_study_href: str = "evidence/capacity-study.json",
+    capacity_receipt_href: str = "evidence/capacity-receipt.md",
     benchmarks_sha256: str = "",
     recommendation_sha256: str = "",
     profiles_sha256: str = "",
@@ -3273,8 +4374,10 @@ def render_showcase_v11(
     """Render a responsive presentation of already validated v1.1 evidence.
 
     ``evidence_lock`` and ``canonical_html`` are a pair: supplying one without
-    the other fails closed.  When neither is supplied, the page is explicitly
-    labelled as an unverified preview.
+    the other fails closed.  The optional capacity study and its review lock are
+    also a pair, and are accepted only when the canonical proof is locked.
+    When no canonical proof is supplied, the page is explicitly labelled as an
+    unverified preview.
     """
 
     canonical_report_href = _validated_report_href(canonical_report_href)
@@ -3296,6 +4399,10 @@ def render_showcase_v11(
         raise ValidationError(
             "supplied canonical_html does not match the validated v1.1 renderer output"
         )
+    if (capacity_study is None) != (capacity_evidence_lock is None):
+        raise ValidationError("capacity_study and capacity_evidence_lock must be supplied together")
+    if capacity_study is not None and evidence_lock is None:
+        raise ValidationError("capacity evidence requires locked canonical proof")
 
     canonical_sha256 = hashlib.sha256(canonical.encode("utf-8")).hexdigest()
     proof = _proof_context(
@@ -3311,6 +4418,21 @@ def render_showcase_v11(
     )
     passport = _decision_passport(benchmarks, recommendation)
     optimization_ladder = _optimization_ladder_markup(passport)
+    capacity_envelope = ""
+    if capacity_study is not None and capacity_evidence_lock is not None:
+        capacity_proof = _capacity_proof_context(
+            capacity_study,
+            capacity_evidence_lock,
+            _mapping(evidence_lock, "evidence_lock"),
+            study_sha256=capacity_study_sha256,
+            canonical_lock_sha256=evidence_lock_sha256,
+        )
+        capacity_envelope = _capacity_envelope_markup(
+            capacity_study,
+            capacity_proof,
+            study_href=capacity_study_href,
+            receipt_href=capacity_receipt_href,
+        )
     policy_cockpit = _policy_cockpit_markup(benchmarks, policy_profiles)
     provenance, hero, hero_tail = _hero_markup(
         benchmarks,
@@ -3318,6 +4440,7 @@ def render_showcase_v11(
         proof,
         canonical_report_href=canonical_report_href,
         policy_cockpit=policy_cockpit,
+        capacity_available=bool(capacity_envelope),
     )
     legend, style_by_id = _series_key(
         benchmarks,
@@ -3420,7 +4543,7 @@ def render_showcase_v11(
     document = _replace_once(
         document,
         '<main id="main-content" class="report-main">\n',
-        (f'<main id="main-content" class="report-main">\n{optimization_ladder}'),
+        (f'<main id="main-content" class="report-main">\n{optimization_ladder}{capacity_envelope}'),
         "optimization ladder",
     )
     document = _replace_once(

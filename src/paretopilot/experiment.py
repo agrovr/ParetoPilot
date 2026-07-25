@@ -4,7 +4,7 @@ The manifest is deliberately small and closed: unknown fields are rejected at
 every schema-controlled level.  Candidate artifacts are content-addressed by
 SHA-256 and must be portable, regular files below the manifest directory.  The
 assembler validates and cross-checks aggregate artifacts against the recorded
-settings, exact command vector, and balanced raw measurement passes:
+settings, exact command vector, and mirrored raw measurement passes:
 
 * a :mod:`paretopilot.llama_summary` mapping for prompt/generation throughput;
 * a :mod:`paretopilot.server_eval` mapping for quality and request latency; and
@@ -1099,15 +1099,15 @@ def _verify_kleidiai_dispatch_from_raw(
         missing = [name for name, present in observed.items() if not present]
         if missing:
             raise _error(
-                f"candidate {candidate_id!r} is missing KleidiAI dispatch marker in: "
+                f"candidate {candidate_id!r} is missing the KleidiAI model-buffer marker in: "
                 + ", ".join(missing)
             )
     else:
         unexpected = [name for name, present in observed.items() if present]
         if unexpected:
             raise _error(
-                f"candidate {candidate_id!r} unexpectedly dispatched KleidiAI in: "
-                + ", ".join(unexpected)
+                f"candidate {candidate_id!r} unexpectedly reported the KleidiAI "
+                "model-buffer marker in: " + ", ".join(unexpected)
             )
 
 
@@ -1327,12 +1327,12 @@ def _validate_server_evaluation(
     ):
         raise _error(
             f"{context}.suite.performance_repetitions does not match the "
-            "two balanced passes declared by the evaluation suite file"
+            "two mirrored passes declared by the evaluation suite file"
         )
     if evaluation_suite_contract is not None and warmups != evaluation_suite_contract.warmups * 2:
         raise _error(
             f"{context}.suite.performance_warmups does not match the "
-            "two balanced passes declared by the evaluation suite file"
+            "two mirrored passes declared by the evaluation suite file"
         )
     generation_tokens = _integer(
         suite.get("generation_tokens"),

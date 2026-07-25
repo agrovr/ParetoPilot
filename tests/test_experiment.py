@@ -970,7 +970,7 @@ class ExperimentAssemblyTests(unittest.TestCase):
             )
             with self.assertRaisesRegex(
                 ExperimentAssemblyError,
-                "missing KleidiAI dispatch marker.*server_stderr_pass_2",
+                "missing the KleidiAI model-buffer marker.*server_stderr_pass_2",
             ):
                 assemble_experiment(manifest_path)
 

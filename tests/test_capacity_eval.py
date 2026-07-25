@@ -450,7 +450,7 @@ class CapacityFixture:
 
 
 class CapacityEvaluationTests(unittest.TestCase):
-    def test_bundled_plan_is_strict_bounded_and_counterbalanced(self) -> None:
+    def test_bundled_plan_is_strict_bounded_and_exactly_reversed(self) -> None:
         plan = load_capacity_plan(CAPACITY_PLAN)
 
         self.assertEqual(plan.server_parallel_levels, (1, 2, 4))
@@ -800,7 +800,7 @@ class CapacityEvaluationTests(unittest.TestCase):
             with self.assertRaisesRegex(ValidationError, "execution_order does not match"):
                 fixture.assemble()
 
-    def test_counterbalanced_spread_gates_reject_unstable_cells(self) -> None:
+    def test_mirrored_pass_spread_gates_reject_unstable_cells(self) -> None:
         with TemporaryDirectory() as directory:
             artifact = CapacityFixture(Path(directory), reverse_scale=1.35).assemble()
             cell = next(

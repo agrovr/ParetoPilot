@@ -14,6 +14,8 @@ measured result.
 [Exact canonical v1.1 report](https://agrovr.github.io/ParetoPilot/evidence/report-v1.1.html) |
 [Canonical v1.1 result](results/published/30055662526/README.md) |
 [Complete v1.1 evidence](https://github.com/agrovr/ParetoPilot/releases/tag/v1.1.0) |
+[Capacity envelope result](results/published/30144901854/README.md) |
+[Capacity evidence v1.4.0](https://github.com/agrovr/ParetoPilot/releases/tag/v1.4.0) |
 [CI decision gate](docs/github-action.md) |
 [Reproduction guide](docs/reproducibility.md)
 
@@ -23,12 +25,16 @@ measured result.
    [live evidence showcase](https://agrovr.github.io/ParetoPilot/) and switch between latency,
    memory, and first-token priorities. Each result is precomputed from the locked evidence and
    links to a human-readable receipt.
-2. **See the reusable gate pass.**
+2. **Inspect the measured capacity envelope.** The reviewed
+   [supplementary Arm64 result](results/published/30144901854/README.md) shows every passing and
+   rejected P/C cell, the selected P4/C4 points, the release digest, and the exact replay path.
+   It is a candidate-local serving decision and does not replace the frozen Q8 recommendation.
+3. **See the reusable gate pass.**
    Open the
    [latest green main-branch CI run](https://github.com/agrovr/ParetoPilot/actions/workflows/ci.yml?query=branch%3Amain)
    and inspect `action-smoke`, which exercises the five-artifact composite Action contract and its
    fail-closed measured-evidence guard.
-3. **Try the engine locally.** After the short installation below, run this deliberately synthetic
+4. **Try the engine locally.** After the short installation below, run this deliberately synthetic
    software smoke test:
 
 ```bash
@@ -68,7 +74,7 @@ complexity when the measured alternatives do not improve the declared objective.
 
 [Run `30055662526`](https://github.com/agrovr/ParetoPilot/actions/runs/30055662526)
 completed on one GitHub-hosted Ubuntu 24.04 Arm64 runner with a 4-vCPU Arm Neoverse-N2 CPU. It
-compared four configurations in balanced order from commit
+compared four configurations in the mirrored order `A-B-C-D-D-C-B-A` from commit
 [`8a9ddce`](https://github.com/agrovr/ParetoPilot/commit/8a9ddce0afa2272c4a4097fe87ef6f06cb7689a9).
 
 | Candidate | E2E p95 | TTFT p95 | Prompt tok/s | Generation tok/s | Peak RSS | Model size | Quality |
@@ -103,7 +109,7 @@ selection rule:
 - **Bounded load:** every candidate ran eight measured requests at concurrency 1, 2, and 4. All
   had 100% completion; concurrency 1 was the highest level that met both the 2000 ms p95 TTFT and
   6500 ms p95 end-to-end SLOs.
-- **Repeat stability:** two independently reconstructed balanced passes produced 24 comparison
+- **Repeat stability:** two separately reconstructed mirrored passes produced 24 comparison
   rows. All six reported metrics were directionally consistent for the three Q4 candidates. The
   largest relative spread for those candidates was 1.6695%; this is an observed consistency
   result, not a statistical significance claim.
@@ -116,8 +122,9 @@ returned no differences or warnings.
 
 - One native `ubuntu-24.04-arm` job built pinned generic and KleidiAI-enabled `llama.cpp`
   binaries and verified two pinned Qwen2.5 1.5B Instruct model files.
-- Four stages isolated Q8, Q4 quantization, KleidiAI kernels, and one micro-batch change.
-- Throughput and server passes used the balanced order `A-B-C-D-D-C-B-A` on the same runner.
+- Four stages isolated Q8, Q4 quantization, a KleidiAI-enabled build with its observed
+  model-buffer marker, and one micro-batch change.
+- Throughput and server passes used the mirrored order `A-B-C-D-D-C-B-A` on the same runner.
 - `llama-bench` supplied prompt-processing and generation-throughput samples.
 - `llama-server` supplied the deterministic behavior gate, streamed 64-token TTFT and
   end-to-end samples, and the bounded 1/2/4-client load sweep; GNU `time -v` supplied peak RSS.
@@ -222,6 +229,11 @@ trees, or credentials. Only compact evidence is retained.
 
 ### Run the supplementary capacity envelope
 
+Reviewed [run `30144901854`](results/published/30144901854/README.md) completed the full bounded
+capacity contract. It selected P4/C4 for both predeclared candidates while leaving the canonical
+Q8 model decision unchanged. The original Actions archive is preserved byte-for-byte in the
+SHA-256-locked [`v1.4.0` release](https://github.com/agrovr/ParetoPilot/releases/tag/v1.4.0).
+
 Open **Actions → Supplementary Arm64 capacity study → Run workflow** on the default branch. This
 separate workflow keeps the canonical v1.1 decision frozen and compares only its Q8 reference with
 the measured tuned-Q4 resource alternative. A successful run measures nine bounded operating
@@ -244,9 +256,17 @@ fresh-server quality runs keep the two performance passes load-only and comparab
 
 The resulting `capacity-study.json` and `capacity-receipt.md` are supplementary artifacts. They
 select an observed operating point within each predeclared candidate; they cannot replace the
-canonical model recommendation. The successful Actions artifact is retained for 90 days, and the
-reviewed final bundle will be attached to an immutable release before submission. See the
-[capacity-study contract](docs/capacity-study.md).
+canonical model recommendation. To verify the reviewed release without rerunning inference,
+extract it to `evidence/` and run:
+
+```bash
+python -m paretopilot replay-capacity evidence \
+  --output-dir output/replay-capacity
+```
+
+The command verifies complete checksum coverage, reconstructs the capacity study and receipt from
+raw evidence, requires byte-identical outputs, and replays the embedded frozen v1.1 archive. See
+the [capacity-study contract](docs/capacity-study.md).
 
 ## Trust and limits
 
@@ -273,6 +293,7 @@ src/paretopilot/                 validation, assembly, selection, capacity, repl
 evals/                           versioned behavior and latency suites
 configs/                         decision, policy, bounded-load, and capacity declarations
 results/published/30055662526/   current v1.1 canonical summary and release lock
+results/published/30144901854/   supplementary v1.4 capacity summary and release lock
 results/published/29973188507/   preserved v1.0 historical summary and release lock
 .github/workflows/               cross-platform CI, Arm64 study, and verified Pages deploy
 docs/                            architecture, methodology, contracts, and reproduction

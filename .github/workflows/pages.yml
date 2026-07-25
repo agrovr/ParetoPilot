@@ -18,6 +18,7 @@ concurrency:
 
 env:
   EVIDENCE_LOCK: results/published/30055662526/evidence.json
+  CAPACITY_LOCK: results/published/30144901854/evidence.json
 
 jobs:
   build:
@@ -307,6 +308,266 @@ jobs:
                   raise SystemExit(f"dispatch marker mismatch: {candidate}")
           PY
 
+      - name: Download, replay, and verify locked capacity evidence
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          from __future__ import annotations
+
+          import hashlib
+          import json
+          import os
+          from pathlib import Path, PurePosixPath
+          import stat
+          import time
+          from urllib.error import HTTPError, URLError
+          from urllib.parse import urlsplit
+          from urllib.request import Request, urlopen
+          from zipfile import BadZipFile, ZipFile
+
+          lock_path = Path(os.environ["CAPACITY_LOCK"])
+          lock = json.loads(lock_path.read_text(encoding="utf-8"))
+          source = lock["source"]
+          archive = lock["archive"]
+          canonical = lock["canonical_evidence"]
+          review = lock["review"]
+
+          if (
+              lock.get("schema_version") != "1.4"
+              or lock.get("classification") != "supplementary-capacity"
+          ):
+              raise SystemExit("capacity lock is not supplementary-capacity schema 1.4")
+          if source != {
+              "run_id": "30144901854",
+              "run_attempt": 1,
+              "head_sha": "db9ccaf37e3c7e807832652e237de813675ed807",
+              "workflow": ".github/workflows/capacity-study-arm64.yml",
+              "url": "https://github.com/agrovr/ParetoPilot/actions/runs/30144901854",
+              "generated_at_utc": "2026-07-25T05:05:40Z",
+              "runner": {
+                  "os": "Ubuntu 24.04",
+                  "architecture": "arm64",
+                  "cpu": "Neoverse-N2",
+                  "cpu_count": 4,
+              },
+          }:
+              raise SystemExit("capacity source identity is not the reviewed native Arm64 run")
+          if canonical != {
+              "run_id": "30055662526",
+              "release_tag": "v1.1.0",
+              "release_sha256": (
+                  "b5586878ccd214667911390f417db0417111ac2c31d163a2f5f55c4469aefeb2"
+              ),
+              "lock_sha256": (
+                  "9a00187cb4619daec3596139c97de49127841ceb3c2c7edd85092df2474c578d"
+              ),
+              "outputs_modified": False,
+          }:
+              raise SystemExit("capacity lock is not linked to the frozen canonical v1.1 proof")
+          expected_archive = {
+              "actions_artifact_id": 8615905565,
+              "actions_artifact_name": "supplementary-arm64-capacity-30144901854-1",
+              "actions_digest": (
+                  "sha256:a73d801bc3997f1c0b0158e92c8305987da8638501b74c5ecd2af3aaca57aaa7"
+              ),
+              "release_tag": "v1.4.0",
+              "release_asset_name": (
+                  "paretopilot-v1.4.0-arm64-capacity-30144901854.zip"
+              ),
+              "release_asset_url": (
+                  "https://github.com/agrovr/ParetoPilot/releases/download/v1.4.0/"
+                  "paretopilot-v1.4.0-arm64-capacity-30144901854.zip"
+              ),
+              "release_url": "https://github.com/agrovr/ParetoPilot/releases/tag/v1.4.0",
+              "size_bytes": 794681,
+              "sha256": (
+                  "a73d801bc3997f1c0b0158e92c8305987da8638501b74c5ecd2af3aaca57aaa7"
+              ),
+          }
+          if archive != expected_archive:
+              raise SystemExit("capacity release identity is not the reviewed archive")
+          if archive["actions_digest"] != f"sha256:{archive['sha256']}":
+              raise SystemExit("capacity Actions and release archive digests disagree")
+
+          for flag in (
+              "all_checksums_verified",
+              "exact_file_coverage",
+              "archive_digest_matches_actions_digest",
+              "status_complete",
+              "measurement_valid",
+              "valid_evidence",
+          ):
+              if review.get(flag) is not True:
+                  raise SystemExit(f"capacity review flag is not true: {flag}")
+          if (
+              review.get("synthetic") is not False
+              or review.get("canonical_outputs_modified") is not False
+          ):
+              raise SystemExit("capacity review must be measured and canonical-preserving")
+
+          parsed_url = urlsplit(archive["release_asset_url"])
+          if (
+              parsed_url.scheme != "https"
+              or parsed_url.netloc != "github.com"
+              or not parsed_url.path.startswith("/agrovr/ParetoPilot/releases/download/")
+          ):
+              raise SystemExit("capacity release asset URL is not the expected GitHub path")
+
+          output = Path("output/pages")
+          output.mkdir(parents=True, exist_ok=True)
+          archive_path = output / "capacity-evidence.zip"
+          request = Request(
+              archive["release_asset_url"],
+              headers={
+                  "Accept": "application/octet-stream",
+                  "User-Agent": "ParetoPilot-Pages-capacity-verifier",
+              },
+          )
+          last_error: Exception | None = None
+          for attempt in range(1, 5):
+              try:
+                  with urlopen(request, timeout=60) as response:
+                      payload = response.read()
+                  archive_path.write_bytes(payload)
+                  break
+              except (HTTPError, URLError, TimeoutError, OSError) as exc:
+                  last_error = exc
+                  if attempt == 4:
+                      raise SystemExit(
+                          f"could not download locked capacity release: {exc}"
+                      ) from exc
+                  time.sleep(attempt * 2)
+          else:
+              raise SystemExit(f"could not download locked capacity release: {last_error}")
+
+          archive_bytes = archive_path.read_bytes()
+          if len(archive_bytes) != archive["size_bytes"]:
+              raise SystemExit("capacity release archive size does not match the lock")
+          if hashlib.sha256(archive_bytes).hexdigest() != archive["sha256"]:
+              raise SystemExit("capacity release archive SHA-256 does not match the lock")
+
+          extracted = output / "capacity-evidence"
+          if extracted.exists():
+              raise SystemExit("capacity extraction destination already exists")
+          extracted.mkdir()
+          try:
+              with ZipFile(archive_path) as bundle:
+                  infos = bundle.infolist()
+                  if len(infos) != review["checksum_entries"] + 1:
+                      raise SystemExit("capacity release file count does not match the lock")
+                  names: set[str] = set()
+                  casefold_names: set[str] = set()
+                  total_size = 0
+                  for info in infos:
+                      encoded = info.filename
+                      if "\\" in encoded or ":" in encoded or info.is_dir():
+                          raise SystemExit(f"unsafe capacity ZIP member: {encoded!r}")
+                      relative = PurePosixPath(encoded)
+                      if (
+                          relative.is_absolute()
+                          or any(part in {"", ".", ".."} for part in relative.parts)
+                          or relative.as_posix() != encoded
+                          or encoded in names
+                          or encoded.casefold() in casefold_names
+                      ):
+                          raise SystemExit(f"unsafe or duplicate capacity ZIP member: {encoded!r}")
+                      mode = info.external_attr >> 16
+                      file_type = stat.S_IFMT(mode)
+                      if file_type not in {0, stat.S_IFREG}:
+                          raise SystemExit(f"non-regular capacity ZIP member: {encoded!r}")
+                      if info.flag_bits & 0x1:
+                          raise SystemExit(f"encrypted capacity ZIP member: {encoded!r}")
+                      names.add(encoded)
+                      casefold_names.add(encoded.casefold())
+                      total_size += info.file_size
+                      if total_size > 10 * 1024 * 1024:
+                          raise SystemExit("capacity ZIP exceeds the bounded extracted size")
+                      destination = extracted.joinpath(*relative.parts)
+                      destination.parent.mkdir(parents=True, exist_ok=True)
+                      with bundle.open(info) as source_file, destination.open("wb") as target:
+                          while chunk := source_file.read(1024 * 1024):
+                              target.write(chunk)
+          except BadZipFile as exc:
+              raise SystemExit(f"capacity release is not a valid ZIP: {exc}") from exc
+
+          artifacts = {
+              "capacity_study": "capacity-study.json",
+              "capacity_receipt": "capacity-receipt.md",
+              "status": "status.json",
+              "manifest": "manifest.json",
+              "capacity_plan": "capacity-plan.json",
+              "load_plan": "load-plan.json",
+              "canonical_replay": "canonical/replay.json",
+          }
+          if set(artifacts) != set(review["artifacts_sha256"]):
+              raise SystemExit("capacity artifact hash map has unexpected keys")
+          for label, relative in artifacts.items():
+              actual = hashlib.sha256((extracted / relative).read_bytes()).hexdigest()
+              if actual != review["artifacts_sha256"][label]:
+                  raise SystemExit(f"capacity artifact hash mismatch: {label}")
+          PY
+
+          PYTHONPATH=src python -m paretopilot replay-capacity \
+            output/pages/capacity-evidence \
+            --output-dir output/pages/capacity-replayed \
+            > output/pages/capacity-replay-command.json
+
+          python - <<'PY'
+          import json
+          import os
+          from pathlib import Path
+
+          lock = json.loads(Path(os.environ["CAPACITY_LOCK"]).read_text(encoding="utf-8"))
+          review = lock["review"]
+          replay = json.loads(
+              Path("output/pages/capacity-replayed/capacity-replay.json").read_text(
+                  encoding="utf-8"
+              )
+          )
+          if (
+              replay.get("valid") is not True
+              or replay.get("status_complete") is not True
+              or replay.get("capacity_study_reproduced") is not True
+              or replay.get("capacity_receipt_reproduced") is not True
+              or replay.get("checksums", {}).get("verified") is not True
+              or replay.get("checksums", {}).get("entry_count")
+              != review["checksum_entries"]
+              or replay.get("checksums", {}).get("manifest_sha256")
+              != review["checksum_manifest_sha256"]
+          ):
+              raise SystemExit("capacity replay does not match the committed review")
+          comparisons = replay.get("authoritative_comparisons", {})
+          if set(comparisons) != {"capacity-study", "capacity-receipt"}:
+              raise SystemExit("capacity replay comparison set is incomplete")
+          for name, comparison in comparisons.items():
+              if comparison.get("present") is not True or comparison.get("matches") is not True:
+                  raise SystemExit(f"capacity replay comparison failed: {name}")
+          canonical = replay.get("canonical_replay", {})
+          if (
+              canonical.get("verified") is not True
+              or canonical.get("fully_reproduced") is not True
+              or canonical.get("selected_id") != review["replay"]["selected_id"]
+              or canonical.get("archive_sha256")
+              != lock["canonical_evidence"]["release_sha256"]
+              or canonical.get("replay_sha256")
+              != review["artifacts_sha256"]["canonical_replay"]
+          ):
+              raise SystemExit("embedded canonical replay does not match the committed review")
+
+          expected_points = {
+              candidate_id: {
+                  "server_parallel": point["server_parallel"],
+                  "client_concurrency": point["client_concurrency"],
+              }
+              for candidate_id, point in lock["result"][
+                  "selected_operating_points"
+              ].items()
+          }
+          if replay.get("selected_operating_points") != expected_points:
+              raise SystemExit("capacity selected points do not match the committed review")
+          PY
+
       - name: Rebuild, compare, and present every v1.1 output
         shell: bash
         run: |
@@ -368,6 +629,12 @@ jobs:
           PY
           mkdir -p _site/evidence
           cp output/pages/replayed/report-v1.1.html _site/evidence/report-v1.1.html
+          cp \
+            output/pages/capacity-evidence/capacity-study.json \
+            _site/evidence/capacity-study.json
+          cp \
+            output/pages/capacity-evidence/capacity-receipt.md \
+            _site/evidence/capacity-receipt.md
           PYTHONPATH=src python -m paretopilot optimization-receipt \
             output/pages/evidence/experiment/benchmark-set.json \
             --constraints output/pages/evidence/experiment/constraints.json \
@@ -382,8 +649,12 @@ jobs:
             --evidence-lock "$EVIDENCE_LOCK" \
             --canonical-report output/pages/replayed/report-v1.1.html \
             --canonical-report-href evidence/report-v1.1.html \
+            --capacity-study output/pages/capacity-evidence/capacity-study.json \
+            --capacity-evidence-lock "$CAPACITY_LOCK" \
+            --capacity-study-href evidence/capacity-study.json \
+            --capacity-receipt-href evidence/capacity-receipt.md \
             --output _site/index.html
-          test "$(find _site -type f | wc -l)" -eq 3
+          test "$(find _site -type f | wc -l)" -eq 5
 
       - name: Upload Pages artifact
         uses: actions/upload-pages-artifact@fc324d3547104276b827a68afc52ff2a11cc49c9 # v5.0.0

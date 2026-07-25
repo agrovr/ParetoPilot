@@ -284,7 +284,7 @@ def evaluate_server(
 
 
 def pool_server_evaluations(paths: Sequence[Path]) -> Mapping[str, Any]:
-    """Pool compatible balanced-pass server evaluations.
+    """Pool compatible mirrored-pass server evaluations.
 
     Each input remains an independent raw artifact.  The returned mapping uses
     the existing server-evaluation schema, retaining the first pass's quality

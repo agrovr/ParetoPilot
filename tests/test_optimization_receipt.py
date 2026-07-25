@@ -219,7 +219,7 @@ class OptimizationReceiptTests(unittest.TestCase):
         for heading in (
             "### Stage 1 — Reference",
             "### Stage 2 — Quantization",
-            "### Stage 3 — Arm kernel",
+            "### Stage 3 — KleidiAI build",
             "### Stage 4 — Runtime tuning",
         ):
             self.assertIn(heading, first)

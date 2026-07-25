@@ -21,7 +21,7 @@ __all__ = ["render_optimization_receipt"]
 _STAGE_LABELS = {
     "reference": "Reference",
     "quantization": "Quantization",
-    "arm-kernel": "Arm kernel",
+    "arm-kernel": "KleidiAI build",
     "runtime-tuning": "Runtime tuning",
 }
 _GRADES = frozenset({"arm64-attributed", "measured-unattributed", "synthetic"})

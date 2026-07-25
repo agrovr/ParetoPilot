@@ -21,21 +21,22 @@ historical experiment.
    KleidiAI-enabled `llama.cpp` binaries and records the runner, operating system, compiler,
    build options, executable hashes, and exact launch arguments.
 3. **Run attributable candidates.** Four candidates separate the Q8 reference, Q4 quantization,
-   Arm kernel dispatch, and one runtime micro-batch change. Throughput and server measurements use
-   the balanced order `A-B-C-D-D-C-B-A` on the same hosted runner.
+   a KleidiAI-enabled build with an observed model-buffer marker, and one runtime micro-batch
+   change. Throughput and server measurements use the mirrored order `A-B-C-D-D-C-B-A` on the
+   same hosted runner.
 4. **Measure authoritative producers.** `llama-bench` produces prompt and generation throughput.
    `llama-server` records exact-match behavior, streamed TTFT, end-to-end latency for fixed
    64-token generations, and bounded multi-client results. GNU `time -v` records peak RSS.
 5. **Assemble strictly.** `paretopilot assemble-experiment` verifies the closed manifest schema,
    SHA-256 digests, candidate identities, model and runtime pins, evaluation-suite identity,
-   exact commands, balanced aggregate recomputation, and captured KleidiAI dispatch logs before
-   producing a `BenchmarkSet`.
+   exact commands, mirrored-pass aggregate recomputation, and captured model-buffer-marker logs
+   before producing a `BenchmarkSet`.
 6. **Decide under declared constraints.** The recommendation engine rejects candidates that fail
    quality or resource gates, computes the Pareto frontier, and minimizes the declared objective.
    A predeclared 1% tolerance prevents a practically tiny latency difference from being treated
    as an optimization win.
 7. **Build supplementary views.** The workflow evaluates five deployment policies, assembles the
-   bounded load sweep, reconstructs both balanced passes from raw evidence, and summarizes
+   bounded load sweep, reconstructs both mirrored passes from raw evidence, and summarizes
    observed repeat stability.
 8. **Lock and replay.** A bundle-level `SHA256SUMS` covers 150 released payloads. Offline replay
    verifies safe paths and checksums, rebuilds the core and extension outputs, and compares both
@@ -51,7 +52,7 @@ historical experiment.
 | --- | --- | --- |
 | `q8-generic` | Q8_0 model on the generic CPU build | Reference baseline |
 | `q4-generic` | Q4_0 model on the generic CPU build | Quantization |
-| `q4-kleidiai` | Same Q4_0 model with the KleidiAI build | Arm kernel |
+| `q4-kleidiai` | Same Q4_0 model with the KleidiAI-enabled build | KleidiAI-enabled build |
 | `q4-kleidiai-tuned` | Same KleidiAI candidate with micro-batch size 512 | Runtime tuning |
 
 The workflow hashes and re-verifies runtime logs: generic candidates must not report the
@@ -86,6 +87,19 @@ aggregate.
 The stability summary compares six metrics across the two reconstructed passes. Its direction and
 relative-spread labels describe only the observed passes and do not claim statistical
 significance.
+
+## V1.4 supplementary capacity lane
+
+Capacity [run `30144901854`](../results/published/30144901854/README.md) uses the frozen Q8
+canonical choice and tuned-Q4 resource alternative to evaluate a 3×3 server-slot/client matrix.
+It uses two mirrored forward/reverse passes, preserves every request sample and rejected gate, and
+selects an operating point independently within each candidate. It cannot promote the Q4
+alternative or rewrite the canonical v1.1 recommendation.
+
+The reviewed release retains the original Actions ZIP byte for byte. `replay-capacity` verifies
+complete checksum coverage, rebuilds the capacity study and Markdown receipt from their raw
+sources, requires exact output matches, and then replays the embedded frozen canonical archive.
+Pages consumes the compact reviewed lock only after completing that replay.
 
 ### Policy sensitivity
 
@@ -152,6 +166,9 @@ light/dark preference changes semantic color tokens only; it never alters the bo
 | [`src/paretopilot/profiles.py`](../src/paretopilot/profiles.py) | Precomputed canonical and derived policy decisions |
 | [`src/paretopilot/stability.py`](../src/paretopilot/stability.py) | Pass direction and spread summary without significance claims |
 | [`src/paretopilot/replay.py`](../src/paretopilot/replay.py) | Checksummed core and extension regeneration |
+| [`src/paretopilot/capacity_eval.py`](../src/paretopilot/capacity_eval.py) | Strict supplementary capacity assembly, gate recomputation, and operating-point selection |
+| [`src/paretopilot/capacity_receipt.py`](../src/paretopilot/capacity_receipt.py) | Deterministic human-readable capacity envelope and rejected-gate receipt |
+| [`src/paretopilot/capacity_replay.py`](../src/paretopilot/capacity_replay.py) | Checksummed capacity reconstruction plus embedded canonical replay |
 | [`src/paretopilot/report.py`](../src/paretopilot/report.py) | Deterministic core HTML decision report |
 | [`src/paretopilot/report_v11.py`](../src/paretopilot/report_v11.py) | Deterministic additive evidence report |
 | [`src/paretopilot/showcase.py`](../src/paretopilot/showcase.py) | Judge-facing presentation generated from verified v1.1 inputs without changing the canonical report |

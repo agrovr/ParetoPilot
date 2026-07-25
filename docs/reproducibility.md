@@ -17,6 +17,11 @@ from commit
 The earlier [v1.0 result](../results/published/29973188507/README.md) remains reproducible
 historical evidence. It came from a separate ephemeral runner and is not pooled with v1.1.
 
+The supplementary capacity envelope is GitHub Actions
+[run `30144901854`](https://github.com/agrovr/ParetoPilot/actions/runs/30144901854), preserved in
+the [`v1.4.0` release](https://github.com/agrovr/ParetoPilot/releases/tag/v1.4.0). It is a
+candidate-local serving study and does not replace or modify the canonical v1.1 decision.
+
 ## Requirements
 
 Local verification needs Git and Python 3.12 or newer. A fresh measurement additionally needs a
@@ -176,6 +181,47 @@ cmp output/pass-2.json evidence/extensions/benchmark-set-pass-2.json
 The command follows only artifact paths and SHA-256 digests bound by the canonical benchmark. It
 does not derive a pass by splitting pooled metrics. Replay does not rerun inference.
 
+## Replay the supplementary v1.4 capacity evidence
+
+Download the reviewed capacity archive:
+
+```bash
+curl -L \
+  https://github.com/agrovr/ParetoPilot/releases/download/v1.4.0/paretopilot-v1.4.0-arm64-capacity-30144901854.zip \
+  -o paretopilot-v1.4.0-arm64-capacity-30144901854.zip
+```
+
+The file must be exactly 794,681 bytes. Verify its outer SHA-256, extract it into a fresh
+directory, and verify all 121 archived payloads:
+
+```bash
+printf '%s  %s\n' \
+  a73d801bc3997f1c0b0158e92c8305987da8638501b74c5ecd2af3aaca57aaa7 \
+  paretopilot-v1.4.0-arm64-capacity-30144901854.zip | sha256sum --check
+mkdir capacity-evidence
+unzip paretopilot-v1.4.0-arm64-capacity-30144901854.zip -d capacity-evidence
+(cd capacity-evidence && sha256sum --check SHA256SUMS)
+```
+
+Replay into a new directory outside the evidence bundle:
+
+```bash
+python -m paretopilot replay-capacity capacity-evidence \
+  --output-dir output/replay-capacity
+```
+
+The command does not rerun inference. It reconstructs all 18 capacity cells from the archived
+load, RSS, server-log, and quality inputs; requires byte-identical `capacity-study.json` and
+`capacity-receipt.md` outputs; and safely replays the embedded frozen v1.1 archive. Inspect
+`output/replay-capacity/capacity-replay.json`; it must report `valid: true`,
+`capacity_study_reproduced: true`, `capacity_receipt_reproduced: true`, and a canonical
+`selected_id` of `q8-generic`.
+
+The compact [reviewed result](../results/published/30144901854/README.md) records the Actions
+artifact identity, release digest, exact selected operating points, recomputation audit, and study
+limits. This replay answers whether the archived decision is reproducible; dispatching the
+capacity workflow again creates a new measurement on a new ephemeral runner.
+
 ## 4. Compare the expected decision
 
 The canonical benchmark should reproduce:
@@ -227,7 +273,8 @@ The archive records:
 - raw prompt and generation throughput samples;
 - 24 deterministic behavior outcomes and streamed 64-token latency samples;
 - peak RSS from GNU `time -v`;
-- model size, quantization, batch, micro-batch, and KleidiAI dispatch state;
+- model size, quantization, batch, micro-batch, KleidiAI build flag, and observed model-buffer
+  marker state;
 - raw bounded-load requests and SLO aggregates for concurrency 1, 2, and 4;
 - both pass-level reconstructed benchmark sets and the 24-row stability summary; and
 - the closed manifest, recommendation, reports, status, and bundle checksums.
@@ -278,7 +325,7 @@ v1.1; each release represents one separate controlled hosted-runner experiment.
 - The hosted runner is ephemeral. Separate workflow runs are not pooled.
 - The 24-case suite is a deterministic deployment gate, not a broad model-quality benchmark.
 - The load sweep tested only concurrency 1, 2, and 4 with eight measured requests per level.
-- Two reconstructed balanced passes describe observed direction and spread; they do not establish
+- Two reconstructed mirrored passes describe observed direction and spread; they do not establish
   statistical significance.
 - Results may not generalize to every Arm CPU, model, prompt distribution, concurrency level, or
   deployment environment.

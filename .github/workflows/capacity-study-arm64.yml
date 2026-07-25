@@ -494,7 +494,7 @@ jobs:
           )
           PY
 
-      - name: Run counterbalanced server-slot by client-concurrency matrix
+      - name: Run mirrored forward/reverse server-slot by client-concurrency matrix
         shell: bash
         run: |
           set -euo pipefail
@@ -897,7 +897,7 @@ jobs:
               "eligible_cell_counts": eligible_cell_counts,
               "selected_operating_points": selected_operating_points,
               "reason": (
-                  "counterbalanced Arm64 capacity evidence assembled and recomputed; "
+                  "mirrored forward/reverse Arm64 capacity evidence assembled and recomputed; "
                   "eligibility and performance-gate outcomes are reported per cell"
               ),
           }

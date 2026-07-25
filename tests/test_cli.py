@@ -1213,6 +1213,63 @@ class CliTests(unittest.TestCase):
             self.assertEqual(payload["capacity_receipt"], str(output))
             self.assertEqual(len(payload["capacity_receipt_sha256"]), 64)
 
+    def test_capacity_replay_cli_reports_the_verified_bundle(self) -> None:
+        with TemporaryDirectory() as directory:
+            root = Path(directory)
+            bundle = root / "bundle"
+            output = root / "replayed"
+            bundle.mkdir()
+            replay = {
+                "schema_version": "1.0",
+                "classification": "supplementary-capacity-replay",
+                "valid": True,
+                "status_complete": True,
+                "capacity_study_reproduced": True,
+                "capacity_receipt_reproduced": True,
+                "checksums": {
+                    "entry_count": 121,
+                    "manifest_sha256": "a" * 64,
+                },
+                "canonical_replay": {
+                    "verified": True,
+                    "selected_id": "q8-generic",
+                },
+                "selected_operating_points": {
+                    "q8-generic": {
+                        "server_parallel": 4,
+                        "client_concurrency": 4,
+                    }
+                },
+                "verdict": "PASS",
+            }
+            stdout = io.StringIO()
+            with (
+                patch.object(
+                    cli,
+                    "replay_capacity_bundle",
+                    return_value=replay,
+                ) as replay_bundle,
+                patch("sys.stdout", stdout),
+            ):
+                exit_code = cli.main(
+                    [
+                        "replay-capacity",
+                        str(bundle),
+                        "--output-dir",
+                        str(output),
+                    ]
+                )
+
+            self.assertEqual(exit_code, 0)
+            replay_bundle.assert_called_once_with(bundle, output)
+            payload = json.loads(stdout.getvalue())
+            self.assertTrue(payload["valid"])
+            self.assertTrue(payload["capacity_study_reproduced"])
+            self.assertTrue(payload["capacity_receipt_reproduced"])
+            self.assertEqual(payload["checksum_entries"], 121)
+            self.assertEqual(payload["output_directory"], str(output.resolve()))
+            self.assertEqual(payload["details"], str(output.resolve() / "capacity-replay.json"))
+
     def test_stability_cli_parses_labeled_inputs_and_metric_directions(self) -> None:
         repository = Path(__file__).parents[1]
         source = repository / "examples" / "synthetic-results.json"
@@ -1385,6 +1442,8 @@ class CliTests(unittest.TestCase):
                 self.assertTrue(payload["presentation_view"])
                 self.assertTrue(payload["canonical_report_verified"])
                 self.assertTrue(payload["evidence_lock_supplied"])
+                self.assertFalse(payload["capacity_study_supplied"])
+                self.assertFalse(payload["capacity_evidence_lock_supplied"])
                 self.assertEqual(payload["selected_id"], "q8-generic")
                 self.assertEqual(payload["baseline_id"], "q8-generic")
                 self.assertEqual(payload["report"], str(output))
@@ -1418,10 +1477,88 @@ class CliTests(unittest.TestCase):
             self.assertTrue(unlocked_payload["presentation_view"])
             self.assertFalse(unlocked_payload["canonical_report_verified"])
             self.assertFalse(unlocked_payload["evidence_lock_supplied"])
+            self.assertFalse(unlocked_payload["capacity_study_supplied"])
+            self.assertFalse(unlocked_payload["capacity_evidence_lock_supplied"])
             unlocked_html = unlocked_output.read_text(encoding="utf-8")
             self.assertIn('class="showcase is-preview"', unlocked_html)
             self.assertIn("Unverified preview", unlocked_html)
             self.assertNotIn("Open exact canonical report", unlocked_html)
+
+    def test_showcase_v11_cli_forwards_locked_capacity_evidence(self) -> None:
+        with TemporaryDirectory() as directory:
+            root = Path(directory)
+            paths = _write_showcase_fixture_bundle(root)
+            capacity_study = root / "capacity-study.json"
+            capacity_lock = root / "capacity-evidence.json"
+            _write_json_fixture(
+                capacity_study,
+                {"classification": "supplementary-capacity"},
+            )
+            _write_json_fixture(
+                capacity_lock,
+                {
+                    "schema_version": "1.4",
+                    "classification": "supplementary-capacity",
+                },
+            )
+            output = root / "showcase-capacity.html"
+            stdout = io.StringIO()
+            with (
+                patch.object(
+                    cli,
+                    "render_showcase_v11",
+                    return_value="<!doctype html><title>Capacity</title>",
+                ) as render,
+                patch("sys.stdout", stdout),
+            ):
+                exit_code = cli.main(
+                    [
+                        "showcase-v11",
+                        str(paths["results"]),
+                        "--recommendation",
+                        str(paths["recommendation"]),
+                        "--evidence-lock",
+                        str(paths["evidence_lock"]),
+                        "--canonical-report",
+                        str(paths["canonical"]),
+                        "--capacity-study",
+                        str(capacity_study),
+                        "--capacity-evidence-lock",
+                        str(capacity_lock),
+                        "--capacity-study-href",
+                        "proof/capacity-study.json",
+                        "--capacity-receipt-href",
+                        "proof/capacity-receipt.md",
+                        "--output",
+                        str(output),
+                    ]
+                )
+
+            self.assertEqual(exit_code, 0)
+            kwargs = render.call_args.kwargs
+            self.assertEqual(
+                kwargs["capacity_study"],
+                {"classification": "supplementary-capacity"},
+            )
+            self.assertEqual(
+                kwargs["capacity_evidence_lock"],
+                {
+                    "schema_version": "1.4",
+                    "classification": "supplementary-capacity",
+                },
+            )
+            self.assertEqual(kwargs["capacity_study_sha256"], cli.sha256_file(capacity_study))
+            self.assertEqual(
+                kwargs["evidence_lock_sha256"], cli.sha256_file(paths["evidence_lock"])
+            )
+            self.assertEqual(kwargs["capacity_study_href"], "proof/capacity-study.json")
+            self.assertEqual(
+                kwargs["capacity_receipt_href"],
+                "proof/capacity-receipt.md",
+            )
+            payload = json.loads(stdout.getvalue())
+            self.assertTrue(payload["capacity_study_supplied"])
+            self.assertTrue(payload["capacity_evidence_lock_supplied"])
 
     def test_showcase_v11_cli_rejects_canonical_report_drift_without_output(self) -> None:
         with TemporaryDirectory() as directory:
