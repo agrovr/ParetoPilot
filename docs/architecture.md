@@ -55,8 +55,9 @@ historical experiment.
 | `q4-kleidiai-tuned` | Same KleidiAI candidate with micro-batch size 512 | Runtime tuning |
 
 The workflow hashes and re-verifies runtime logs: generic candidates must not report the
-`CPU_KLEIDIAI model buffer`, while both KleidiAI candidates must report it. This proves the
-intended dispatch distinction without treating a build flag alone as runtime evidence.
+`CPU_KLEIDIAI model buffer`, while both KleidiAI candidates must report it. This confirms that the
+intended build logged the model-buffer marker; it does not prove that a particular microkernel
+executed.
 
 ## V1.1 evidence lane
 

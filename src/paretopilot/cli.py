@@ -11,6 +11,8 @@ from typing import Any, Mapping, Sequence
 
 from paretopilot import __version__
 from paretopilot.analysis import recommend
+from paretopilot.capacity_eval import assemble_capacity_study, bind_capacity_quality
+from paretopilot.capacity_receipt import render_capacity_receipt
 from paretopilot.decision_passport import build_decision_passport
 from paretopilot.doctor import inspect_environment
 from paretopilot.domain import BenchmarkSet, Constraints, ValidationError
@@ -200,6 +202,28 @@ def _parser() -> argparse.ArgumentParser:
     evaluate_parser.add_argument("--timeout-seconds", type=float, default=180.0)
     evaluate_parser.add_argument("--output", required=True, type=Path)
 
+    bind_quality_parser = subparsers.add_parser(
+        "bind-capacity-quality",
+        help="bind one quality evaluation to its exact capacity server and workflow run",
+    )
+    bind_quality_parser.add_argument("--evaluation", required=True, type=Path)
+    bind_quality_parser.add_argument("--server-command", required=True, type=Path)
+    bind_quality_parser.add_argument("--base-url", required=True)
+    bind_quality_parser.add_argument("--pass-id", required=True)
+    bind_quality_parser.add_argument("--candidate-id", required=True)
+    bind_quality_parser.add_argument(
+        "--server-parallel",
+        required=True,
+        type=_positive_cli_int,
+    )
+    bind_quality_parser.add_argument("--run-id", required=True)
+    bind_quality_parser.add_argument(
+        "--run-attempt",
+        required=True,
+        type=_positive_cli_int,
+    )
+    bind_quality_parser.add_argument("--output", required=True, type=Path)
+
     pool_server_parser = subparsers.add_parser(
         "pool-server-evaluations",
         help="pool compatible balanced-pass llama-server evaluation artifacts",
@@ -233,6 +257,14 @@ def _parser() -> argparse.ArgumentParser:
         type=Path,
         help="canonical deployment command used for material-equivalence validation",
     )
+    evaluate_load_parser.add_argument(
+        "--execution-order",
+        type=_concurrency_execution_order,
+        help=(
+            "optional comma-separated permutation of the plan's client levels; "
+            "rows remain serialized in canonical order"
+        ),
+    )
     evaluate_load_parser.add_argument("--output", required=True, type=Path)
 
     combine_load_parser = subparsers.add_parser(
@@ -248,6 +280,54 @@ def _parser() -> argparse.ArgumentParser:
         help="candidate load-evaluation JSON; repeat from 2 to 32 times",
     )
     combine_load_parser.add_argument("--output", required=True, type=Path)
+
+    capacity_parser = subparsers.add_parser(
+        "assemble-capacity",
+        help="assemble a strict supplementary server-slots by client-concurrency study",
+    )
+    capacity_parser.add_argument("--plan", required=True, type=Path)
+    capacity_parser.add_argument("--load-plan", required=True, type=Path)
+    capacity_parser.add_argument("--manifest", required=True, type=Path)
+    capacity_parser.add_argument(
+        "--load",
+        dest="capacity_loads",
+        action="append",
+        required=True,
+        metavar="PASS/CANDIDATE/PARALLEL=PATH",
+        help="labeled measured load artifact; repeat for every pass and server level",
+    )
+    capacity_parser.add_argument(
+        "--rss",
+        dest="capacity_rss",
+        action="append",
+        required=True,
+        metavar="PASS/CANDIDATE/PARALLEL=PATH",
+        help="labeled GNU time -v server output; repeat for every pass and server level",
+    )
+    capacity_parser.add_argument(
+        "--server-log",
+        dest="capacity_logs",
+        action="append",
+        required=True,
+        metavar="PASS/CANDIDATE/PARALLEL=PATH",
+        help="labeled server log used to verify the KleidiAI model-buffer marker",
+    )
+    capacity_parser.add_argument(
+        "--quality",
+        dest="capacity_quality",
+        action="append",
+        required=True,
+        metavar="CANDIDATE/PARALLEL=PATH",
+        help="labeled source-bound quality wrapper; repeat for every candidate and server level",
+    )
+    capacity_parser.add_argument("--output", required=True, type=Path)
+
+    capacity_receipt_parser = subparsers.add_parser(
+        "capacity-receipt",
+        help="render a deterministic Markdown receipt from a validated capacity study",
+    )
+    capacity_receipt_parser.add_argument("study", type=Path)
+    capacity_receipt_parser.add_argument("--output", required=True, type=Path)
 
     stability_parser = subparsers.add_parser(
         "summarize-stability",
@@ -653,6 +733,20 @@ def main(argv: Sequence[str] | None = None) -> int:
             )
             write_json(args.output, payload)
             exit_code = 0
+        elif args.command == "bind-capacity-quality":
+            _require_new_distinct_outputs([args.output])
+            payload = bind_capacity_quality(
+                evaluation_path=args.evaluation,
+                server_command_path=args.server_command,
+                base_url=args.base_url,
+                pass_id=args.pass_id,
+                candidate_id=args.candidate_id,
+                server_parallel=args.server_parallel,
+                run_id=args.run_id,
+                run_attempt=args.run_attempt,
+            )
+            write_json(args.output, payload)
+            exit_code = 0
         elif args.command == "pool-server-evaluations":
             payload = pool_server_evaluations(args.inputs)
             write_json(args.output, payload)
@@ -671,6 +765,7 @@ def main(argv: Sequence[str] | None = None) -> int:
                 plan,
                 candidate_id=args.candidate_id,
                 evidence_binding=evidence_binding,
+                execution_order=args.execution_order,
             )
             write_json(args.output, payload)
             exit_code = 0
@@ -682,6 +777,29 @@ def main(argv: Sequence[str] | None = None) -> int:
                 require_evidence_bindings=True,
             )
             write_json(args.output, payload)
+            exit_code = 0
+        elif args.command == "assemble-capacity":
+            _require_new_distinct_outputs([args.output])
+            payload = assemble_capacity_study(
+                plan_path=args.plan,
+                load_plan_path=args.load_plan,
+                manifest_path=args.manifest,
+                load_artifacts=_parse_labeled_artifacts(args.capacity_loads),
+                rss_artifacts=_parse_labeled_artifacts(args.capacity_rss),
+                server_logs=_parse_labeled_artifacts(args.capacity_logs),
+                quality_artifacts=_parse_labeled_artifacts(args.capacity_quality),
+            )
+            write_json(args.output, payload)
+            exit_code = 0
+        elif args.command == "capacity-receipt":
+            _require_new_distinct_outputs([args.output])
+            study = load_json_object(args.study)
+            write_text(args.output, render_capacity_receipt(study))
+            payload = {
+                "classification": study.get("classification"),
+                "capacity_receipt": str(args.output),
+                "capacity_receipt_sha256": sha256_file(args.output),
+            }
             exit_code = 0
         elif args.command == "summarize-stability":
             _require_new_distinct_outputs([args.output])
@@ -991,6 +1109,25 @@ def _positive_cli_int(value: str) -> int:
         raise argparse.ArgumentTypeError("must be a positive integer") from exc
     if parsed <= 0:
         raise argparse.ArgumentTypeError("must be a positive integer")
+    return parsed
+
+
+def _concurrency_execution_order(value: str) -> tuple[int, ...]:
+    """Parse a comma-separated client-concurrency execution order."""
+
+    parts = value.split(",")
+    if not parts or any(not part or part.strip() != part for part in parts):
+        raise argparse.ArgumentTypeError(
+            "must be a comma-separated list without empty values or surrounding spaces"
+        )
+    try:
+        parsed = tuple(int(part) for part in parts)
+    except ValueError as exc:
+        raise argparse.ArgumentTypeError("must contain only integers") from exc
+    if any(level not in {1, 2, 4} for level in parsed):
+        raise argparse.ArgumentTypeError("may contain only 1, 2, and 4")
+    if len(parsed) != len(set(parsed)):
+        raise argparse.ArgumentTypeError("must not repeat a concurrency level")
     return parsed
 
 

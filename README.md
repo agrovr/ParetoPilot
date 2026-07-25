@@ -6,7 +6,7 @@ recommends a configuration without assuming that an "optimized" build must win.
 
 I designed and built ParetoPilot as a solo Cloud AI entry for the Arm AI Optimization Challenge.
 
-The reusable tool is now version 1.3.0. The canonical Arm64 evidence remains frozen at v1.1.0,
+The reusable tool is now version 1.4.0. The canonical Arm64 evidence remains frozen at v1.1.0,
 so the Decision Passport, Optimization Receipt, and presentation layer cannot rewrite the
 measured result.
 
@@ -121,7 +121,7 @@ returned no differences or warnings.
 - `llama-bench` supplied prompt-processing and generation-throughput samples.
 - `llama-server` supplied the deterministic behavior gate, streamed 64-token TTFT and
   end-to-end samples, and the bounded 1/2/4-client load sweep; GNU `time -v` supplied peak RSS.
-- Runtime logs had to prove KleidiAI dispatch only for the intended candidates.
+- Runtime logs had to show the KleidiAI model-buffer marker only for the intended candidates.
 - A closed manifest bound the decision evidence before selection, and bundle-level SHA-256
   checksums locked the release archive.
 
@@ -220,6 +220,34 @@ exploratory, even when their measurements complete successfully.
 The workflow downloads sources and models during the job but never uploads model files, build
 trees, or credentials. Only compact evidence is retained.
 
+### Run the supplementary capacity envelope
+
+Open **Actions → Supplementary Arm64 capacity study → Run workflow** on the default branch. This
+separate workflow keeps the canonical v1.1 decision frozen and compares only its Q8 reference with
+the measured tuned-Q4 resource alternative. A successful run measures nine bounded operating
+points for each candidate:
+
+- llama-server slots (`--parallel`) 1, 2, and 4; and
+- simultaneous clients 1, 2, and 4.
+
+`P` means llama-server slots and `C` means simultaneous clients, so `P4/C2` is a four-slot server
+serving two requests at once. The second pass reverses candidate, server-slot, and client order.
+Each server configuration retains its exact command, and each client level retains all eight raw
+request samples.
+
+The study holds context at 2,048 tokens per server slot, so total `--ctx-size` scales with
+`--parallel`. A point is eligible only when both passes meet the existing completion and latency
+SLO, their generation-rate and observed-p95-latency spreads stay within predeclared limits, the
+source-bound quality guard passes, server peak RSS stays within a predeclared 4,096 MiB example
+service budget, and the expected KleidiAI model-buffer marker is present or absent. Dedicated
+fresh-server quality runs keep the two performance passes load-only and comparable.
+
+The resulting `capacity-study.json` and `capacity-receipt.md` are supplementary artifacts. They
+select an observed operating point within each predeclared candidate; they cannot replace the
+canonical model recommendation. The successful Actions artifact is retained for 90 days, and the
+reviewed final bundle will be attached to an immutable release before submission. See the
+[capacity-study contract](docs/capacity-study.md).
+
 ## Trust and limits
 
 - Measured and synthetic inputs are explicitly separated.
@@ -227,8 +255,12 @@ trees, or credentials. Only compact evidence is retained.
   mismatched settings, missing fingerprints, path escapes, and invalid checksums.
 - The 24-case behavior suite is a deterministic deployment gate, not a broad language-model
   quality benchmark.
-- The 1/2/4-client sweep is bounded evidence, not a general capacity study.
-- Two balanced passes support an observed consistency description, not a significance claim.
+- The canonical v1.1 1/2/4-client sweep fixes server parallelism at one and is not a general
+  capacity study.
+- The supplementary v1.4 capacity envelope is still a bounded closed-loop study on one native
+  Arm64 runner. It is not an open-loop production-capacity, cost, energy, or MLPerf claim.
+- Two mirrored forward/reverse passes plus predeclared spread gates support an observed consistency
+  description, not a significance claim.
 - The canonical result is one model and workload on one controlled hosted Arm64 runner. It does
   not claim the same ranking on every Arm processor or deployment.
 - Energy and cost were not measured.
@@ -237,9 +269,9 @@ trees, or credentials. Only compact evidence is retained.
 ## Project map
 
 ```text
-src/paretopilot/                 validation, assembly, selection, passports, replay, and reporting
+src/paretopilot/                 validation, assembly, selection, capacity, replay, and reporting
 evals/                           versioned behavior and latency suites
-configs/                         decision, policy-profile, and bounded-load declarations
+configs/                         decision, policy, bounded-load, and capacity declarations
 results/published/30055662526/   current v1.1 canonical summary and release lock
 results/published/29973188507/   preserved v1.0 historical summary and release lock
 .github/workflows/               cross-platform CI, Arm64 study, and verified Pages deploy

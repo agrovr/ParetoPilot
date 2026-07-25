@@ -1,0 +1,75 @@
+{
+  "schema_version": "1.1",
+  "classification": "supplementary-capacity",
+  "scope": "A bounded fixed-concurrency study on one native Arm64 runner. It compares two predeclared deployment candidates and does not change the frozen canonical v1.1 recommendation.",
+  "candidates": [
+    {
+      "id": "q8-generic",
+      "label": "Q8 generic reference",
+      "role": "canonical-reference",
+      "kleidiai_expected": false,
+      "canonical_server_command_sha256": "8b5040317a38b52930ab87494bb4d02aaccf696ebe7d0826df33816a3045d74f",
+      "canonical_server_argv_sha256": "9f36fcb5b8b9f4db687bacab6e738185cc0146711fe75b3d06f4718d573bc77d"
+    },
+    {
+      "id": "q4-kleidiai-tuned",
+      "label": "Q4 with KleidiAI and 512-token micro-batch",
+      "role": "resource-alternative",
+      "kleidiai_expected": true,
+      "canonical_server_command_sha256": "4e09666b2e6542694e0a96f3e20f27697a7f9202155f7b9c80658fd51ccc3487",
+      "canonical_server_argv_sha256": "3fe8b661b4bba61c25525270f956795f3c044076addca347ced64c84a24c8740"
+    }
+  ],
+  "server_parallel_levels": [1, 2, 4],
+  "client_concurrency_levels": [1, 2, 4],
+  "per_slot_context_tokens": 2048,
+  "passes": [
+    {
+      "id": "forward",
+      "candidate_order": ["q8-generic", "q4-kleidiai-tuned"],
+      "server_parallel_order": [1, 2, 4],
+      "client_concurrency_order": [1, 2, 4]
+    },
+    {
+      "id": "reverse",
+      "candidate_order": ["q4-kleidiai-tuned", "q8-generic"],
+      "server_parallel_order": [4, 2, 1],
+      "client_concurrency_order": [4, 2, 1]
+    }
+  ],
+  "quality_gate": {
+    "minimum_score": 0.8,
+    "minimum_retention_vs_reference": 0.95,
+    "reference_candidate_id": "q8-generic",
+    "require_identical_outcomes_across_parallel": true
+  },
+  "capacity_gate": {
+    "max_server_peak_rss_mib": 4096.0,
+    "require_every_pass_slo": true,
+    "max_throughput_relative_spread_percent": 15.0,
+    "max_e2e_relative_spread_percent": 20.0
+  },
+  "load_slo": {
+    "min_completion_rate": 1.0,
+    "max_ttft_ms_p95": 2000.0,
+    "max_e2e_latency_ms_p95": 6500.0
+  },
+  "selection": {
+    "objective": "generated_tokens_per_second_median",
+    "direction": "max",
+    "objective_tolerance_percent": 1.0,
+    "tie_breakers": [
+      "e2e_latency_ms_p95_median",
+      "ttft_ms_p95_median",
+      "server_peak_rss_mib_max",
+      "server_parallel",
+      "client_concurrency"
+    ]
+  },
+  "pins": {
+    "load_plan_sha256": "b10f61b7093f58ad6d142deafd7d6befe600d1d54a433b59c101131dd8c2d9bb",
+    "evaluation_suite_sha256": "e49c16fba32fd65c947264aef4141026ab68b1fd415ef09eeea6e8ade9a545c7",
+    "canonical_evidence_lock_sha256": "9a00187cb4619daec3596139c97de49127841ceb3c2c7edd85092df2474c578d",
+    "canonical_release_sha256": "b5586878ccd214667911390f417db0417111ac2c31d163a2f5f55c4469aefeb2"
+  }
+}
