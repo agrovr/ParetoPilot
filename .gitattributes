@@ -10,6 +10,7 @@
 *.toml text eol=lf
 *.yml text eol=lf
 LICENSE text eol=lf
+src/paretopilot/templates/launch-kit/** text eol=lf
 results/published/**/*.log text eol=lf -whitespace
 results/published/**/*.txt text eol=lf -whitespace
 results/published/**/*.sha256 text eol=lf

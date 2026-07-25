@@ -6,9 +6,9 @@ recommends a configuration without assuming that an "optimized" build must win.
 
 I designed and built ParetoPilot as a solo Cloud AI entry for the Arm AI Optimization Challenge.
 
-The reusable tool is now version 1.4.1. It replays the unchanged v1.4.0 capacity archive; the
-canonical Arm64 evidence remains frozen at v1.1.0, so the Decision Passport, Optimization Receipt,
-capacity receipt, and presentation layer cannot rewrite either measured result.
+The reusable tooling on `main` is version 1.4.1. It replays the unchanged v1.4.0 capacity archive;
+the canonical Arm64 evidence remains frozen at v1.1.0, so the Decision Passport, Optimization
+Receipt, capacity receipt, and presentation layer cannot rewrite either measured result.
 
 [Live evidence showcase](https://agrovr.github.io/ParetoPilot/) |
 [Exact canonical v1.1 report](https://agrovr.github.io/ParetoPilot/evidence/report-v1.1.html) |
@@ -16,7 +16,6 @@ capacity receipt, and presentation layer cannot rewrite either measured result.
 [Complete v1.1 evidence](https://github.com/agrovr/ParetoPilot/releases/tag/v1.1.0) |
 [Capacity envelope result](results/published/30144901854/README.md) |
 [Capacity evidence v1.4.0](https://github.com/agrovr/ParetoPilot/releases/tag/v1.4.0) |
-[Replay-capable tooling v1.4.1](https://github.com/agrovr/ParetoPilot/releases/tag/v1.4.1) |
 [CI decision gate](docs/github-action.md) |
 [Reproduction guide](docs/reproducibility.md)
 
@@ -31,29 +30,34 @@ capacity receipt, and presentation layer cannot rewrite either measured result.
    [supplementary Arm64 capacity board](https://agrovr.github.io/ParetoPilot/#capacity-envelope).
    It shows all 18 tested P/C cells, the selected P4/C4 points, and why cells passed or were
    blocked. This sizes each candidate and does not replace the frozen Q8 model decision.
-3. **Check the reusable CI gate.** Open the
+3. **Try the reusable gate safely.** Use the
+   [Launch Kit](#launch-your-own-decision) to generate a complete synthetic starter without
+   overwriting an existing folder. Then open the
    [latest green main-branch CI run](https://github.com/agrovr/ParetoPilot/actions/workflows/ci.yml?query=branch%3Amain)
    and inspect `action-smoke`, which exercises the five-artifact composite Action contract and its
    fail-closed measured-evidence guard.
 
-## 5-minute hands-on test
+## Launch your own decision
 
-After the [Quick start](#quick-start), run this deliberately synthetic software smoke test:
+After cloning the repository and activating the environment from [Quick start](#quick-start),
+this path takes about five minutes and works in Bash or PowerShell:
 
 ```bash
-python -m paretopilot ci-gate examples/synthetic-results.json \
-  --constraints configs/constraints.example.json \
-  --output-dir paretopilot-output \
-  --allow-synthetic \
-  --expect-selected-id q4-kleidiai
+python -m paretopilot init ../paretopilot-launch-kit-demo
+cd ../paretopilot-launch-kit-demo
+paretopilot ci-gate benchmarks/benchmark-set.json --constraints constraints/deployment.json --output-dir paretopilot-output --allow-synthetic --expect-selected-id q4-kleidiai
 ```
 
 Expected: exit code 0 with `q4-kleidiai` selected. Open
 `paretopilot-output/optimization-receipt.md` for the human-readable decision or
 `paretopilot-output/report.html` for the self-contained report.
 
-The fixture demonstrates the decision workflow only. It is explicitly synthetic and is not Arm64
-benchmark evidence.
+`init` creates a README, benchmark and constraint examples, and a ready-to-run GitHub workflow.
+It refuses existing files, directories, links, and junctions; there is no force or overwrite
+mode. If a later filesystem write fails, it reports and preserves the incomplete folder instead
+of deleting files. The generated candidate numbers are explicitly synthetic and are not Arm64
+benchmark evidence. Its README explains how to replace them with measured inputs without
+relabeling example numbers as measurements.
 
 The Pages homepage is a judge-facing presentation of the locked v1.1 inputs. Pages generates it
 only after verifying the pinned v1.1.0 release, replaying every authoritative output, and matching
@@ -151,17 +155,28 @@ ParetoPilot requires Python 3.12 or newer and has no runtime package dependencie
 ```bash
 git clone https://github.com/agrovr/ParetoPilot.git
 cd ParetoPilot
-python -m venv .venv
 ```
 
-Activate it with `.\.venv\Scripts\Activate.ps1` in Windows PowerShell or
-`source .venv/bin/activate` on Linux and macOS, then run:
+In Windows PowerShell, create and activate the environment with:
+
+```powershell
+py -3.12 -m venv .venv
+.\.venv\Scripts\Activate.ps1
+```
+
+In Bash on Linux or macOS, use:
+
+```bash
+python3 -m venv .venv
+source .venv/bin/activate
+```
+
+Then run the same commands in either shell:
 
 ```bash
 python -m pip install -e .
 python -m paretopilot --version
 python -m paretopilot doctor
-python -m unittest discover -s tests
 python -m paretopilot validate examples/synthetic-results.json
 python -m paretopilot recommend examples/synthetic-results.json --constraints configs/constraints.example.json
 ```
@@ -169,8 +184,17 @@ python -m paretopilot recommend examples/synthetic-results.json --constraints co
 The example is explicitly synthetic and exists only to exercise the engine. It is not presented
 as Arm64 benchmark evidence.
 
-Contributors who also want the pinned lint, build, and pytest tooling can install
-`python -m pip install -e ".[dev]"`.
+### Contributor verification
+
+The complete suite is intentionally separate from the judge quick path and can take several
+minutes:
+
+```bash
+python -m pip install -e ".[dev]"
+ruff check .
+ruff format --check .
+python -m unittest discover -s tests -v
+```
 
 ## Use it as a CI decision gate
 
@@ -184,7 +208,7 @@ candidate changes unexpectedly:
   with:
     python-version: "3.12"
 - id: decision
-  uses: agrovr/ParetoPilot@v1.4.1
+  uses: agrovr/ParetoPilot@db9ccaf37e3c7e807832652e237de813675ed807 # v1.4.0
   with:
     benchmarks: benchmarks/benchmark-set.json
     constraints: constraints/deployment.json
@@ -192,14 +216,12 @@ candidate changes unexpectedly:
     require-arm64-provenance: "true"
 ```
 
-The `benchmarks/benchmark-set.json` and `constraints/deployment.json` paths are placeholders for
-files in the repository that consumes the Action; they are not files in this source checkout. To
-try ParetoPilot here, use the synthetic smoke command in the
-[5-minute hands-on test](#5-minute-hands-on-test).
+The `benchmarks/benchmark-set.json` and `constraints/deployment.json` paths belong in the
+repository that consumes the Action. The [Launch Kit](#launch-your-own-decision) generates both
+files and a complete synthetic workflow for a safe first run.
 
-The versioned `@v1.4.1` reference keeps the example stable; pin the Action to a reviewed commit SHA
-in production. Measured evidence is required by default. A native deployment workflow can
-additionally require
+The reviewed v1.4.0 commit keeps the example stable. Measured evidence is required by default. A
+native deployment workflow can additionally require
 complete source-declared Arm64 runner, run, source, runtime, model, and evaluation-suite metadata.
 That completeness gate does not authenticate the claims by itself; the canonical release adds
 checksummed source artifacts and exact replay. Synthetic inputs must be explicitly allowed for

@@ -1,0 +1,37 @@
+name: ParetoPilot decision
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - "benchmarks/**"
+      - "constraints/**"
+      - ".github/workflows/paretopilot.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  paretopilot:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.12"
+      - name: Run the synthetic Launch Kit decision
+        id: decision
+        uses: agrovr/ParetoPilot@db9ccaf37e3c7e807832652e237de813675ed807 # v1.4.0
+        with:
+          benchmarks: benchmarks/benchmark-set.json
+          constraints: constraints/deployment.json
+          output-dir: paretopilot-output
+          require-measured: "false"
+          expected-selected-id: q4-kleidiai
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: paretopilot-decision
+          path: paretopilot-output
+          if-no-files-found: error

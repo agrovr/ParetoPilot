@@ -27,15 +27,34 @@ evidence. The passport describes the decision but never replaces or changes the 
 3. From an installed ParetoPilot checkout, run the bundled synthetic software smoke test:
 
 ```bash
-python -m paretopilot ci-gate examples/synthetic-results.json \
-  --constraints configs/constraints.example.json \
-  --output-dir paretopilot-output \
-  --allow-synthetic \
-  --expect-selected-id q4-kleidiai
+python -m paretopilot ci-gate examples/synthetic-results.json --constraints configs/constraints.example.json --output-dir paretopilot-output --allow-synthetic --expect-selected-id q4-kleidiai
 ```
 
 The bundled fixture demonstrates the gate contract only. It is explicitly synthetic and is not
 Arm64 benchmark evidence.
+
+## Launch Kit
+
+Create a self-contained beginner project without copying paths or workflow YAML by hand:
+
+```bash
+python -m paretopilot init ../paretopilot-launch-kit-demo
+```
+
+The new folder contains:
+
+- `.github/workflows/paretopilot.yml`;
+- `benchmarks/benchmark-set.json`;
+- `constraints/deployment.json`;
+- `.gitignore`; and
+- a step-by-step `README.md`.
+
+The command refuses every existing destination and has no overwrite mode. If a filesystem write
+fails after the destination is claimed, the command reports and preserves the incomplete folder;
+it never performs a destructive rollback. The generated workflow pins the reviewed v1.4.0 Action
+commit, grants read-only repository access, and labels its input as synthetic. The generated
+README explains how to replace the example with measured Arm64 inputs before enabling the
+measured-evidence and provenance gates.
 
 ## Workflow example
 
@@ -63,7 +82,7 @@ jobs:
         with:
           python-version: "3.12"
       - id: decision
-        uses: agrovr/ParetoPilot@v1.4.1
+        uses: agrovr/ParetoPilot@db9ccaf37e3c7e807832652e237de813675ed807 # v1.4.0
         with:
           benchmarks: benchmarks/benchmark-set.json
           constraints: constraints/deployment.json
@@ -77,13 +96,11 @@ jobs:
           if-no-files-found: error
 ```
 
-The two input paths in this workflow are placeholders for measured benchmark and constraint files
-in the repository that consumes the Action. They do not exist in the ParetoPilot source checkout.
-To test this checkout itself, use the synthetic command in the
-[60-second proof path](#60-second-proof-path).
+The two input paths in this workflow are measured files supplied by the repository that consumes
+the Action. Use the [Launch Kit](#launch-kit) to generate a clearly synthetic starter project.
 
-Pin `agrovr/ParetoPilot` to a reviewed commit SHA in a production workflow. The versioned
-`@v1.4.1` reference above keeps the introductory example stable and easy to try.
+Pin `agrovr/ParetoPilot` to a reviewed commit SHA in a production workflow. The example already
+pins the public v1.4.0 commit.
 
 `expected-selected-id` is optional. When supplied, the job fails if a benchmark change selects a
 different candidate. This makes the Action useful as a deployment-regression gate without
@@ -129,17 +146,16 @@ The Action also writes the human-readable Optimization Receipt to the GitHub Act
 
 ## Local equivalent
 
-The same gate is available without GitHub Actions. Replace the example
+The same gate is available without GitHub Actions. For measured evidence, replace the
 `benchmarks/benchmark-set.json` and `constraints/deployment.json` paths below with files from your
-consuming repository; use the 60-second synthetic proof command when working in this checkout:
+consuming repository:
 
 ```bash
-python -m paretopilot ci-gate benchmarks/benchmark-set.json \
-  --constraints constraints/deployment.json \
-  --output-dir paretopilot-output \
-  --require-arm64-provenance \
-  --expect-selected-id q4-kleidiai
+python -m paretopilot ci-gate benchmarks/benchmark-set.json --constraints constraints/deployment.json --output-dir paretopilot-output --require-arm64-provenance --expect-selected-id q4-kleidiai
 ```
+
+For a deliberately synthetic source-checkout test, use the exact command in the
+[60-second proof path](#60-second-proof-path) instead.
 
 To export only the supplementary machine-readable context:
 

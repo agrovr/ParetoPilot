@@ -16,6 +16,8 @@ from paretopilot.showcase import (
     _capacity_failure_label,
     _capacity_result_from_study,
     _comparison_bar_widths,
+    _metric_label,
+    _metric_value,
     _optimization_ladder_markup,
     _relative_measure_phrase,
     render_showcase_v11,
@@ -869,6 +871,16 @@ class ShowcaseV11Tests(unittest.TestCase):
             float(comparisons["server_peak_rss_mib_max"]),
             "peak RSS",
         )
+        benchmarks = canonical_benchmarks()
+        recommendation = canonical_recommendation(benchmarks)
+        objective = recommendation["objective"]
+        assert isinstance(objective, dict)
+        objective_metric = str(objective["metric"])
+        selected = benchmarks.by_id(str(recommendation["selected_id"]))
+        objective_summary = (
+            f"{_metric_value(objective_metric, selected.metrics[objective_metric])} · "
+            f"{_metric_label(objective_metric)}"
+        )
 
         hero_start = report.index('<div class="hero-layout">')
         brief_start = report.index('<section class="flight-brief"', hero_start)
@@ -876,6 +888,10 @@ class ShowcaseV11Tests(unittest.TestCase):
         actions_start = report.index('<nav class="hero-actions"', brief_end)
         capacity_start = report.index('<section id="capacity-envelope"', actions_start)
         brief = report[brief_start:brief_end]
+        verdict_start = brief.index(
+            '<div class="flight-brief-verdict" role="note" aria-label="Judge verdict">'
+        )
+        instrument_start = brief.index('<figure class="flight-brief-instrument"')
 
         self.assertLess(hero_start, brief_start)
         self.assertLess(brief_start, brief_end)
@@ -884,10 +900,22 @@ class ShowcaseV11Tests(unittest.TestCase):
         self.assertIn("Judge flight brief", brief)
         self.assertIn("One model call. One serving envelope.", brief)
         self.assertIn("Retain Q8 generic reference for the frozen", brief)
+        self.assertEqual(brief.count('role="note" aria-label="Judge verdict"'), 1)
+        self.assertLess(verdict_start, instrument_start)
+        self.assertIn("Canonical latency winner", brief)
+        self.assertIn(objective_summary, brief)
+        self.assertIn("Capacity / resource alternative", brief)
+        self.assertIn(f"P{parallel} / C{concurrency}", brief)
+        self.assertIn("Different questions.", brief)
+        self.assertIn("does not replace the canonical recommendation", brief)
         self.assertIn(f"Measured tradeoff at P{parallel} / C{concurrency}", brief)
         self.assertIn(str(alternative["label"]), brief)
         self.assertIn(throughput_phrase, brief)
         self.assertIn(rss_phrase, brief)
+        self.assertIn(
+            f"{float(quality['retention_vs_reference']) * 100:.1f}% quality retention",
+            brief[verdict_start:instrument_start],
+        )
         self.assertIn(
             f"{result['measured_request_count']} requests · zero recorded failures",
             brief,
@@ -906,14 +934,27 @@ class ShowcaseV11Tests(unittest.TestCase):
             "See the serving envelope</a>",
             brief,
         )
-        self.assertIn("Use the CI gate</a>", brief)
+        self.assertIn("Open the Launch Kit</a>", brief)
         self.assertIn("Measured tradeoff at", brief)
-        self.assertIn("Decision boundary:", brief)
+        self.assertNotIn("flight-brief-boundary", brief)
         self.assertIn("Q8 reference → tuned Q4", brief)
         self.assertEqual(brief.count('class="flight-brief-metric"'), 3)
         self.assertEqual(brief.count('class="is-reference"'), 3)
         self.assertEqual(brief.count('class="is-alternative"'), 3)
         self.assertNotIn("<script", brief)
+
+        verdict_css = css_rule_body(report, ".showcase .flight-brief-verdict")
+        self.assertIn("min-width: 0;", verdict_css)
+        self.assertIn("font-size: .875rem;", verdict_css)
+        verdict_value_css = css_rule_body(report, ".showcase .flight-brief-verdict dd")
+        self.assertIn("min-width: 0;", verdict_value_css)
+        self.assertIn("overflow-wrap: anywhere;", verdict_value_css)
+        mobile_css = css_rule_body(report, "@media (max-width: 47.99rem)")
+        self.assertIn(
+            ".showcase .flight-brief-verdict dl > div {\n"
+            "    grid-template-columns: minmax(0, 1fr);",
+            mobile_css,
+        )
 
     def test_capacity_relative_claims_preserve_metric_direction(self) -> None:
         self.assertEqual(

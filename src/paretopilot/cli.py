@@ -28,6 +28,7 @@ from paretopilot.io import (
     write_json,
     write_text,
 )
+from paretopilot.launch_kit import create_launch_kit
 from paretopilot.llama_bench import LlamaBenchRecord, load_llama_bench_jsonl
 from paretopilot.llama_compare import compare_llama_bench_summaries
 from paretopilot.llama_summary import summarize_llama_bench_paths
@@ -63,6 +64,16 @@ def _parser() -> argparse.ArgumentParser:
     )
     parser.add_argument("--version", action="version", version=f"%(prog)s {__version__}")
     subparsers = parser.add_subparsers(dest="command", required=True)
+
+    init_parser = subparsers.add_parser(
+        "init",
+        help="create a new synthetic Launch Kit for the ParetoPilot decision gate",
+    )
+    init_parser.add_argument(
+        "directory",
+        type=Path,
+        help="new directory to create; existing paths are never overwritten",
+    )
 
     doctor_parser = subparsers.add_parser(
         "doctor",
@@ -539,7 +550,10 @@ def _require_arm64_attribution(passport: Mapping[str, Any]) -> None:
 def main(argv: Sequence[str] | None = None) -> int:
     args = _parser().parse_args(argv)
     try:
-        if args.command == "doctor":
+        if args.command == "init":
+            payload = create_launch_kit(args.directory)
+            exit_code = 0
+        elif args.command == "doctor":
             report = inspect_environment()
             payload = report.to_mapping()
             if args.output:
