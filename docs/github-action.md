@@ -162,4 +162,3 @@ python -m paretopilot optimization-receipt benchmarks/benchmark-set.json \
 Use `--allow-synthetic` only for a deliberately synthetic software smoke test. Invalid JSON,
 unknown schema fields, non-finite metrics, failed constraints, unexpected selections, existing
 outputs, and synthetic inputs presented as measured evidence all fail closed.
-
