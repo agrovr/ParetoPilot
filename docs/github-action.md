@@ -63,7 +63,7 @@ jobs:
         with:
           python-version: "3.12"
       - id: decision
-        uses: agrovr/ParetoPilot@main
+        uses: agrovr/ParetoPilot@v1.4.1
         with:
           benchmarks: benchmarks/benchmark-set.json
           constraints: constraints/deployment.json
@@ -77,8 +77,8 @@ jobs:
           if-no-files-found: error
 ```
 
-Pin `agrovr/ParetoPilot` to a reviewed commit SHA in a production workflow. The `@main` reference
-above keeps the introductory example easy to try.
+Pin `agrovr/ParetoPilot` to a reviewed commit SHA in a production workflow. The versioned
+`@v1.4.1` reference above keeps the introductory example stable and easy to try.
 
 `expected-selected-id` is optional. When supplied, the job fails if a benchmark change selects a
 different candidate. This makes the Action useful as a deployment-regression gate without

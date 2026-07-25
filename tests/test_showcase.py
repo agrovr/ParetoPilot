@@ -15,6 +15,7 @@ from paretopilot.profiles import PolicySet, evaluate_policy_profiles
 from paretopilot.showcase import (
     _capacity_failure_label,
     _capacity_result_from_study,
+    _comparison_bar_widths,
     _optimization_ladder_markup,
     _relative_measure_phrase,
     render_showcase_v11,
@@ -882,26 +883,36 @@ class ShowcaseV11Tests(unittest.TestCase):
         self.assertLess(actions_start, capacity_start)
         self.assertIn("Judge flight brief", brief)
         self.assertIn("One model call. One serving envelope.", brief)
-        self.assertIn("<strong>Retain Q8 generic reference</strong>", brief)
-        self.assertIn(f"<strong>P{parallel} / C{concurrency}</strong>", brief)
+        self.assertIn("Retain Q8 generic reference for the frozen", brief)
+        self.assertIn(f"Measured tradeoff at P{parallel} / C{concurrency}", brief)
         self.assertIn(str(alternative["label"]), brief)
         self.assertIn(throughput_phrase, brief)
         self.assertIn(rss_phrase, brief)
         self.assertIn(
-            f"<strong>{result['measured_request_count']} requests · "
-            "zero recorded failures</strong>",
+            f"{result['measured_request_count']} requests · zero recorded failures",
             brief,
         )
         self.assertIn(
-            f"{float(quality['retention_vs_reference']) * 100:.1f}% of reference quality",
+            f"<strong>{float(quality['retention_vs_reference']) * 100:.1f}%</strong>",
             brief,
         )
         self.assertIn(
-            '<a class="flight-brief-primary" href="#capacity-envelope">'
-            "See the measured envelope</a>",
+            '<a class="flight-brief-primary" href="#optimization-ladder">'
+            "See exactly what changed</a>",
+            brief,
+        )
+        self.assertIn(
+            '<a class="flight-brief-secondary" href="#capacity-envelope">'
+            "See the serving envelope</a>",
             brief,
         )
         self.assertIn("Use the CI gate</a>", brief)
+        self.assertIn("Measured tradeoff at", brief)
+        self.assertIn("Decision boundary:", brief)
+        self.assertIn("Q8 reference → tuned Q4", brief)
+        self.assertEqual(brief.count('class="flight-brief-metric"'), 3)
+        self.assertEqual(brief.count('class="is-reference"'), 3)
+        self.assertEqual(brief.count('class="is-alternative"'), 3)
         self.assertNotIn("<script", brief)
 
     def test_capacity_relative_claims_preserve_metric_direction(self) -> None:
@@ -917,6 +928,21 @@ class ShowcaseV11Tests(unittest.TestCase):
             _relative_measure_phrase(0.0, "throughput"),
             "no change in throughput",
         )
+
+    def test_capacity_comparison_bars_preserve_reference_ratios(self) -> None:
+        reference, alternative = _comparison_bar_widths(106.74)
+        self.assertAlmostEqual(reference / alternative, 100.0 / 106.74)
+        self.assertEqual(alternative, 100.0)
+
+        reference, alternative = _comparison_bar_widths(58.91)
+        self.assertEqual(reference, 100.0)
+        self.assertAlmostEqual(alternative, 58.91)
+
+        with self.assertRaisesRegex(
+            ValidationError,
+            "comparison percentage of reference cannot be negative",
+        ):
+            _comparison_bar_widths(-0.01)
 
     def test_capacity_envelope_fails_closed_on_unlocked_or_tampered_evidence(self) -> None:
         with TemporaryDirectory() as directory:
