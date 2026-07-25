@@ -2536,12 +2536,17 @@ html[data-theme="dark"] .showcase {
   padding: 0;
   max-width: 100%;
   overflow-x: clip;
+  overflow-y: hidden;
   border: 2px solid var(--flight-ink);
   contain: inline-size paint;
   overscroll-behavior-inline: contain;
   scrollbar-width: none;
 }
-.showcase .profile-tabs::-webkit-scrollbar { display: none; }
+.showcase .profile-tabs::-webkit-scrollbar {
+  width: 0;
+  height: 0;
+  display: none;
+}
 .showcase .profile-tabs button {
   min-height: 4.15rem;
   padding: .75rem .9rem;

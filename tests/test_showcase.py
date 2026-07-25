@@ -803,15 +803,16 @@ class ShowcaseV11Tests(unittest.TestCase):
             report,
         )
         self.assertIn("overflow-x: clip;", tablist_css)
+        self.assertIn("overflow-y: hidden;", tablist_css)
         self.assertIn("scrollbar-width: none;", tablist_css)
         self.assertIn(
             '.showcase .profile-tabs[data-overflow="scroll"] { overflow-x: auto; }',
             report,
         )
-        self.assertIn(
-            ".showcase .profile-tabs::-webkit-scrollbar { display: none; }",
-            report,
-        )
+        scrollbar_css = css_rule_body(report, ".showcase .profile-tabs::-webkit-scrollbar")
+        self.assertIn("width: 0;", scrollbar_css)
+        self.assertIn("height: 0;", scrollbar_css)
+        self.assertIn("display: none;", scrollbar_css)
         self.assertIn("border: 2px solid var(--flight-ink);", tablist_css)
         self.assertIn(
             "min-height: 4.15rem;", css_rule_body(report, ".showcase .profile-tabs button")
