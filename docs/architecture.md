@@ -42,8 +42,8 @@ historical experiment.
    self-contained reports without rerunning inference.
 9. **Gate downstream deployment.** The reusable GitHub Action consumes any validated benchmark
    set and constraints, rejects synthetic inputs by default, writes a recommendation, decision
-   passport, and self-contained report, and can fail CI when the selected candidate changes or
-   complete native Arm64 attribution is required but missing.
+   passport, human-readable Optimization Receipt, and self-contained report, and can fail CI when
+   the selected candidate changes or complete native Arm64 attribution is required but missing.
 
 ## Candidate attribution
 
@@ -121,6 +121,9 @@ light/dark preference changes semantic color tokens only; it never alters the bo
   exploratory.
 - The decision passport recomputes and describes the supplied decision for CI and presentation.
   It is supplementary: it cannot change the selected candidate or any locked canonical artifact.
+- The Optimization Receipt is a deterministic Markdown rendering of that passport. It makes the
+  baseline, decision, measured stage changes, tradeoffs, provenance, fingerprints, and scope easy
+  to review in CI without creating a second source of truth.
 - Its `arm64-attributed` grade checks source-declared metadata completeness only. The passport
   explicitly does not authenticate those claims or bind them to candidate artifacts; canonical
   trust comes from the separately checksummed evidence bundle and exact replay.
@@ -142,6 +145,7 @@ light/dark preference changes semantic color tokens only; it never alters the bo
 | [`src/paretopilot/experiment.py`](../src/paretopilot/experiment.py) | Strict multi-candidate manifest and artifact assembly |
 | [`src/paretopilot/analysis.py`](../src/paretopilot/analysis.py) | Constraint filtering, Pareto frontier, and deterministic selection |
 | [`src/paretopilot/decision_passport.py`](../src/paretopilot/decision_passport.py) | Supplementary Arm64 provenance grade, optimization-stage attribution, cutoff runway, and resource-alternative summary |
+| [`src/paretopilot/optimization_receipt.py`](../src/paretopilot/optimization_receipt.py) | Deterministic, human-readable decision receipt rendered from a validated Decision Passport |
 | [`src/paretopilot/pass_eval.py`](../src/paretopilot/pass_eval.py) | Raw repeat-pass verification and reconstruction |
 | [`src/paretopilot/load_eval.py`](../src/paretopilot/load_eval.py) | Bounded multi-client evaluation and command binding |
 | [`src/paretopilot/profiles.py`](../src/paretopilot/profiles.py) | Precomputed canonical and derived policy decisions |
@@ -150,7 +154,7 @@ light/dark preference changes semantic color tokens only; it never alters the bo
 | [`src/paretopilot/report.py`](../src/paretopilot/report.py) | Deterministic core HTML decision report |
 | [`src/paretopilot/report_v11.py`](../src/paretopilot/report_v11.py) | Deterministic additive evidence report |
 | [`src/paretopilot/showcase.py`](../src/paretopilot/showcase.py) | Judge-facing presentation generated from verified v1.1 inputs without changing the canonical report |
-| [`action.yml`](../action.yml) | Reusable CI decision gate with measured-evidence and source-declared Arm64 metadata protection, expected-selection enforcement, a decision passport, and hashed receipts |
+| [`action.yml`](../action.yml) | Reusable CI decision gate with measured-evidence and source-declared Arm64 metadata protection, expected-selection enforcement, a decision passport, a human-readable Optimization Receipt, and hashed artifacts |
 | [`.github/workflows/pages.yml`](../.github/workflows/pages.yml) | Release verification, exact replay, canonical-report preservation, and showcase publication |
 
 ## Published identity

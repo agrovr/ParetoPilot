@@ -36,6 +36,7 @@ jobs:
           paretopilot validate examples/synthetic-results.json
           paretopilot recommend examples/synthetic-results.json --constraints configs/constraints.example.json
           paretopilot passport examples/synthetic-results.json --constraints configs/constraints.example.json --output passport-smoke.json
+          paretopilot optimization-receipt examples/synthetic-results.json --constraints configs/constraints.example.json --output optimization-receipt-smoke.md
           paretopilot validate-llama-bench tests/fixtures/llama_bench.synthetic.jsonl
 
   package:
@@ -68,6 +69,10 @@ jobs:
             examples/synthetic-results.json \
             --constraints configs/constraints.example.json \
             --output "$RUNNER_TEMP/decision-passport.json"
+          "$RUNNER_TEMP/paretopilot-wheel-smoke/bin/paretopilot" optimization-receipt \
+            examples/synthetic-results.json \
+            --constraints configs/constraints.example.json \
+            --output "$RUNNER_TEMP/optimization-receipt.md"
 
   action-smoke:
     runs-on: ubuntu-latest
@@ -95,6 +100,8 @@ jobs:
           RECOMMENDATION: ${{ steps.decision.outputs.recommendation }}
           REPORT: ${{ steps.decision.outputs.report }}
           DECISION_PASSPORT: ${{ steps.decision.outputs.decision-passport }}
+          OPTIMIZATION_RECEIPT: ${{ steps.decision.outputs.optimization-receipt }}
+          OPTIMIZATION_RECEIPT_SHA256: ${{ steps.decision.outputs.optimization-receipt-sha256 }}
           EVIDENCE_GRADE: ${{ steps.decision.outputs.evidence-grade }}
           RECEIPT: ${{ steps.decision.outputs.receipt }}
         run: |
@@ -104,23 +111,33 @@ jobs:
           test -f "$RECOMMENDATION"
           test -f "$REPORT"
           test -f "$DECISION_PASSPORT"
+          test -f "$OPTIMIZATION_RECEIPT"
           test "$EVIDENCE_GRADE" = "synthetic"
           test -f "$RECEIPT"
           python - <<'PY'
+          import hashlib
           import json
           import os
           from pathlib import Path
 
           recommendation = json.loads(Path(os.environ["RECOMMENDATION"]).read_text())
           passport = json.loads(Path(os.environ["DECISION_PASSPORT"]).read_text())
+          optimization_receipt_path = Path(os.environ["OPTIMIZATION_RECEIPT"])
+          optimization_receipt = optimization_receipt_path.read_text()
           receipt = json.loads(Path(os.environ["RECEIPT"]).read_text())
           assert recommendation["selected_id"] == "q4-kleidiai"
           assert passport["selected_decision"]["candidate_id"] == "q4-kleidiai"
           assert passport["evidence_grade"] == "synthetic"
+          assert "Synthetic" in optimization_receipt
+          assert "Measured improvement" not in optimization_receipt
           assert receipt["expectation_matched"] is True
           assert receipt["synthetic_source"] is True
           assert receipt["evidence_grade"] == "synthetic"
+          assert receipt["schema_version"] == "1.2"
           assert len(receipt["decision_passport_sha256"]) == 64
+          digest = hashlib.sha256(optimization_receipt_path.read_bytes()).hexdigest()
+          assert digest == os.environ["OPTIMIZATION_RECEIPT_SHA256"]
+          assert digest == receipt["optimization_receipt_sha256"]
           PY
       - name: Confirm measured-evidence protection fails closed
         shell: bash

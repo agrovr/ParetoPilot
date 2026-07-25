@@ -9,6 +9,7 @@ import unittest
 
 from paretopilot.decision_passport import build_decision_passport
 from paretopilot.domain import BenchmarkSet, ValidationError
+from paretopilot.profiles import PolicySet, evaluate_policy_profiles
 from paretopilot.showcase import _optimization_ladder_markup, render_showcase_v11
 
 from test_report_v11 import (
@@ -172,6 +173,78 @@ def frozen_v11_profiles(data: BenchmarkSet) -> dict[str, object]:
     return profiles
 
 
+def cockpit_profiles(data: BenchmarkSet) -> dict[str, object]:
+    source_kind = "synthetic fixture" if data.synthetic else "measured evidence"
+    policy_set = PolicySet.from_mapping(
+        {
+            "schema_version": "1.0",
+            "canonical_profile_id": "canonical-latency",
+            "profiles": [
+                {
+                    "id": "canonical-latency",
+                    "label": "Canonical latency",
+                    "description": "Use the predeclared p95 end-to-end latency objective.",
+                    "classification": "canonical",
+                    "objective": {"metric": "e2e_latency_ms_p95", "direction": "min"},
+                    "objective_tolerance_percent": 1.0,
+                    "preference_policy": "canonical",
+                },
+                {
+                    "id": "memory-first",
+                    "label": "Memory first",
+                    "description": f"Prefer the lowest peak memory in the {source_kind}.",
+                    "classification": "derived-non-canonical",
+                    "objective": {"metric": "peak_rss_mib", "direction": "min"},
+                    "objective_tolerance_percent": 0.0,
+                    "preference_policy": "none",
+                },
+                {
+                    "id": "first-token-first",
+                    "label": "First token first",
+                    "description": f"Prefer the lowest p95 first-token latency in the {source_kind}.",
+                    "classification": "derived-non-canonical",
+                    "objective": {"metric": "ttft_ms_p95", "direction": "min"},
+                    "objective_tolerance_percent": 0.0,
+                    "preference_policy": "none",
+                },
+            ],
+        }
+    )
+    profiles = dict(
+        evaluate_policy_profiles(
+            data,
+            canonical_constraints(),
+            policy_set,
+        )
+    )
+    profiles["input_fingerprints"] = {
+        "benchmarks_sha256": "a" * 64,
+        "constraints_sha256": "f" * 64,
+        "policies_sha256": "9" * 64,
+    }
+    for profile in profiles["profiles"]:
+        profile["recommendation"]["paretopilot_version"] = "1.1.0"
+    return profiles
+
+
+def rendered_cockpit_showcase(
+    *,
+    benchmarks: BenchmarkSet | None = None,
+    profiles: dict[str, object] | None = None,
+) -> str:
+    data = canonical_benchmarks() if benchmarks is None else benchmarks
+    policy_profiles = cockpit_profiles(data) if profiles is None else profiles
+    return render_showcase_v11(
+        data,
+        frozen_v11_recommendation(data),
+        policy_profiles=policy_profiles,
+        canonical_report_href="evidence/report-v1.1.html",
+        benchmarks_sha256="a" * 64,
+        recommendation_sha256="b" * 64,
+        profiles_sha256="c" * 64,
+    )
+
+
 def rendered_showcase(
     *,
     lock: bool = True,
@@ -248,6 +321,137 @@ class ShowcaseV11Tests(unittest.TestCase):
         self.assertIn("Canonical report SHA-256", first)
         self.assertIn("Evidence archive SHA-256", first)
         self.assertIn("Checksum manifest SHA-256", first)
+
+    def test_policy_cockpit_uses_only_three_precomputed_profiles_above_the_fold(
+        self,
+    ) -> None:
+        report = rendered_cockpit_showcase()
+        cockpit_start = report.index('<section class="policy-cockpit"')
+        cockpit_end = report.index("</section>\n", cockpit_start) + len("</section>\n")
+        cockpit = report[cockpit_start:cockpit_end]
+        hero_start = report.index('<div class="hero-layout">')
+        hero_end = report.index('</div>\n<nav class="flight-log"', hero_start)
+
+        self.assertLess(hero_start, cockpit_start)
+        self.assertLess(cockpit_end, hero_end)
+        self.assertEqual(cockpit.count('data-cockpit-target="'), 3)
+        self.assertEqual(cockpit.count('data-cockpit-panel="'), 3)
+        self.assertIn("<strong>Latency first</strong><span>Canonical</span>", cockpit)
+        self.assertIn("<strong>Memory first</strong><span>Derived</span>", cockpit)
+        self.assertIn("<strong>First token first</strong><span>Derived</span>", cockpit)
+        self.assertIn("<h3>Q8 generic reference</h3>", cockpit)
+        self.assertIn("<h3>Q4 generic</h3>", cockpit)
+        self.assertIn("<dt>Objective</dt><dd>p95 end-to-end latency</dd>", cockpit)
+        self.assertIn("<dt>Result</dt><dd>2,335.9 ms</dd>", cockpit)
+        self.assertIn(
+            "<strong>43.7% lower</strong><span>model size vs baseline</span>",
+            cockpit,
+        )
+        self.assertIn(
+            "<strong>5.0% lower</strong><span>generation throughput vs baseline</span>",
+            cockpit,
+        )
+        self.assertNotIn('class="decision-rail"', report[hero_start:hero_end])
+        self.assertIn(
+            '<div class="profile-tabs" role="tablist" aria-label="Deployment policies">',
+            report,
+        )
+
+    def test_policy_cockpit_links_to_the_generated_optimization_receipt(self) -> None:
+        report = rendered_cockpit_showcase()
+
+        self.assertIn(
+            '<a href="evidence/optimization-receipt.md">Open this decision’s evidence receipt</a>',
+            report,
+        )
+        self.assertEqual(report.count('href="evidence/optimization-receipt.md"'), 1)
+        self.assertIn(
+            "Verify provenance → Apply gates → Compute frontier → Select policy",
+            report,
+        )
+
+    def test_policy_cockpit_has_one_tab_stop_one_panel_and_full_keyboard_contract(
+        self,
+    ) -> None:
+        report = rendered_cockpit_showcase()
+        cockpit_start = report.index('<section class="policy-cockpit"')
+        cockpit_end = report.index("</section>\n", cockpit_start) + len("</section>\n")
+        cockpit = report[cockpit_start:cockpit_end]
+
+        self.assertIn(
+            'role="tablist" aria-label="Choose a deployment priority"',
+            cockpit,
+        )
+        self.assertEqual(cockpit.count('role="tab"'), 3)
+        self.assertEqual(cockpit.count('role="tabpanel"'), 3)
+        self.assertEqual(cockpit.count('tabindex="0"'), 1)
+        self.assertEqual(cockpit.count('tabindex="-1"'), 2)
+        self.assertEqual(cockpit.count('aria-selected="true"'), 1)
+        self.assertEqual(cockpit.count('aria-selected="false"'), 2)
+        self.assertEqual(cockpit.count('class="cockpit-panel" role="tabpanel"'), 3)
+        self.assertEqual(cockpit.count('data-cockpit-panel="1" hidden'), 1)
+        self.assertEqual(cockpit.count('data-cockpit-panel="2" hidden'), 1)
+        self.assertIn('aria-live="polite" aria-atomic="true"', cockpit)
+        self.assertIn("canonical latency result remains shown", cockpit)
+        for key in ("ArrowLeft", "ArrowRight", "Home", "End"):
+            self.assertIn(f'"{key}"', report)
+        self.assertIn(
+            'panel.hidden = panel.getAttribute("data-cockpit-panel") !== target;',
+            report,
+        )
+        self.assertIn('item.setAttribute("tabindex", active ? "0" : "-1");', report)
+        self.assertIn(
+            'tab.scrollIntoView({ block: "nearest", inline: "nearest" });',
+            report,
+        )
+        self.assertIn(".showcase .cockpit-tabs { display: none; }", report)
+
+    def test_policy_cockpit_uses_fixture_language_for_synthetic_inputs(self) -> None:
+        measured = canonical_benchmarks()
+        synthetic = BenchmarkSet.from_mapping(
+            {
+                "schema_version": measured.schema_version,
+                "baseline_id": measured.baseline_id,
+                "synthetic": True,
+                "metadata": dict(measured.metadata),
+                "candidates": [
+                    {
+                        "id": candidate.candidate_id,
+                        "label": candidate.label,
+                        "parameters": dict(candidate.parameters),
+                        "metrics": dict(candidate.metrics),
+                    }
+                    for candidate in measured.candidates
+                ],
+            }
+        )
+        report = rendered_cockpit_showcase(benchmarks=synthetic)
+        cockpit_start = report.index('<section class="policy-cockpit"')
+        cockpit_end = report.index("</section>\n", cockpit_start) + len("</section>\n")
+        cockpit = report[cockpit_start:cockpit_end]
+
+        self.assertIn("Three synthetic fixture decisions are already computed", cockpit)
+        self.assertIn("<span>Primary fixture</span>", cockpit)
+        self.assertEqual(cockpit.count("<span>Derived fixture</span>"), 2)
+        self.assertIn("<dt>Fixture improvement</dt>", cockpit)
+        self.assertIn("<dt>Fixture tradeoff</dt>", cockpit)
+        self.assertIn("fixture baseline", cockpit)
+        self.assertNotIn("measured", cockpit.lower())
+
+    def test_policy_cockpit_falls_back_when_a_required_profile_is_missing(self) -> None:
+        complete = cockpit_profiles(canonical_benchmarks())
+        incomplete = deepcopy(complete)
+        incomplete["profiles"] = [
+            profile for profile in incomplete["profiles"] if profile["id"] != "first-token-first"
+        ]
+        report = rendered_cockpit_showcase(profiles=incomplete)
+        hero_start = report.index('<div class="hero-layout">')
+        hero_end = report.index('</div>\n<nav class="flight-log"', hero_start)
+
+        self.assertNotIn('class="policy-cockpit"', report)
+        self.assertIn('class="decision-rail"', report[hero_start:hero_end])
+        self.assertIn("Selected objective", report[hero_start:hero_end])
+        self.assertIn("Deployment policy selector", report)
 
     def test_optimization_ladder_is_passport_derived_accessible_and_first(self) -> None:
         benchmarks = attributed_benchmarks()
@@ -461,6 +665,29 @@ class ShowcaseV11Tests(unittest.TestCase):
                 ".showcase .profile-metrics span,\n.showcase .profile-metrics strong",
             ),
         )
+        self.assertIn(
+            "min-width: 0;",
+            css_rule_body(report, ".showcase .policy-cockpit"),
+        )
+        cockpit_tabs = css_rule_body(report, ".showcase .cockpit-tabs")
+        self.assertIn("max-width: 100%;", cockpit_tabs)
+        self.assertIn("overflow-x: auto;", cockpit_tabs)
+        self.assertIn("scrollbar-width: none;", cockpit_tabs)
+        self.assertIn(
+            "min-width: 0;",
+            css_rule_body(report, ".showcase .cockpit-tabs button"),
+        )
+        narrow_css = css_rule_body(report, "@media (max-width: 47.99rem)")
+        self.assertIn(
+            ".showcase .cockpit-heading,\n"
+            "  .showcase .cockpit-decision {\n"
+            "    grid-template-columns: minmax(0, 1fr);",
+            narrow_css,
+        )
+        self.assertIn(
+            ".showcase .cockpit-deltas { grid-template-columns: minmax(0, 1fr); }",
+            narrow_css,
+        )
 
     def test_desktop_hero_pairs_headline_with_proof_without_wrapping_full_width_rows(
         self,
@@ -564,6 +791,7 @@ class ShowcaseV11Tests(unittest.TestCase):
 
     def test_policy_tabs_do_not_reserve_a_desktop_scrollbar_gutter(self) -> None:
         report = rendered_showcase()
+        tablist_css = css_rule_body(report, ".showcase .profile-tabs")
 
         self.assertIn(
             ".showcase .profile-tabs {\n"
@@ -574,10 +802,19 @@ class ShowcaseV11Tests(unittest.TestCase):
             "  padding: 0;",
             report,
         )
-        self.assertIn("  overflow-x: auto;", css_rule_body(report, ".showcase .profile-tabs"))
+        self.assertIn("overflow-x: clip;", tablist_css)
+        self.assertIn("scrollbar-width: none;", tablist_css)
         self.assertIn(
-            '.showcase .profile-tabs[data-overflow="fit"] { overflow-x: clip; }',
+            '.showcase .profile-tabs[data-overflow="scroll"] { overflow-x: auto; }',
             report,
+        )
+        self.assertIn(
+            ".showcase .profile-tabs::-webkit-scrollbar { display: none; }",
+            report,
+        )
+        self.assertIn("border: 2px solid var(--flight-ink);", tablist_css)
+        self.assertIn(
+            "min-height: 4.15rem;", css_rule_body(report, ".showcase .profile-tabs button")
         )
         self.assertIn(
             "const overflows = tablist.scrollWidth > tablist.clientWidth + 1;",
@@ -597,6 +834,8 @@ class ShowcaseV11Tests(unittest.TestCase):
             'tab.scrollIntoView({ block: "nearest", inline: "nearest" });',
             report,
         )
+        narrow_css = css_rule_body(report, "@media (max-width: 47.99rem)")
+        self.assertNotIn(".profile-tabs", narrow_css)
         self.assertNotIn("@media (min-width: 56rem)", report)
 
     def test_charts_use_stable_series_tags_and_responsive_html_legends(self) -> None:

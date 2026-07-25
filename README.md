@@ -8,8 +8,9 @@ I designed and built ParetoPilot as a solo Cloud AI entry for the Arm AI Optimiz
 Arm Performix is an optional profiling enhancement; it is not required by the product or its
 evidence pipeline.
 
-The reusable tool is now version 1.2.0. The canonical Arm64 evidence remains frozen at v1.1.0,
-so the new Decision Passport and presentation layer cannot rewrite the measured result.
+The reusable tool is now version 1.3.0. The canonical Arm64 evidence remains frozen at v1.1.0,
+so the Decision Passport, Optimization Receipt, and presentation layer cannot rewrite the
+measured result.
 
 [Live evidence showcase](https://agrovr.github.io/ParetoPilot/) |
 [Exact canonical v1.1 report](https://agrovr.github.io/ParetoPilot/evidence/report-v1.1.html) |
@@ -20,13 +21,14 @@ so the new Decision Passport and presentation layer cannot rewrite the measured 
 
 ## 60-second judge path
 
-1. **See the measured decision.** Start with the
-   [optimization ladder](https://agrovr.github.io/ParetoPilot/#optimization-ladder) to see why the
-   measured baseline remained the deployment choice and where each optimization helped.
+1. **Try three deployment priorities.** Start with the
+   [live evidence showcase](https://agrovr.github.io/ParetoPilot/) and switch between latency,
+   memory, and first-token priorities. Each result is precomputed from the locked evidence and
+   links to a human-readable receipt.
 2. **See the reusable gate pass.**
    Open the
    [latest green main-branch CI run](https://github.com/agrovr/ParetoPilot/actions/workflows/ci.yml?query=branch%3Amain)
-   and inspect `action-smoke`, which exercises the four-artifact composite Action contract and its
+   and inspect `action-smoke`, which exercises the five-artifact composite Action contract and its
    fail-closed measured-evidence guard.
 3. **Try the engine locally.** After the short installation below, run this deliberately synthetic
    software smoke test:
@@ -58,8 +60,8 @@ into an inspectable deployment decision:
 2. reject configurations that miss declared quality or resource limits;
 3. compute the non-dominated candidates across latency, throughput, memory, size, and quality;
 4. select against a declared objective and practical-effect tolerance; and
-5. export deterministic recommendations, an Arm64 decision passport, and a self-contained HTML
-   report.
+5. export deterministic recommendations, an Arm64 decision passport, a human-readable
+   Optimization Receipt, and a self-contained HTML report.
 
 The baseline is allowed to win. An honest no-change result is more useful than extra deployment
 complexity when the measured alternatives do not improve the declared objective.
@@ -157,8 +159,9 @@ as Arm64 benchmark evidence.
 ## Use it as a CI decision gate
 
 ParetoPilot includes a composite GitHub Action that validates inputs, generates a machine-readable
-recommendation, supplementary decision passport, and self-contained report, publishes SHA-256
-receipts, and can fail a deployment job when the selected candidate changes unexpectedly:
+recommendation, supplementary decision passport, human-readable Optimization Receipt, and
+self-contained report, publishes SHA-256 digests, and can fail a deployment job when the selected
+candidate changes unexpectedly:
 
 ```yaml
 - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0

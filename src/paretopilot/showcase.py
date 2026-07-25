@@ -1130,12 +1130,238 @@ def _optimization_ladder_markup(passport: Mapping[str, Any]) -> str:
     )
 
 
+_COCKPIT_PROFILES = (
+    ("canonical-latency", "Latency first", "Canonical"),
+    ("memory-first", "Memory first", "Derived"),
+    ("first-token-first", "First token first", "Derived"),
+)
+_COCKPIT_METRIC_DIRECTIONS = {
+    "e2e_latency_ms_p95": "min",
+    "ttft_ms_p95": "min",
+    "prompt_tokens_per_second": "max",
+    "prompt_tps": "max",
+    "generation_tokens_per_second": "max",
+    "generation_tps": "max",
+    "peak_rss_mib": "min",
+    "model_size_mib": "min",
+    "quality_score": "max",
+}
+
+
+def _cockpit_profile_entries(
+    policy_profiles: Mapping[str, Any] | None,
+) -> Mapping[str, Mapping[str, Any]]:
+    """Return the three presentation profiles only when all are supplied."""
+
+    if not isinstance(policy_profiles, Mapping):
+        return {}
+    raw_profiles = policy_profiles.get("profiles")
+    entries: dict[str, Mapping[str, Any]] = {}
+    if isinstance(raw_profiles, Sequence) and not isinstance(raw_profiles, (str, bytes)):
+        for raw_entry in raw_profiles:
+            if not isinstance(raw_entry, Mapping):
+                continue
+            profile_id = raw_entry.get("id")
+            if isinstance(profile_id, str):
+                entries[profile_id] = raw_entry
+    elif isinstance(raw_profiles, Mapping):
+        for profile_id, raw_entry in raw_profiles.items():
+            if isinstance(profile_id, str) and isinstance(raw_entry, Mapping):
+                entries[profile_id] = raw_entry
+    else:
+        for profile_id, raw_entry in policy_profiles.items():
+            if isinstance(profile_id, str) and isinstance(raw_entry, Mapping):
+                entries[profile_id] = raw_entry
+
+    required_ids = {profile_id for profile_id, _, _ in _COCKPIT_PROFILES}
+    if not required_ids <= set(entries):
+        return {}
+    return {profile_id: entries[profile_id] for profile_id, _, _ in _COCKPIT_PROFILES}
+
+
+def _cockpit_recommendation(
+    profile: Mapping[str, Any],
+    *,
+    profile_id: str,
+) -> Mapping[str, Any]:
+    raw_recommendation = profile.get("recommendation", profile.get("decision", profile))
+    return _mapping(raw_recommendation, f"policy_profiles.{profile_id}.recommendation")
+
+
+def _cockpit_delta(
+    recommendation: Mapping[str, Any],
+    *,
+    improvement: bool,
+) -> tuple[str, float] | None:
+    raw_deltas = recommendation.get("deltas_vs_baseline")
+    if not isinstance(raw_deltas, Mapping):
+        return None
+    ranked: list[tuple[float, str, float]] = []
+    for metric, raw_delta in raw_deltas.items():
+        if not isinstance(metric, str) or metric not in _COCKPIT_METRIC_DIRECTIONS:
+            continue
+        if not isinstance(raw_delta, Mapping):
+            continue
+        raw_percent = raw_delta.get("percent")
+        if (
+            isinstance(raw_percent, bool)
+            or not isinstance(raw_percent, (int, float))
+            or not math.isfinite(float(raw_percent))
+        ):
+            continue
+        percent = float(raw_percent)
+        if math.isclose(percent, 0.0, rel_tol=0.0, abs_tol=1e-12):
+            continue
+        direction = _COCKPIT_METRIC_DIRECTIONS[metric]
+        is_improvement = percent < 0.0 if direction == "min" else percent > 0.0
+        if is_improvement is improvement:
+            ranked.append((abs(percent), metric, percent))
+    if not ranked:
+        return None
+    _, metric, percent = sorted(ranked, key=lambda item: (-item[0], item[1]))[0]
+    return metric, percent
+
+
+def _cockpit_delta_markup(
+    recommendation: Mapping[str, Any],
+    *,
+    improvement: bool,
+    synthetic: bool,
+) -> str:
+    selected_delta = _cockpit_delta(recommendation, improvement=improvement)
+    label = (
+        ("Fixture improvement" if synthetic else "Strongest improvement")
+        if improvement
+        else ("Fixture tradeoff" if synthetic else "Main tradeoff")
+    )
+    class_name = "is-improvement" if improvement else "is-tradeoff"
+    if selected_delta is None:
+        baseline_copy = (
+            "No beneficial profile delta versus the fixture baseline."
+            if improvement and synthetic
+            else (
+                "No adverse profile delta versus the fixture baseline."
+                if synthetic
+                else (
+                    "No beneficial profile delta versus the measured baseline."
+                    if improvement
+                    else "No adverse profile delta versus the measured baseline."
+                )
+            )
+        )
+        return (
+            f'<div class="{class_name}"><dt>{_escape(label)}</dt>'
+            f"<dd><strong>No change</strong><span>{_escape(baseline_copy)}</span></dd></div>"
+        )
+
+    metric, percent = selected_delta
+    direction = _COCKPIT_METRIC_DIRECTIONS[metric]
+    change = (
+        ("lower" if percent < 0.0 else "higher")
+        if direction == "min"
+        else ("higher" if percent > 0.0 else "lower")
+    )
+    return (
+        f'<div class="{class_name}"><dt>{_escape(label)}</dt>'
+        f"<dd><strong>{abs(percent):,.1f}% {change}</strong>"
+        f"<span>{_escape(_metric_label(metric))} vs baseline</span></dd></div>"
+    )
+
+
+def _policy_cockpit_markup(
+    benchmarks: BenchmarkSet,
+    policy_profiles: Mapping[str, Any] | None,
+) -> str:
+    entries = _cockpit_profile_entries(policy_profiles)
+    if not entries:
+        return ""
+
+    tabs: list[str] = []
+    panels: list[str] = []
+    for index, (profile_id, control_label, classification) in enumerate(_COCKPIT_PROFILES):
+        profile = entries[profile_id]
+        recommendation = _cockpit_recommendation(profile, profile_id=profile_id)
+        selected_id = str(recommendation.get("selected_id"))
+        selected = benchmarks.by_id(selected_id)
+        objective = _mapping(
+            recommendation.get("objective"),
+            f"policy_profiles.{profile_id}.objective",
+        )
+        objective_metric = str(objective.get("metric"))
+        if objective_metric not in selected.metrics:
+            raise ValidationError(
+                f"policy_profiles.{profile_id} objective metric is missing from its selection"
+            )
+
+        selected_state = "true" if index == 0 else "false"
+        tab_index = "0" if index == 0 else "-1"
+        hidden = "" if index == 0 else " hidden"
+        evidence_label = (
+            ("Primary fixture" if index == 0 else "Derived fixture")
+            if benchmarks.synthetic
+            else classification
+        )
+        tabs.append(
+            f'<button id="cockpit-tab-{index}" type="button" role="tab" '
+            f'aria-selected="{selected_state}" aria-controls="cockpit-panel-{index}" '
+            f'data-cockpit-target="{index}" tabindex="{tab_index}">'
+            f"<strong>{_escape(control_label)}</strong><span>{_escape(evidence_label)}</span>"
+            "</button>"
+        )
+        panels.append(
+            f'<section id="cockpit-panel-{index}" class="cockpit-panel" role="tabpanel" '
+            f'aria-labelledby="cockpit-tab-{index}" data-cockpit-panel="{index}"{hidden}>'
+            '<div class="cockpit-decision">'
+            f'<p class="cockpit-classification">{_escape(evidence_label)} result</p>'
+            f"<h3>{_escape(selected.label)}</h3>"
+            '<dl class="cockpit-objective">'
+            f"<div><dt>Objective</dt><dd>{_escape(_metric_label(objective_metric))}</dd></div>"
+            f"<div><dt>Result</dt><dd>{_escape(_metric_value(objective_metric, float(selected.metrics[objective_metric])))}</dd></div>"
+            "</dl></div>"
+            '<dl class="cockpit-deltas">'
+            f"{_cockpit_delta_markup(recommendation, improvement=True, synthetic=benchmarks.synthetic)}"
+            f"{_cockpit_delta_markup(recommendation, improvement=False, synthetic=benchmarks.synthetic)}"
+            "</dl></section>"
+        )
+
+    source_copy = (
+        "Three synthetic fixture decisions are already computed; the browser only switches views."
+        if benchmarks.synthetic
+        else "Three validated Arm64 decisions are already computed; the browser only switches views."
+    )
+    initial_status = (
+        "Latency first selected. Primary fixture result shown."
+        if benchmarks.synthetic
+        else "Latency first selected. Canonical result shown."
+    )
+    return (
+        '<section class="policy-cockpit" aria-labelledby="policy-cockpit-heading">'
+        '<div class="cockpit-heading"><div>'
+        '<p class="cockpit-call-sign">Precomputed policy cockpit</p>'
+        '<h2 id="policy-cockpit-heading">Try ParetoPilot</h2></div>'
+        f"<p>{_escape(source_copy)} No browser-side ranking or benchmark calculation occurs.</p>"
+        "</div>"
+        '<div class="cockpit-tabs" role="tablist" aria-label="Choose a deployment priority">'
+        f"{''.join(tabs)}</div>"
+        f'<p class="sr-only" data-cockpit-status aria-live="polite" aria-atomic="true">{_escape(initial_status)}</p>'
+        f'<div class="cockpit-panels">{"".join(panels)}</div>'
+        '<div class="cockpit-proof"><span aria-label="Decision pipeline">'
+        "Verify provenance → Apply gates → Compute frontier → Select policy</span>"
+        '<a href="evidence/optimization-receipt.md">Open this decision’s evidence receipt</a>'
+        "</div>"
+        '<noscript><p class="cockpit-noscript">JavaScript is unavailable, so the canonical '
+        "latency result remains shown.</p></noscript>"
+        "</section>\n"
+    )
+
+
 def _hero_markup(
     benchmarks: BenchmarkSet,
     recommendation: Mapping[str, Any],
     proof: Mapping[str, str],
     *,
     canonical_report_href: str,
+    policy_cockpit: str = "",
 ) -> tuple[str, str, str]:
     source = _source_context(benchmarks)
     selected = benchmarks.by_id(str(recommendation["selected_id"]))
@@ -1195,7 +1421,7 @@ def _hero_markup(
         f"Pareto-frontier, and {_escape(_metric_label(metric))} checks. "
         f"{_escape(evidence_copy)}</p>\n"
     )
-    decision_rail = (
+    decision_rail = policy_cockpit or (
         '<dl class="decision-rail" aria-label="Decision at a glance">'
         f"<div><dt>Selected objective</dt><dd>{_escape(_metric_value(metric, selected_value))}</dd></div>"
         f"<div><dt>Inside cutoff</dt><dd>{len(shortlist)} of {len(benchmarks.candidates)}</dd></div>"
@@ -1510,6 +1736,199 @@ html[data-theme="dark"] .showcase {
   font-size: 1.15rem;
   font-weight: 800;
   font-variant-numeric: tabular-nums;
+}
+.showcase .policy-cockpit {
+  min-width: 0;
+  margin-top: 1.35rem;
+  border-block: 1px solid var(--flight-panel-line);
+}
+.showcase .cockpit-heading {
+  display: grid;
+  grid-template-columns: minmax(0, .72fr) minmax(0, 1.28fr);
+  gap: .75rem;
+  align-items: end;
+  padding: .7rem 0 .75rem;
+}
+.showcase .cockpit-heading h2 {
+  margin: .12rem 0 0;
+  color: var(--flight-white);
+  font-size: 1.12rem;
+  line-height: 1.05;
+}
+.showcase .cockpit-heading > p {
+  margin: 0;
+  color: var(--flight-on-dark-muted);
+  font-size: .76rem;
+  line-height: 1.4;
+}
+.showcase .cockpit-call-sign {
+  margin: 0;
+  color: var(--flight-hero-accent);
+  font-family: "SFMono-Regular", Consolas, "Liberation Mono", monospace;
+  font-size: .66rem;
+  font-weight: 800;
+  letter-spacing: .045em;
+  text-transform: uppercase;
+}
+.showcase .cockpit-tabs {
+  display: grid;
+  grid-auto-columns: minmax(7.25rem, 1fr);
+  grid-auto-flow: column;
+  max-width: 100%;
+  overflow-x: auto;
+  border-block: 1px solid var(--flight-panel-line);
+  contain: inline-size paint;
+  overscroll-behavior-inline: contain;
+  scrollbar-width: none;
+}
+.showcase .cockpit-tabs::-webkit-scrollbar { display: none; }
+.showcase .cockpit-tabs button {
+  min-width: 0;
+  min-height: 2.75rem;
+  padding: .52rem .62rem;
+  border: 0;
+  border-right: 1px solid var(--flight-panel-line);
+  border-radius: 0;
+  background: transparent;
+  color: var(--flight-on-dark);
+  cursor: pointer;
+  text-align: left;
+}
+.showcase .cockpit-tabs button:last-child { border-right: 0; }
+.showcase .cockpit-tabs button:hover { background: var(--flight-ink-soft); }
+.showcase .cockpit-tabs button strong,
+.showcase .cockpit-tabs button span {
+  display: block;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.showcase .cockpit-tabs button strong { font-size: .78rem; }
+.showcase .cockpit-tabs button span {
+  margin-top: .08rem;
+  color: var(--flight-on-dark-muted);
+  font-size: .63rem;
+}
+.showcase .cockpit-tabs button[aria-selected="true"] {
+  background: var(--flight-hero-accent);
+  color: var(--flight-on-light);
+}
+.showcase .cockpit-tabs button[aria-selected="true"] span {
+  color: var(--flight-on-light);
+}
+.showcase .cockpit-tabs button:focus-visible {
+  position: relative;
+  z-index: 1;
+  outline-color: var(--flight-focus-inverse);
+  outline-offset: -4px;
+}
+.showcase .cockpit-panel {
+  min-width: 0;
+  padding: .8rem 0 .85rem;
+}
+.showcase .cockpit-panel[hidden] { display: none; }
+.showcase .cockpit-decision {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1.25fr);
+  gap: .25rem 1rem;
+  align-items: end;
+}
+.showcase .cockpit-classification {
+  margin: 0;
+  color: var(--flight-hero-accent);
+  font-size: .67rem;
+  font-weight: 800;
+  letter-spacing: .035em;
+  text-transform: uppercase;
+}
+.showcase .cockpit-decision h3 {
+  grid-column: 1;
+  margin: 0;
+  color: var(--flight-white);
+  font-size: clamp(1rem, 2vw, 1.35rem);
+  line-height: 1.08;
+  overflow-wrap: anywhere;
+}
+.showcase .cockpit-objective {
+  display: grid;
+  grid-column: 2;
+  grid-row: 1 / span 2;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: .25rem .8rem;
+  margin: 0;
+}
+.showcase .cockpit-objective div { min-width: 0; }
+.showcase .cockpit-objective dt,
+.showcase .cockpit-deltas dt {
+  color: var(--flight-on-dark-muted);
+  font-size: .62rem;
+  font-weight: 700;
+  letter-spacing: .035em;
+  text-transform: uppercase;
+}
+.showcase .cockpit-objective dd {
+  margin: .12rem 0 0;
+  color: var(--flight-white);
+  font-size: .78rem;
+  font-weight: 780;
+  font-variant-numeric: tabular-nums;
+  overflow-wrap: anywhere;
+}
+.showcase .cockpit-deltas {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  margin: .72rem 0 0;
+  border-top: 1px solid var(--flight-panel-line);
+}
+.showcase .cockpit-deltas > div {
+  min-width: 0;
+  padding: .58rem .65rem 0 0;
+}
+.showcase .cockpit-deltas > div + div {
+  padding-left: .65rem;
+  border-left: 1px solid var(--flight-panel-line);
+}
+.showcase .cockpit-deltas dd { margin: .12rem 0 0; }
+.showcase .cockpit-deltas strong,
+.showcase .cockpit-deltas span {
+  display: block;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.showcase .cockpit-deltas strong {
+  color: var(--flight-white);
+  font-size: .78rem;
+  font-variant-numeric: tabular-nums;
+}
+.showcase .cockpit-deltas span {
+  margin-top: .08rem;
+  color: var(--flight-on-dark-muted);
+  font-size: .68rem;
+  line-height: 1.35;
+}
+.showcase .cockpit-deltas .is-improvement dt { color: var(--flight-hero-accent); }
+.showcase .cockpit-deltas .is-tradeoff dt { color: var(--flight-focus-inverse); }
+.showcase .cockpit-proof {
+  display: flex;
+  flex-wrap: wrap;
+  gap: .35rem .9rem;
+  align-items: baseline;
+  justify-content: space-between;
+  padding: .62rem 0 .1rem;
+  border-top: 1px solid var(--flight-panel-line);
+  font-size: .67rem;
+}
+.showcase .cockpit-proof span {
+  color: var(--flight-on-dark-muted);
+  font-family: "SFMono-Regular", Consolas, "Liberation Mono", monospace;
+}
+.showcase .cockpit-proof a {
+  color: var(--flight-link-inverse);
+  font-weight: 800;
+}
+.showcase .cockpit-noscript {
+  margin: .65rem 0 0;
+  color: var(--flight-on-dark-muted);
+  font-size: .72rem;
 }
 .showcase .hero-actions {
   display: flex;
@@ -2116,11 +2535,13 @@ html[data-theme="dark"] .showcase {
   gap: 0;
   padding: 0;
   max-width: 100%;
-  overflow-x: auto;
+  overflow-x: clip;
   border: 2px solid var(--flight-ink);
   contain: inline-size paint;
   overscroll-behavior-inline: contain;
+  scrollbar-width: none;
 }
+.showcase .profile-tabs::-webkit-scrollbar { display: none; }
 .showcase .profile-tabs button {
   min-height: 4.15rem;
   padding: .75rem .9rem;
@@ -2145,7 +2566,7 @@ html[data-theme="dark"] .showcase {
 .showcase .profile-tabs button[aria-selected="true"]:focus-visible {
   outline-color: var(--flight-focus-inverse);
 }
-.showcase .profile-tabs[data-overflow="fit"] { overflow-x: clip; }
+.showcase .profile-tabs[data-overflow="scroll"] { overflow-x: auto; }
 .showcase .profile-panel {
   padding-top: 2rem;
   border-bottom: 2px solid var(--flight-ink);
@@ -2522,6 +2943,21 @@ html[data-theme="dark"] .showcase {
   .showcase .provenance-strip li + li::before { content: none; }
   .showcase .brand-line { margin: 1.6rem 0 2.4rem; }
   .showcase h1 { font-size: clamp(3rem, 15vw, 4.5rem); }
+  .showcase .cockpit-heading,
+  .showcase .cockpit-decision {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .showcase .cockpit-objective {
+    grid-column: 1;
+    grid-row: auto;
+    margin-top: .5rem;
+  }
+  .showcase .cockpit-deltas { grid-template-columns: minmax(0, 1fr); }
+  .showcase .cockpit-deltas > div + div {
+    padding-left: 0;
+    border-top: 1px solid var(--flight-panel-line);
+    border-left: 0;
+  }
   .showcase .optimization-ladder-inner {
     width: min(calc(100% - 2rem), 78rem);
   }
@@ -2548,7 +2984,6 @@ html[data-theme="dark"] .showcase {
   .showcase .tolerance-scale { grid-column: 1 / -1; grid-row: 2; }
   .showcase .tolerance-value { grid-column: 2; grid-row: 1; }
   .showcase .tolerance-row.is-selected { margin-inline: -.5rem; padding-inline: .5rem; }
-  .showcase .profile-tabs { margin-inline: -1rem; border-inline: 0; }
   .showcase .series-key { grid-template-columns: 1fr; }
   .showcase .chart-figure { padding: .6rem; }
   .showcase .chart-tick,
@@ -2693,6 +3128,7 @@ _SHOWCASE_NOSCRIPT_HEAD = r"""
   <noscript>
     <style>
       .showcase .theme-toggle { display: none; }
+      .showcase .cockpit-tabs { display: none; }
       .showcase .profile-tabs { display: none; }
       .showcase .profile-panel[hidden] { display: grid !important; }
     </style>
@@ -2733,6 +3169,50 @@ _SHOWCASE_SCRIPT = r"""
       themeToggle.hidden = false;
       themeToggle.addEventListener("click", () => {
         applyTheme(root.dataset.theme === "dark" ? "light" : "dark", true);
+      });
+    }
+    const cockpitTabs = Array.from(document.querySelectorAll("[data-cockpit-target]"));
+    const cockpitPanels = Array.from(document.querySelectorAll("[data-cockpit-panel]"));
+    const cockpitStatus = document.querySelector("[data-cockpit-status]");
+    const activateCockpitTab = (tab, moveFocus) => {
+      const target = tab.getAttribute("data-cockpit-target");
+      for (const item of cockpitTabs) {
+        const active = item === tab;
+        item.setAttribute("aria-selected", active ? "true" : "false");
+        item.setAttribute("tabindex", active ? "0" : "-1");
+      }
+      for (const panel of cockpitPanels) {
+        panel.hidden = panel.getAttribute("data-cockpit-panel") !== target;
+      }
+      if (cockpitStatus) {
+        const label = tab.querySelector("strong");
+        const evidenceClass = tab.querySelector("span");
+        cockpitStatus.textContent =
+          `${label ? label.textContent : "Policy"} selected. ` +
+          `${evidenceClass ? evidenceClass.textContent : "Policy"} result shown.`;
+      }
+      if (moveFocus) tab.focus();
+      window.requestAnimationFrame(() => {
+        tab.scrollIntoView({ block: "nearest", inline: "nearest" });
+      });
+    };
+    for (const tab of cockpitTabs) {
+      tab.addEventListener("click", () => activateCockpitTab(tab, true));
+      tab.addEventListener("keydown", (event) => {
+        const supportedKeys = ["ArrowLeft", "ArrowRight", "Home", "End"];
+        if (!supportedKeys.includes(event.key)) return;
+        event.preventDefault();
+        let next = 0;
+        if (event.key === "Home") {
+          next = 0;
+        } else if (event.key === "End") {
+          next = cockpitTabs.length - 1;
+        } else {
+          const step = event.key === "ArrowRight" ? 1 : -1;
+          next = (cockpitTabs.indexOf(tab) + step + cockpitTabs.length) % cockpitTabs.length;
+        }
+        const target = cockpitTabs[next];
+        if (target) activateCockpitTab(target, true);
       });
     }
     const tabs = Array.from(document.querySelectorAll("[data-profile-target]"));
@@ -2826,11 +3306,13 @@ def render_showcase_v11(
     )
     passport = _decision_passport(benchmarks, recommendation)
     optimization_ladder = _optimization_ladder_markup(passport)
+    policy_cockpit = _policy_cockpit_markup(benchmarks, policy_profiles)
     provenance, hero, hero_tail = _hero_markup(
         benchmarks,
         recommendation,
         proof,
         canonical_report_href=canonical_report_href,
+        policy_cockpit=policy_cockpit,
     )
     legend, style_by_id = _series_key(
         benchmarks,
