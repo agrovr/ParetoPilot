@@ -324,4 +324,3 @@ action.yml                       reusable GitHub Actions deployment-decision gat
 ParetoPilot is available under the [Apache License 2.0](LICENSE). Third-party software and model
 artifacts retain their own licenses and are not redistributed by this repository. See
 [third-party notices](THIRD_PARTY_NOTICES.md) for pinned components and upstream terms.
-
