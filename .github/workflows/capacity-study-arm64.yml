@@ -288,7 +288,7 @@ jobs:
               -DLLAMA_BUILD_TESTS=OFF \
               -DLLAMA_BUILD_EXAMPLES=OFF \
               -DLLAMA_BUILD_SERVER=ON \
-              -DLLAMA_BUILD_TOOLS=OFF \
+              -DLLAMA_BUILD_TOOLS=ON \
               2>&1 | tee "artifacts/build/${label}-configure.log"
             cmake --build "$build_dir" \
               --target llama-server \

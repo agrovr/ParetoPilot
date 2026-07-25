@@ -154,6 +154,19 @@ class CapacityWorkflowContractTests(unittest.TestCase):
             with self.subTest(program=number):
                 compile(program, f"{WORKFLOW_PATH.name}:python-heredoc-{number}", "exec")
 
+    def test_llama_server_target_is_enabled_by_the_pinned_build_contract(self) -> None:
+        workflow = _workflow()
+        build_section = workflow[
+            workflow.index("- name: Build pinned generic and KleidiAI servers") : workflow.index(
+                "- name: Download and verify pinned Q8 and Q4 models"
+            )
+        ]
+
+        self.assertIn("-DLLAMA_BUILD_SERVER=ON", build_section)
+        self.assertIn("-DLLAMA_BUILD_TOOLS=ON", build_section)
+        self.assertNotIn("-DLLAMA_BUILD_TOOLS=OFF", build_section)
+        self.assertIn("--target llama-server", build_section)
+
     def test_manifest_failure_and_success_contracts_are_truthful(self) -> None:
         workflow = _workflow()
         manifest_section = workflow[
