@@ -171,7 +171,7 @@ class CapacityWorkflowContractTests(unittest.TestCase):
         workflow = _workflow()
         manifest_section = workflow[
             workflow.index("- name: Build strict supplementary source manifest") : workflow.index(
-                "- name: Run counterbalanced server-slot by client-concurrency matrix"
+                "- name: Run mirrored forward/reverse server-slot by client-concurrency matrix"
             )
         ]
         self.assertIn('"schema_version": "1.1"', manifest_section)

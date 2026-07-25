@@ -297,7 +297,7 @@ jobs:
           fetch_model "$Q8_FILENAME" "$Q8_SHA256" "$Q8_SIZE_BYTES"
           fetch_model "$Q4_FILENAME" "$Q4_SHA256" "$Q4_SIZE_BYTES"
 
-      - name: Run balanced multi-candidate throughput study
+      - name: Run mirrored forward/reverse multi-candidate throughput study
         shell: bash
         run: |
           set -euo pipefail
@@ -427,7 +427,7 @@ jobs:
             if grep -Fq "CPU_KLEIDIAI model buffer" \
               "artifacts/experiment/candidates/$candidate/raw/pass-1.stderr.log" \
               "artifacts/experiment/candidates/$candidate/raw/pass-2.stderr.log"; then
-              echo "::error::$candidate unexpectedly dispatched KleidiAI"
+              echo "::error::$candidate unexpectedly reported the KleidiAI model-buffer marker"
               exit 5
             fi
           done
@@ -666,7 +666,7 @@ jobs:
               if key != "maximum_resident_set_kbytes"
           }
           if first_without_rss != second_without_rss:
-              raise SystemExit("balanced resource-measurement identities do not match")
+              raise SystemExit("mirrored-pass resource-measurement identities do not match")
           first["maximum_resident_set_kbytes"] = max(
               int(first["maximum_resident_set_kbytes"]),
               int(second["maximum_resident_set_kbytes"]),
@@ -682,7 +682,7 @@ jobs:
             if grep -Fq "CPU_KLEIDIAI model buffer" \
               "artifacts/experiment/candidates/$candidate/server-pass-1.stderr.log" \
               "artifacts/experiment/candidates/$candidate/server-pass-2.stderr.log"; then
-              echo "::error::$candidate server unexpectedly dispatched KleidiAI"
+              echo "::error::$candidate server unexpectedly reported the KleidiAI model-buffer marker"
               exit 7
             fi
           done
@@ -807,7 +807,7 @@ jobs:
           for candidate in q8-generic q4-generic; do
             if grep -Fq "CPU_KLEIDIAI model buffer" \
               "artifacts/extensions/load/$candidate/server.stderr.log"; then
-              echo "::error::$candidate load server unexpectedly dispatched KleidiAI"
+              echo "::error::$candidate load server unexpectedly reported the KleidiAI model-buffer marker"
               exit 9
             fi
           done

@@ -23,7 +23,7 @@ explicit:
 
 Warmup is enabled unless `--no-warmup` is passed. The final evidence protocol keeps warmup
 enabled and records the complete command separately because JSONL does not include this fact.
-Verbose mode preserves the model-buffer dispatch log on stderr; without `-v`, `llama-bench`
+Verbose mode preserves the model-buffer log marker on stderr; without `-v`, `llama-bench`
 replaces the normal logger with a null callback.
 
 The canonical candidate study pins the official Qwen 2.5 1.5B Instruct Q8_0 and Q4_0 GGUFs.
@@ -50,8 +50,10 @@ sampling, warmup, and server request overhead, so it does not directly measure T
 end-to-end latency. Those metrics require a separate HTTP workload against `llama-server`.
 
 The run manifest must additionally capture architecture, compiler and build flags, executable
-checksum, model checksum, command arguments, and whether KleidiAI was built and dispatched.
-`backends` or `gpu_info` alone does not prove which backend executed the workload.
+checksum, model checksum, command arguments, whether the build enabled KleidiAI, and whether the
+expected model-buffer marker was observed. The marker confirms what `llama.cpp` reported; it does
+not prove that a particular microkernel executed. `backends` or `gpu_info` alone likewise does not
+prove which backend executed the workload.
 
 Before a comparison is accepted, ParetoPilot pools repeated artifacts per variant and requires
 both summaries to agree on the build commit, model filename, workload shapes, sample counts,

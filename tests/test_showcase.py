@@ -4,14 +4,22 @@ from __future__ import annotations
 
 from copy import deepcopy
 import hashlib
+from pathlib import Path
 import re
+from tempfile import TemporaryDirectory
 import unittest
 
 from paretopilot.decision_passport import build_decision_passport
 from paretopilot.domain import BenchmarkSet, ValidationError
 from paretopilot.profiles import PolicySet, evaluate_policy_profiles
-from paretopilot.showcase import _optimization_ladder_markup, render_showcase_v11
+from paretopilot.showcase import (
+    _capacity_result_from_study,
+    _optimization_ladder_markup,
+    _relative_measure_phrase,
+    render_showcase_v11,
+)
 
+from test_capacity_eval import CapacityFixture
 from test_report_v11 import (
     canonical_benchmarks,
     canonical_constraints,
@@ -282,6 +290,161 @@ def rendered_showcase(
     )
 
 
+def capacity_benchmarks() -> BenchmarkSet:
+    data = canonical_benchmarks()
+    metadata = deepcopy(dict(data.metadata))
+    metadata["source"] = {
+        "run_id": "30055662526",
+        "runner": {
+            "os": "Ubuntu 24.04",
+            "architecture": "arm64",
+            "cpu": "Neoverse-N2",
+            "cpu_count": 4,
+        },
+    }
+    return BenchmarkSet.from_mapping(
+        {
+            "schema_version": data.schema_version,
+            "baseline_id": data.baseline_id,
+            "synthetic": data.synthetic,
+            "metadata": metadata,
+            "candidates": [
+                {
+                    "id": candidate.candidate_id,
+                    "label": candidate.label,
+                    "parameters": dict(candidate.parameters),
+                    "metrics": dict(candidate.metrics),
+                }
+                for candidate in data.candidates
+            ],
+        }
+    )
+
+
+def capacity_evidence_lock(
+    study: dict[str, object],
+    *,
+    study_sha256: str = "7" * 64,
+) -> dict[str, object]:
+    provenance = study["provenance"]
+    assert isinstance(provenance, dict)
+    source = provenance["source"]
+    runner = provenance["runner"]
+    assert isinstance(source, dict)
+    assert isinstance(runner, dict)
+    result = _capacity_result_from_study(study)
+    return {
+        "schema_version": "1.4",
+        "classification": "supplementary-capacity",
+        "source": {
+            "run_id": source["run_id"],
+            "run_attempt": source["run_attempt"],
+            "head_sha": source["revision"],
+            "workflow": source["workflow"],
+            "runner": deepcopy(runner),
+        },
+        "archive": {
+            "actions_digest": f"sha256:{'8' * 64}",
+            "release_tag": "v1.4.0",
+            "release_asset_name": "paretopilot-v1.4.0-arm64-capacity.zip",
+            "release_asset_url": (
+                "https://github.com/agrovr/ParetoPilot/releases/download/v1.4.0/"
+                "paretopilot-v1.4.0-arm64-capacity.zip"
+            ),
+            "size_bytes": 12345,
+            "sha256": "8" * 64,
+        },
+        "canonical_evidence": {
+            "run_id": "30055662526",
+            "release_tag": "v1.1.0",
+            "release_sha256": ("b5586878ccd214667911390f417db0417111ac2c31d163a2f5f55c4469aefeb2"),
+            "lock_sha256": ("9a00187cb4619daec3596139c97de49127841ceb3c2c7edd85092df2474c578d"),
+            "outputs_modified": False,
+        },
+        "review": {
+            "checksum_entries": 121,
+            "checksum_manifest_sha256": "6" * 64,
+            "all_checksums_verified": True,
+            "archive_digest_matches_actions_digest": True,
+            "exact_file_coverage": True,
+            "status_complete": True,
+            "measurement_valid": True,
+            "valid_evidence": True,
+            "synthetic": False,
+            "canonical_outputs_modified": False,
+            "artifacts_sha256": {"capacity_study": study_sha256},
+            "recomputation": {
+                "raw_inputs_reassembled": True,
+                "capacity_study_exact_match": True,
+                "capacity_receipt_regenerated": True,
+                "capacity_receipt_exact_match": True,
+                "recomputed_cell_count": result["cell_count"],
+                "mismatched_cell_count": 0,
+                "measured_request_count": result["measured_request_count"],
+                "completed_request_count": result["measured_request_count"],
+                "failed_request_count": 0,
+            },
+            "replay": {
+                "valid": True,
+                "decision_reproduced": True,
+                "fully_reproduced": True,
+                "authoritative_outputs_match": True,
+                "report_matches_archive": True,
+                "differences": [],
+                "warnings": [],
+            },
+        },
+        "result": result,
+    }
+
+
+def rendered_capacity_showcase(
+    study: dict[str, object],
+    *,
+    capacity_lock: dict[str, object] | None = None,
+    capacity_study_href: str = "evidence/capacity-study.json",
+    capacity_receipt_href: str = "evidence/capacity-receipt.md",
+) -> str:
+    data = capacity_benchmarks()
+    recommendation = frozen_v11_recommendation(data)
+    profiles = frozen_v11_profiles(data)
+    load = measured_load_sweep()
+    canonical = rendered_v11(data=data, load=load)
+    canonical_lock = evidence_lock()
+    canonical_source = canonical_lock["source"]
+    canonical_archive = canonical_lock["archive"]
+    canonical_review = canonical_lock["review"]
+    assert isinstance(canonical_source, dict)
+    assert isinstance(canonical_archive, dict)
+    assert isinstance(canonical_review, dict)
+    canonical_source["run_id"] = "30055662526"
+    canonical_archive["sha256"] = "b5586878ccd214667911390f417db0417111ac2c31d163a2f5f55c4469aefeb2"
+    artifacts = canonical_review["artifacts_sha256"]
+    assert isinstance(artifacts, dict)
+    artifacts["report_v1_1"] = hashlib.sha256(canonical.encode()).hexdigest()
+    return render_showcase_v11(
+        data,
+        recommendation,
+        policy_profiles=profiles,
+        load_sweep=load,
+        stability_summary=measured_stability(data),
+        evidence_lock=canonical_lock,
+        evidence_lock_sha256=("9a00187cb4619daec3596139c97de49127841ceb3c2c7edd85092df2474c578d"),
+        canonical_html=canonical,
+        canonical_report_href="evidence/report-v1.1.html",
+        capacity_study=study,
+        capacity_evidence_lock=capacity_lock or capacity_evidence_lock(study),
+        capacity_study_sha256="7" * 64,
+        capacity_study_href=capacity_study_href,
+        capacity_receipt_href=capacity_receipt_href,
+        benchmarks_sha256="a" * 64,
+        recommendation_sha256="b" * 64,
+        profiles_sha256="c" * 64,
+        load_sha256="d" * 64,
+        stability_sha256="e" * 64,
+    )
+
+
 class ShowcaseV11Tests(unittest.TestCase):
     def test_archived_renderer_fixture_digest_remains_frozen(self) -> None:
         canonical = rendered_v11()
@@ -497,7 +660,7 @@ class ShowcaseV11Tests(unittest.TestCase):
             report,
         )
 
-        stage_labels = ("Reference", "Quantization", "Arm kernel", "Runtime tuning")
+        stage_labels = ("Reference", "Quantization", "KleidiAI build", "Runtime tuning")
         stage_positions = [
             report.index(f'<p class="stage-role">{label}</p>') for label in stage_labels
         ]
@@ -528,6 +691,202 @@ class ShowcaseV11Tests(unittest.TestCase):
         )
         scripts = "\n".join(re.findall(r"<script[^>]*>(.*?)</script>", report, re.DOTALL))
         self.assertNotIn("optimization-ladder", scripts)
+
+    def test_capacity_envelope_is_strict_semantic_and_follows_the_ladder(self) -> None:
+        with TemporaryDirectory() as directory:
+            study = CapacityFixture(Path(directory)).assemble()
+            report = rendered_capacity_showcase(study)
+
+        ladder_start = report.index('<section id="optimization-ladder"')
+        capacity_start = report.index('<section id="capacity-envelope"')
+        canonical_start = report.index(
+            '<section class="report-section" aria-labelledby="why-heading">'
+        )
+        capacity_end = report.index("</section>\n", capacity_start)
+        capacity = report[capacity_start:capacity_end]
+
+        self.assertLess(ladder_start, capacity_start)
+        self.assertLess(capacity_start, canonical_start)
+        self.assertIn(
+            '<p class="section-kicker">S1 · Supplementary capacity</p>',
+            capacity,
+        )
+        selections = study["selections"]
+        assert isinstance(selections, list)
+        selected_coordinates = {
+            (
+                int(selection["selected_cell"]["server_parallel"]),
+                int(selection["selected_cell"]["client_concurrency"]),
+            )
+            for selection in selections
+            if isinstance(selection, dict) and isinstance(selection.get("selected_cell"), dict)
+        }
+        self.assertEqual(len(selected_coordinates), 1)
+        parallel, concurrency = selected_coordinates.pop()
+        self.assertIn(
+            (f'<h2 id="capacity-heading">The envelope opens at {parallel} × {concurrency}.</h2>'),
+            capacity,
+        )
+        self.assertEqual(capacity.count('class="capacity-board '), 2)
+        self.assertEqual(capacity.count('class="capacity-cell '), 18)
+        self.assertEqual(capacity.count('data-capacity-state="selected"'), 2)
+        cells = study["cells"]
+        assert isinstance(cells, list)
+        expected_blocked = sum(
+            isinstance(cell, dict)
+            and isinstance(cell.get("summary"), dict)
+            and cell["summary"].get("capacity_gate_met") is not True
+            for cell in cells
+        )
+        self.assertEqual(
+            capacity.count('data-capacity-state="blocked"'),
+            expected_blocked,
+        )
+        self.assertEqual(capacity.count("<table"), 2)
+        self.assertEqual(capacity.count("<caption>"), 2)
+        self.assertEqual(capacity.count('<th scope="row">'), 6)
+        self.assertIn("Measured requests</dt><dd>288</dd>", capacity)
+        self.assertIn("Exact-reversal passes</dt><dd>2</dd>", capacity)
+        self.assertIn(
+            f"Latency-blocked cells</dt><dd>{expected_blocked}</dd>",
+            capacity,
+        )
+        self.assertIn("This sizes each candidate", capacity)
+        self.assertIn("does not replace the canonical Q8 model decision", capacity)
+        self.assertIn(
+            "Each displayed p95 is the median of two pass-level p95 values",
+            capacity,
+        )
+        self.assertIn(
+            '<li><a href="#capacity-envelope"><strong>S1</strong>Capacity</a></li>',
+            report,
+        )
+        self.assertNotIn("winner", capacity.lower())
+
+    def test_capacity_relative_claims_preserve_metric_direction(self) -> None:
+        self.assertEqual(
+            _relative_measure_phrase(6.75, "throughput"),
+            "6.75% more throughput",
+        )
+        self.assertEqual(
+            _relative_measure_phrase(-41.09, "peak RSS"),
+            "41.09% less peak RSS",
+        )
+        self.assertEqual(
+            _relative_measure_phrase(0.0, "throughput"),
+            "no change in throughput",
+        )
+
+    def test_capacity_envelope_fails_closed_on_unlocked_or_tampered_evidence(self) -> None:
+        with TemporaryDirectory() as directory:
+            study = CapacityFixture(Path(directory)).assemble()
+        data = capacity_benchmarks()
+
+        with self.assertRaisesRegex(
+            ValidationError,
+            "capacity_study and capacity_evidence_lock must be supplied together",
+        ):
+            render_showcase_v11(
+                data,
+                frozen_v11_recommendation(data),
+                capacity_study=study,
+            )
+
+        tampered = deepcopy(study)
+        cells = tampered["cells"]
+        assert isinstance(cells, list)
+        first_cell = cells[0]
+        assert isinstance(first_cell, dict)
+        summary = first_cell["summary"]
+        assert isinstance(summary, dict)
+        summary["generated_tokens_per_second_median"] = 999.0
+        with self.assertRaises(ValidationError):
+            rendered_capacity_showcase(tampered)
+
+        mismatched_lock = capacity_evidence_lock(study)
+        canonical = mismatched_lock["canonical_evidence"]
+        assert isinstance(canonical, dict)
+        canonical["release_sha256"] = "0" * 64
+        with self.assertRaisesRegex(
+            ValidationError,
+            "canonical linkage does not match study",
+        ):
+            rendered_capacity_showcase(study, capacity_lock=mismatched_lock)
+
+        invalid_archive = capacity_evidence_lock(study)
+        archive = invalid_archive["archive"]
+        assert isinstance(archive, dict)
+        archive["release_asset_url"] = None
+        with self.assertRaisesRegex(
+            ValidationError,
+            "capacity release asset URL must be a non-empty string",
+        ):
+            rendered_capacity_showcase(study, capacity_lock=invalid_archive)
+
+        unrelated_archive = capacity_evidence_lock(study)
+        archive = unrelated_archive["archive"]
+        assert isinstance(archive, dict)
+        archive["release_asset_url"] = (
+            "https://example.com/releases/download/v1.4.0/paretopilot-v1.4.0-arm64-capacity.zip"
+        )
+        with self.assertRaisesRegex(
+            ValidationError,
+            "does not match its repository lock",
+        ):
+            rendered_capacity_showcase(study, capacity_lock=unrelated_archive)
+
+        result_drift = capacity_evidence_lock(study)
+        result = result_drift["result"]
+        assert isinstance(result, dict)
+        result["cell_count"] = 999
+        with self.assertRaisesRegex(
+            ValidationError,
+            "locked result does not match",
+        ):
+            rendered_capacity_showcase(study, capacity_lock=result_drift)
+
+        for href in (
+            "evidence/%2e%2e/capacity-study.json",
+            "evidence/capacity-study.json?download=1",
+            "evidence/not-capacity-study.json",
+        ):
+            with (
+                self.subTest(capacity_study_href=href),
+                self.assertRaisesRegex(
+                    ValidationError,
+                    "capacity_study_href",
+                ),
+            ):
+                rendered_capacity_showcase(
+                    study,
+                    capacity_study_href=href,
+                )
+
+    def test_capacity_matrix_stacks_without_forced_horizontal_overflow(self) -> None:
+        with TemporaryDirectory() as directory:
+            study = CapacityFixture(Path(directory)).assemble()
+            report = rendered_capacity_showcase(study)
+
+        boards_css = css_rule_body(report, ".showcase .capacity-boards")
+        table_css = css_rule_body(report, ".showcase .capacity-matrix")
+        cell_css = css_rule_body(report, ".showcase .capacity-cell")
+        wide_css = report[
+            report.index("@media (min-width: 68rem) {") : report.index(
+                "@media (max-width: 47.99rem) {"
+            )
+        ]
+
+        self.assertIn("display: grid;", boards_css)
+        self.assertNotIn("grid-template-columns", boards_css)
+        self.assertIn("width: 100%;", table_css)
+        self.assertIn("table-layout: fixed;", table_css)
+        self.assertNotIn("min-width", table_css)
+        self.assertIn("min-width: 0;", cell_css)
+        self.assertNotIn("overflow", cell_css)
+        self.assertIn(
+            ".showcase .capacity-boards {\n    grid-template-columns: repeat(2, minmax(0, 1fr));",
+            wide_css,
+        )
 
     def test_optimization_ladder_adapts_stage_count_and_synthetic_language(self) -> None:
         measured = attributed_benchmarks()
@@ -1205,6 +1564,9 @@ class ShowcaseV11Tests(unittest.TestCase):
             "/absolute/report.html",
             "../outside/report.html",
             r"evidence\report.html",
+            "evidence/%2e%2e/report-v1.1.html",
+            "evidence/report-v1.1.html?download=1",
+            "evidence/not-the-canonical-report.html",
         ):
             with (
                 self.subTest(href=href),

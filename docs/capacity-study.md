@@ -70,9 +70,9 @@ Only these values may differ:
 Runtime path, model path, CPU thread count, batch size, micro-batch size, GPU-offload setting,
 verbosity, and host binding must remain identical. Any other argument drift fails the assembly.
 
-## Counterbalanced order and measurement window
+## Mirrored forward/reverse order and measurement window
 
-The predeclared order is counterbalanced by exact reversal:
+The predeclared order uses one forward pass and its exact reverse:
 
 1. forward: Q8 then tuned Q4; server slots 1, 2, then 4; clients 1, 2, then 4;
    and
@@ -122,7 +122,7 @@ particular microkernel executed or attribute every performance difference to Kle
 
 For each candidate, a cell is eligible only when:
 
-1. both counterbalanced passes meet the load SLO;
+1. both mirrored passes meet the load SLO;
 2. the quality gate passes for that server-slot level; and
 3. the larger of the two process peak-RSS measurements is at or below 4,096 MiB;
 4. forward/reverse generation-rate spread is at most 15%; and
@@ -136,12 +136,34 @@ lower maximum RSS, fewer server slots, then fewer clients. The P1/C1 reference i
 Throughput is total completed generated tokens divided by each pass's common measured wall time.
 ParetoPilot does not sum per-response server rates across overlapping requests.
 
-## Run and retrieve it
+## Reviewed run, replay, and fresh measurement
 
-Run **Supplementary Arm64 capacity study** manually from the repository's Actions page after the
-workflow is on the default branch. The job uses GitHub's native Ubuntu 24.04 Arm64 runner, has a
-300-minute timeout, and downloads about 3 GB of pinned Q8 and Q4 model files plus pinned source
-archives. Models and build trees are not uploaded.
+Reviewed [run `30144901854`](../results/published/30144901854/README.md) completed this contract on
+one native Arm64 runner. Both predeclared candidates selected P4/C4 within their own passing
+envelopes; the frozen canonical Q8 model decision did not change. The original Actions ZIP is
+preserved byte-for-byte in the versioned, SHA-256-locked
+[`v1.4.0` release](https://github.com/agrovr/ParetoPilot/releases/tag/v1.4.0).
+
+For the shortest judge path, read the compact reviewed result first, inspect
+`capacity-receipt.md` for every passing and rejected cell, then replay the bundle without rerunning
+inference:
+
+```bash
+python -m paretopilot replay-capacity evidence \
+  --output-dir output/replay-capacity
+```
+
+`replay-capacity` requires exact `SHA256SUMS` coverage, reconstructs the capacity study and receipt
+from the archived load, RSS, server-log, and quality sources, requires both outputs to match byte
+for byte, and replays the embedded frozen v1.1 evidence into a new output directory.
+
+To produce new evidence, run **Supplementary Arm64 capacity study** manually from the repository's
+Actions page after the workflow is on the default branch. A new hosted-runner execution is a new
+measurement, not an exact hardware replay.
+
+The job uses GitHub's native Ubuntu 24.04 Arm64 runner, has a 300-minute timeout, and downloads
+about 3 GB of pinned Q8 and Q4 model files plus pinned source archives. Models and build trees are
+not uploaded.
 
 On success, download the `supplementary-arm64-capacity-<run>-<attempt>` artifact. Start with
 `status.json`, verify `SHA256SUMS`, then read `capacity-receipt.md`; the full raw and embedded
@@ -174,9 +196,10 @@ a reproduction command.
 Both outputs are classified `supplementary-capacity` and state
 `canonical_outputs_modified: false`.
 
-The successful GitHub Actions artifact is retained for 90 days. After the run is reviewed, the
-compact final bundle is also published as an immutable release asset so judging does not depend on
-temporary Actions retention.
+The successful GitHub Actions artifact is retained for 90 days. The reviewed original archive is
+also preserved as a versioned, SHA-256-locked release asset so judging does not depend on temporary
+Actions retention. Call a release immutable only when GitHub release immutability is enabled and
+verified for that release.
 
 ## Boundary
 

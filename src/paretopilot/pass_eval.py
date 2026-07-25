@@ -1,4 +1,4 @@
-"""Rebuild one balanced benchmark pass from checksummed raw experiment evidence."""
+"""Rebuild one pass in a mirrored pair from checksummed raw experiment evidence."""
 
 from __future__ import annotations
 

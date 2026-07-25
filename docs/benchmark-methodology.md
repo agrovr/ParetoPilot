@@ -30,7 +30,7 @@ Each stage changes one declared variable relative to the preceding stage.
 | --- | --- | --- |
 | Reference | `q8-generic` | Q8_0 model on the generic CPU build |
 | Quantization | `q4-generic` | Q8_0 to Q4_0 with the same generic build |
-| Arm kernels | `q4-kleidiai` | Generic to KleidiAI-enabled build with the same Q4_0 model |
+| KleidiAI-enabled build | `q4-kleidiai` | Generic to KleidiAI-enabled build with the same Q4_0 model |
 | Runtime tuning | `q4-kleidiai-tuned` | Micro-batch size 128 to 512 |
 
 ## Controlled inputs
@@ -50,7 +50,7 @@ All four candidates ran in one native Arm64 GitHub Actions job and shared:
 The Q8 and Q4 files intentionally differ because quantization is one measured stage. Model
 family, upstream revision, prompts, and every non-quantization setting stay controlled.
 
-## Balanced execution order
+## Mirrored execution order
 
 Throughput and server measurements use `A-B-C-D-D-C-B-A`, where A is the Q8 reference and D is
 the tuned KleidiAI candidate. This gives each candidate one early and one late pass on the same
@@ -137,8 +137,8 @@ beyond the tested levels.
 
 ## Repeat-pass reconstruction and stability
 
-The two pass benchmark sets are rebuilt independently from the checksummed raw files referenced
-by the canonical benchmark. For every candidate, each pass verifies and parses its throughput
+The two pass benchmark sets are rebuilt separately from the checksummed raw files referenced by
+the canonical benchmark. For every candidate, each pass verifies and parses its throughput
 settings, `llama-bench` JSONL, server evaluation, and GNU `time -v` output. It recomputes pass
 medians, validates behavior cases and raw latency samples against the archived suite, and parses
 peak RSS.
@@ -191,8 +191,9 @@ prompt throughput by 28.10%. It was also 3.40% slower on the canonical p95 end-t
 
 - Source revisions, model hashes, evaluation-suite hash, build flags, executable hashes, exact
   command arrays, and runtime settings are recorded.
-- Generic server logs must not contain the `CPU_KLEIDIAI model buffer` dispatch marker. Both
-  KleidiAI candidates must contain it.
+- Generic server logs must not contain the `CPU_KLEIDIAI model buffer` marker. Both
+  KleidiAI-enabled candidates must contain it. This confirms only the recorded build/marker
+  state; it is not a microkernel trace.
 - Strict parsers reject malformed, duplicate-key, non-finite, mismatched, oversized,
   path-escaping, or synthetic source data.
 - The experiment manifest binds critical artifacts by SHA-256. A bundle-level `SHA256SUMS` binds
@@ -200,8 +201,8 @@ prompt throughput by 28.10%. It was also 3.40% slower on the canonical p95 end-t
 - V1.1 binds the behavior suite, load plan, load and canonical command files, request endpoints,
   policy configuration, reconstructed pass inputs, and candidate-configuration fingerprints.
 - A run is canonical only when it uses the default branch, exactly ten repetitions, and passes
-  every environment, measurement, dispatch, integrity, selection, and reporting gate.
-- Independent replay must reproduce the selected candidate and the archived decision artifacts
+  every environment, measurement, model-buffer-marker, integrity, selection, and reporting gate.
+- Offline replay must reproduce the selected candidate and the archived decision artifacts
   without rerunning inference.
 
 ## Limitations
@@ -209,7 +210,7 @@ prompt throughput by 28.10%. It was also 3.40% slower on the canonical p95 end-t
 The study is one controlled comparison for one model and workload on one GitHub-hosted Arm
 Neoverse runner. It does not claim the same ranking for every Arm processor, model, prompt
 distribution, concurrency level, or deployment environment. The behavior suite is deterministic
-and bounded. Two balanced passes do not establish statistical significance. Energy and cost were
+and bounded. Two mirrored passes do not establish statistical significance. Energy and cost were
 not measured.
 
 Arm Performix is an optional follow-up for hotspot analysis when a compatible target exposes the

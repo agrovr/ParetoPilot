@@ -1,0 +1,142 @@
+{
+  "schema_version": "1.4",
+  "classification": "supplementary-capacity",
+  "source": {
+    "run_id": "30144901854",
+    "run_attempt": 1,
+    "head_sha": "db9ccaf37e3c7e807832652e237de813675ed807",
+    "workflow": ".github/workflows/capacity-study-arm64.yml",
+    "url": "https://github.com/agrovr/ParetoPilot/actions/runs/30144901854",
+    "generated_at_utc": "2026-07-25T05:05:40Z",
+    "runner": {
+      "os": "Ubuntu 24.04",
+      "architecture": "arm64",
+      "cpu": "Neoverse-N2",
+      "cpu_count": 4
+    }
+  },
+  "archive": {
+    "actions_artifact_id": 8615905565,
+    "actions_artifact_name": "supplementary-arm64-capacity-30144901854-1",
+    "actions_digest": "sha256:a73d801bc3997f1c0b0158e92c8305987da8638501b74c5ecd2af3aaca57aaa7",
+    "release_tag": "v1.4.0",
+    "release_asset_name": "paretopilot-v1.4.0-arm64-capacity-30144901854.zip",
+    "release_asset_url": "https://github.com/agrovr/ParetoPilot/releases/download/v1.4.0/paretopilot-v1.4.0-arm64-capacity-30144901854.zip",
+    "release_url": "https://github.com/agrovr/ParetoPilot/releases/tag/v1.4.0",
+    "size_bytes": 794681,
+    "sha256": "a73d801bc3997f1c0b0158e92c8305987da8638501b74c5ecd2af3aaca57aaa7"
+  },
+  "canonical_evidence": {
+    "run_id": "30055662526",
+    "release_tag": "v1.1.0",
+    "release_sha256": "b5586878ccd214667911390f417db0417111ac2c31d163a2f5f55c4469aefeb2",
+    "lock_sha256": "9a00187cb4619daec3596139c97de49127841ceb3c2c7edd85092df2474c578d",
+    "outputs_modified": false
+  },
+  "review": {
+    "reviewed_at_utc": "2026-07-25T06:08:15Z",
+    "checksum_entries": 121,
+    "checksum_manifest_sha256": "835bd62fcd4eaf5137681ff327220b1c0f0bd27e4070758e12199a71422931fd",
+    "all_checksums_verified": true,
+    "exact_file_coverage": true,
+    "archive_digest_matches_actions_digest": true,
+    "status_complete": true,
+    "measurement_valid": true,
+    "valid_evidence": true,
+    "synthetic": false,
+    "canonical_outputs_modified": false,
+    "artifacts_sha256": {
+      "capacity_study": "3bc4aeae1d637d1e683310e6e25e42e2debe9e320982a4cd06e9cea61dcc2af8",
+      "capacity_receipt": "3d668c0e9ef497c5d9b2ecf0003150ea39f9f3b30080cce932fab8b44bfaa295",
+      "status": "9d7bb5ba48126f1303912931ade3afeeb57874805b6e82e53b7286368d1d9c2a",
+      "manifest": "76e34e4a7abb599a298a7ece79c2a032872bd8c9db08a1ce4055a6fdea727da9",
+      "capacity_plan": "85cf5ecad8d3e9c8cc83f2b7fe554b913013360d6a81322305edee32e06b98db",
+      "load_plan": "b10f61b7093f58ad6d142deafd7d6befe600d1d54a433b59c101131dd8c2d9bb",
+      "canonical_replay": "7f435f57b7d5361a4c5fc43a68bfa37f08d040f14ab20fa25c034eaac3a7856f"
+    },
+    "recomputation": {
+      "raw_inputs_reassembled": true,
+      "capacity_study_exact_match": true,
+      "capacity_receipt_regenerated": true,
+      "capacity_receipt_exact_match": true,
+      "recomputed_cell_count": 18,
+      "mismatched_cell_count": 0,
+      "measured_request_count": 288,
+      "completed_request_count": 288,
+      "failed_request_count": 0
+    },
+    "replay": {
+      "replay_contract": "1.1",
+      "valid": true,
+      "decision_reproduced": true,
+      "fully_reproduced": true,
+      "authoritative_outputs_match": true,
+      "report_matches_archive": true,
+      "selected_id": "q8-generic",
+      "differences": [],
+      "warnings": [],
+      "checksum_entry_count": 150,
+      "checksum_manifest_sha256": "b9c7789e804d4228ac016aa9ebee3726776a668491b6384a242c13284e720a4f"
+    }
+  },
+  "result": {
+    "pass_count": 2,
+    "candidate_count": 2,
+    "cell_count": 18,
+    "eligible_cell_count": 12,
+    "measured_request_count": 288,
+    "warmup_request_count": 144,
+    "output_tokens_per_request": 64,
+    "selected_operating_points": {
+      "q8-generic": {
+        "label": "Q8 generic reference",
+        "role": "canonical-reference",
+        "server_parallel": 4,
+        "client_concurrency": 4,
+        "eligible_cell_count": 6,
+        "within_tolerance_cell_count": 1,
+        "generated_tokens_per_second_median": 84.93862051367972,
+        "ttft_ms_p95_median": 756.5883849999295,
+        "e2e_latency_ms_p95_median": 3056.7904074999888,
+        "server_peak_rss_mib_max": 3448.0703125,
+        "gain_vs_own_p1c1_percent": 141.98698298030794,
+        "quality": {
+          "passed": 21,
+          "total": 24,
+          "score": 0.875,
+          "retention_vs_reference": 1.0,
+          "outcomes_consistent_across_parallel": true,
+          "gate_met": true
+        }
+      },
+      "q4-kleidiai-tuned": {
+        "label": "Q4 with KleidiAI and 512-token micro-batch",
+        "role": "resource-alternative",
+        "server_parallel": 4,
+        "client_concurrency": 4,
+        "eligible_cell_count": 6,
+        "within_tolerance_cell_count": 1,
+        "generated_tokens_per_second_median": 90.66745405776943,
+        "ttft_ms_p95_median": 639.9339839999811,
+        "e2e_latency_ms_p95_median": 2852.64905300005,
+        "server_peak_rss_mib_max": 2031.296875,
+        "gain_vs_own_p1c1_percent": 176.27396303819415,
+        "quality": {
+          "passed": 20,
+          "total": 24,
+          "score": 0.8333333333333334,
+          "retention_vs_reference": 0.9523809523809524,
+          "outcomes_consistent_across_parallel": true,
+          "gate_met": true
+        }
+      }
+    },
+    "q4_vs_q8_at_selected_points_percent": {
+      "generated_tokens_per_second_median": 6.74467457729321,
+      "ttft_ms_p95_median": -15.4184763224933,
+      "e2e_latency_ms_p95_median": -6.67829086348438,
+      "server_peak_rss_mib_max": -41.0888789698949
+    }
+  },
+  "boundary_caveat": "This is a bounded fixed-concurrency study on one native Arm64 runner. It is not an open-loop production-capacity benchmark, a cost or energy claim, or a replacement for the frozen canonical v1.1 recommendation. The KleidiAI log marker establishes only that llama.cpp reported a CPU_KLEIDIAI model buffer; it is not kernel-level acceleration proof."
+}

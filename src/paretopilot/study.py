@@ -377,7 +377,7 @@ def _validate_settings(
     if generic_build != {"kleidiai": False}:
         raise _error("settings/generic.json build must select only generic kernels")
     if kleidiai_build != {"kleidiai": True}:
-        raise _error("settings/kleidiai.json build must select only KleidiAI kernels")
+        raise _error("settings/kleidiai.json build must enable only the KleidiAI backend")
     del generic_copy["build"]
     del kleidiai_copy["build"]
     if generic_copy != kleidiai_copy:

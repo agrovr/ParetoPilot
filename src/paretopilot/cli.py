@@ -13,6 +13,7 @@ from paretopilot import __version__
 from paretopilot.analysis import recommend
 from paretopilot.capacity_eval import assemble_capacity_study, bind_capacity_quality
 from paretopilot.capacity_receipt import render_capacity_receipt
+from paretopilot.capacity_replay import replay_capacity_bundle
 from paretopilot.decision_passport import build_decision_passport
 from paretopilot.doctor import inspect_environment
 from paretopilot.domain import BenchmarkSet, Constraints, ValidationError
@@ -226,7 +227,7 @@ def _parser() -> argparse.ArgumentParser:
 
     pool_server_parser = subparsers.add_parser(
         "pool-server-evaluations",
-        help="pool compatible balanced-pass llama-server evaluation artifacts",
+        help="pool compatible mirrored-pass llama-server evaluation artifacts",
     )
     pool_server_parser.add_argument(
         "--input",
@@ -353,7 +354,7 @@ def _parser() -> argparse.ArgumentParser:
 
     repeat_pass_parser = subparsers.add_parser(
         "assemble-repeat-pass",
-        help="rebuild one balanced benchmark pass from raw experiment evidence",
+        help="rebuild one pass in a mirrored pair from raw experiment evidence",
     )
     repeat_pass_parser.add_argument("--experiment", required=True, type=Path)
     repeat_pass_parser.add_argument(
@@ -426,6 +427,16 @@ def _parser() -> argparse.ArgumentParser:
         "--canonical-report-href",
         default="evidence/report-v1.1.html",
     )
+    showcase_v11_parser.add_argument("--capacity-study", type=Path)
+    showcase_v11_parser.add_argument("--capacity-evidence-lock", type=Path)
+    showcase_v11_parser.add_argument(
+        "--capacity-study-href",
+        default="evidence/capacity-study.json",
+    )
+    showcase_v11_parser.add_argument(
+        "--capacity-receipt-href",
+        default="evidence/capacity-receipt.md",
+    )
     showcase_v11_parser.add_argument("--output", required=True, type=Path)
 
     profiles_parser = subparsers.add_parser(
@@ -448,6 +459,13 @@ def _parser() -> argparse.ArgumentParser:
         type=Path,
         help="optionally precompute policy profiles from this configuration",
     )
+
+    replay_capacity_parser = subparsers.add_parser(
+        "replay-capacity",
+        help="verify and reproduce an extracted supplementary capacity bundle",
+    )
+    replay_capacity_parser.add_argument("bundle", type=Path)
+    replay_capacity_parser.add_argument("--output-dir", required=True, type=Path)
 
     experiment_parser = subparsers.add_parser(
         "assemble-experiment",
@@ -939,6 +957,14 @@ def main(argv: Sequence[str] | None = None) -> int:
             evidence_lock = (
                 load_json_object(args.evidence_lock) if args.evidence_lock is not None else None
             )
+            capacity_study = (
+                load_json_object(args.capacity_study) if args.capacity_study is not None else None
+            )
+            capacity_evidence_lock = (
+                load_json_object(args.capacity_evidence_lock)
+                if args.capacity_evidence_lock is not None
+                else None
+            )
             canonical_html = None
             if args.canonical_report is not None:
                 try:
@@ -957,8 +983,18 @@ def main(argv: Sequence[str] | None = None) -> int:
                 load_sweep=load_sweep,
                 stability_summary=stability_summary,
                 evidence_lock=evidence_lock,
+                evidence_lock_sha256=(
+                    sha256_file(args.evidence_lock) if args.evidence_lock is not None else ""
+                ),
                 canonical_html=canonical_html,
                 canonical_report_href=args.canonical_report_href,
+                capacity_study=capacity_study,
+                capacity_evidence_lock=capacity_evidence_lock,
+                capacity_study_sha256=(
+                    sha256_file(args.capacity_study) if args.capacity_study is not None else ""
+                ),
+                capacity_study_href=args.capacity_study_href,
+                capacity_receipt_href=args.capacity_receipt_href,
                 benchmarks_sha256=sha256_file(args.results),
                 recommendation_sha256=sha256_file(args.recommendation),
                 profiles_sha256=sha256_file(args.profiles) if args.profiles is not None else "",
@@ -975,6 +1011,8 @@ def main(argv: Sequence[str] | None = None) -> int:
                 "baseline_id": benchmarks.baseline_id,
                 "canonical_report_verified": canonical_html is not None,
                 "evidence_lock_supplied": evidence_lock is not None,
+                "capacity_study_supplied": capacity_study is not None,
+                "capacity_evidence_lock_supplied": capacity_evidence_lock is not None,
                 "report": str(args.output),
                 "report_sha256": sha256_file(args.output),
             }
@@ -1014,6 +1052,24 @@ def main(argv: Sequence[str] | None = None) -> int:
                 "details": str(Path(replay_result["output_directory"]) / "replay.json"),
             }
             exit_code = 0 if replay_result["valid"] else 5
+        elif args.command == "replay-capacity":
+            replay_result = replay_capacity_bundle(args.bundle, args.output_dir)
+            payload = {
+                "schema_version": replay_result["schema_version"],
+                "classification": replay_result["classification"],
+                "valid": replay_result["valid"],
+                "verdict": replay_result["verdict"],
+                "status_complete": replay_result["status_complete"],
+                "capacity_study_reproduced": replay_result["capacity_study_reproduced"],
+                "capacity_receipt_reproduced": replay_result["capacity_receipt_reproduced"],
+                "checksum_entries": replay_result["checksums"]["entry_count"],
+                "checksum_manifest_sha256": replay_result["checksums"]["manifest_sha256"],
+                "canonical_replay": replay_result["canonical_replay"],
+                "selected_operating_points": replay_result["selected_operating_points"],
+                "output_directory": str(args.output_dir.resolve()),
+                "details": str(args.output_dir.resolve() / "capacity-replay.json"),
+            }
+            exit_code = 0
         elif args.command == "assemble-experiment":
             payload = assemble_experiment(args.manifest)
             write_json(args.output, payload)

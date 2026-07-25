@@ -7,7 +7,7 @@ validated load artifacts.
 
 The supplementary study varies only server slots, total context required to
 hold per-slot context constant, and the local binding port. It preserves two
-counterbalanced passes, exact commands, request-level load artifacts, quality
+mirrored forward/reverse passes, exact commands, request-level load artifacts, quality
 gates, process RSS, and an observed KleidiAI model-buffer marker without
 changing the canonical recommendation.
 """
@@ -61,7 +61,7 @@ class CapacityCandidate:
 
 @dataclass(frozen=True)
 class CapacityPass:
-    """One counterbalanced matrix pass."""
+    """One declared matrix pass in a mirrored forward/reverse pair."""
 
     id: str
     candidate_order: tuple[str, ...]
@@ -697,7 +697,9 @@ def _capacity_plan_from_mapping(raw_value: Any, context: str) -> CapacityPlan:
     )
     pass_values = raw.get("passes")
     if not isinstance(pass_values, list) or len(pass_values) != 2:
-        raise ValidationError(f"{context}.passes must contain exactly two counterbalanced passes")
+        raise ValidationError(
+            f"{context}.passes must contain exactly two mirrored forward/reverse passes"
+        )
     passes: list[CapacityPass] = []
     pass_ids: set[str] = set()
     for index, value in enumerate(pass_values):
@@ -754,7 +756,7 @@ def _capacity_plan_from_mapping(raw_value: Any, context: str) -> CapacityPlan:
         or passes[1].server_parallel_order != tuple(reversed(passes[0].server_parallel_order))
         or passes[1].client_concurrency_order != tuple(reversed(passes[0].client_concurrency_order))
     ):
-        raise ValidationError(f"{context}.passes must use exact counterbalanced orders")
+        raise ValidationError(f"{context}.passes must use exact reverse orders")
 
     quality = _mapping(raw.get("quality_gate"), f"{context}.quality_gate")
     _exact_fields(
@@ -1489,7 +1491,7 @@ def _capacity_cell(
     plan: CapacityPlan,
 ) -> Mapping[str, Any]:
     if len(pass_metrics) != len(plan.passes):
-        raise ValidationError("capacity cell does not contain every counterbalanced pass")
+        raise ValidationError("capacity cell does not contain both declared passes")
     pass_ids = tuple(str(metric["pass_id"]) for metric in pass_metrics)
     if pass_ids != tuple(pass_spec.id for pass_spec in plan.passes):
         raise ValidationError("capacity cell pass order does not match the plan")

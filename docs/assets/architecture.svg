@@ -109,7 +109,7 @@
 
     <rect x="582" y="435" width="296" height="53" rx="9" class="mini-blue"/>
     <text x="598" y="458" class="small-strong ink">C · Q4 + KleidiAI</text>
-    <text x="598" y="477" class="small muted">Arm kernel dispatch</text>
+    <text x="598" y="477" class="small muted">enabled build + observed marker</text>
 
     <rect x="582" y="499" width="296" height="53" rx="9" class="mini-blue"/>
     <text x="598" y="522" class="small-strong ink">D · Q4 + KleidiAI + tuned uBatch</text>
