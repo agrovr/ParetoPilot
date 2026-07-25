@@ -654,7 +654,133 @@ jobs:
             --capacity-study-href evidence/capacity-study.json \
             --capacity-receipt-href evidence/capacity-receipt.md \
             --output _site/index.html
-          test "$(find _site -type f | wc -l)" -eq 5
+          python - <<'PY'
+          from html.parser import HTMLParser
+          from pathlib import Path
+          from urllib.parse import unquote, urlsplit
+
+          site = Path("_site").resolve()
+          expected_manifest = {
+              "index.html",
+              "evidence/report-v1.1.html",
+              "evidence/optimization-receipt.md",
+              "evidence/capacity-study.json",
+              "evidence/capacity-receipt.md",
+          }
+
+          entries = tuple(site.rglob("*"))
+          symlinks = sorted(
+              path.relative_to(site).as_posix()
+              for path in entries
+              if path.is_symlink()
+          )
+          if symlinks:
+              raise SystemExit(f"Pages stage contains symlinks: {symlinks}")
+
+          actual_manifest = {
+              path.relative_to(site).as_posix()
+              for path in entries
+              if path.is_file()
+          }
+          if actual_manifest != expected_manifest:
+              missing = sorted(expected_manifest - actual_manifest)
+              unexpected = sorted(actual_manifest - expected_manifest)
+              raise SystemExit(
+                  f"Pages manifest mismatch; missing={missing}; unexpected={unexpected}"
+              )
+
+          class PageParser(HTMLParser):
+              def __init__(self) -> None:
+                  super().__init__(convert_charrefs=True)
+                  self.hrefs: list[str] = []
+                  self.targets: set[str] = set()
+
+              def handle_starttag(
+                  self,
+                  tag: str,
+                  attrs: list[tuple[str, str | None]],
+              ) -> None:
+                  del tag
+                  for name, value in attrs:
+                      if name == "href" and value is not None:
+                          self.hrefs.append(value.strip())
+                      elif name in {"id", "name"} and value:
+                          self.targets.add(value)
+
+          pages: dict[Path, PageParser] = {}
+          for relative in sorted(expected_manifest):
+              if not relative.endswith(".html"):
+                  continue
+              path = (site / relative).resolve()
+              parser = PageParser()
+              parser.feed(path.read_text(encoding="utf-8"))
+              parser.close()
+              pages[path] = parser
+
+          allowed_external_schemes = {"data", "http", "https", "mailto"}
+          errors: list[str] = []
+
+          for source, page in pages.items():
+              source_name = source.relative_to(site).as_posix()
+              for href in page.hrefs:
+                  try:
+                      parsed = urlsplit(href)
+                  except ValueError as exc:
+                      errors.append(f"{source_name}: invalid href {href!r}: {exc}")
+                      continue
+
+                  if parsed.scheme:
+                      if parsed.scheme.lower() not in allowed_external_schemes:
+                          errors.append(
+                              f"{source_name}: unsupported href scheme in {href!r}"
+                          )
+                      continue
+                  if parsed.netloc:
+                      continue
+                  if parsed.path.startswith("/"):
+                      errors.append(
+                          f"{source_name}: root-absolute link breaks project Pages: {href!r}"
+                      )
+                      continue
+
+                  target = (
+                      (source.parent / unquote(parsed.path)).resolve()
+                      if parsed.path
+                      else source
+                  )
+                  if target.is_dir():
+                      target /= "index.html"
+
+                  try:
+                      target.relative_to(site)
+                  except ValueError:
+                      errors.append(f"{source_name}: link escapes _site: {href!r}")
+                      continue
+
+                  if not target.is_file():
+                      errors.append(
+                          f"{source_name}: missing local target for {href!r}"
+                      )
+                      continue
+
+                  fragment = unquote(parsed.fragment)
+                  if fragment:
+                      target_page = pages.get(target.resolve())
+                      if target_page is None:
+                          errors.append(
+                              f"{source_name}: fragment targets non-HTML file: {href!r}"
+                          )
+                      elif fragment not in target_page.targets:
+                          errors.append(
+                              f"{source_name}: missing fragment target for {href!r}"
+                          )
+
+          if errors:
+              raise SystemExit(
+                  "Pages link validation failed:\n"
+                  + "\n".join(f"- {error}" for error in errors)
+              )
+          PY
 
       - name: Upload Pages artifact
         uses: actions/upload-pages-artifact@fc324d3547104276b827a68afc52ff2a11cc49c9 # v5.0.0

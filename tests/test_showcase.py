@@ -13,6 +13,7 @@ from paretopilot.decision_passport import build_decision_passport
 from paretopilot.domain import BenchmarkSet, ValidationError
 from paretopilot.profiles import PolicySet, evaluate_policy_profiles
 from paretopilot.showcase import (
+    _capacity_failure_label,
     _capacity_result_from_study,
     _optimization_ladder_markup,
     _relative_measure_phrase,
@@ -294,6 +295,7 @@ def capacity_benchmarks() -> BenchmarkSet:
     data = canonical_benchmarks()
     metadata = deepcopy(dict(data.metadata))
     metadata["source"] = {
+        "repository": "agrovr/ParetoPilot",
         "run_id": "30055662526",
         "runner": {
             "os": "Ubuntu 24.04",
@@ -533,7 +535,7 @@ class ShowcaseV11Tests(unittest.TestCase):
             report,
         )
 
-    def test_policy_cockpit_has_one_tab_stop_one_panel_and_full_keyboard_contract(
+    def test_policy_cockpit_has_one_tab_stop_focusable_panels_and_full_keyboard_contract(
         self,
     ) -> None:
         report = rendered_cockpit_showcase()
@@ -547,13 +549,14 @@ class ShowcaseV11Tests(unittest.TestCase):
         )
         self.assertEqual(cockpit.count('role="tab"'), 3)
         self.assertEqual(cockpit.count('role="tabpanel"'), 3)
-        self.assertEqual(cockpit.count('tabindex="0"'), 1)
+        self.assertEqual(cockpit.count('tabindex="0"'), 4)
         self.assertEqual(cockpit.count('tabindex="-1"'), 2)
         self.assertEqual(cockpit.count('aria-selected="true"'), 1)
         self.assertEqual(cockpit.count('aria-selected="false"'), 2)
         self.assertEqual(cockpit.count('class="cockpit-panel" role="tabpanel"'), 3)
-        self.assertEqual(cockpit.count('data-cockpit-panel="1" hidden'), 1)
-        self.assertEqual(cockpit.count('data-cockpit-panel="2" hidden'), 1)
+        self.assertEqual(cockpit.count('data-cockpit-panel="0" tabindex="0"'), 1)
+        self.assertEqual(cockpit.count('data-cockpit-panel="1" tabindex="0" hidden'), 1)
+        self.assertEqual(cockpit.count('data-cockpit-panel="2" tabindex="0" hidden'), 1)
         self.assertIn('aria-live="polite" aria-atomic="true"', cockpit)
         self.assertIn("canonical latency result remains shown", cockpit)
         for key in ("ArrowLeft", "ArrowRight", "Home", "End"):
@@ -724,7 +727,14 @@ class ShowcaseV11Tests(unittest.TestCase):
         self.assertEqual(len(selected_coordinates), 1)
         parallel, concurrency = selected_coordinates.pop()
         self.assertIn(
-            (f'<h2 id="capacity-heading">The envelope opens at {parallel} × {concurrency}.</h2>'),
+            (
+                f'<h2 id="capacity-heading">Selected operating point: '
+                f"P{parallel} / C{concurrency}.</h2>"
+            ),
+            capacity,
+        )
+        self.assertIn(
+            f"{parallel} server slots and {concurrency} concurrent clients",
             capacity,
         )
         self.assertEqual(capacity.count('class="capacity-board '), 2)
@@ -748,9 +758,22 @@ class ShowcaseV11Tests(unittest.TestCase):
         self.assertIn("Measured requests</dt><dd>288</dd>", capacity)
         self.assertIn("Exact-reversal passes</dt><dd>2</dd>", capacity)
         self.assertIn(
-            f"Latency-blocked cells</dt><dd>{expected_blocked}</dd>",
+            f"Gate-blocked cells</dt><dd>{expected_blocked}</dd>",
             capacity,
         )
+        for gate_label in (
+            "TTFT p95",
+            "E2E p95",
+            "Peak RSS",
+            "Completion",
+            "Quality",
+            "Quality outcomes",
+            "Generation stability",
+            "E2E stability",
+        ):
+            with self.subTest(gate_label=gate_label):
+                self.assertIn(f"<dt>{gate_label}</dt>", capacity)
+        self.assertIn("Same across P levels", capacity)
         self.assertIn("This sizes each candidate", capacity)
         self.assertIn("does not replace the canonical Q8 model decision", capacity)
         self.assertIn(
@@ -762,6 +785,124 @@ class ShowcaseV11Tests(unittest.TestCase):
             report,
         )
         self.assertNotIn("winner", capacity.lower())
+
+    def test_capacity_failure_labels_explain_every_declared_gate(self) -> None:
+        cases = (
+            (
+                ["forward:completion_rate_below_minimum"],
+                "Completion",
+                "Completion rate was below the predeclared minimum.",
+            ),
+            (
+                ["forward:ttft_ms_p95_above_maximum"],
+                "TTFT",
+                "Observed-p95 time to first token exceeded the predeclared limit.",
+            ),
+            (
+                ["reverse:e2e_latency_ms_p95_above_maximum"],
+                "E2E",
+                "Observed-p95 end-to-end latency exceeded the predeclared limit.",
+            ),
+            (
+                ["server_peak_rss_above_maximum"],
+                "Memory",
+                "Peak server memory exceeded the predeclared limit.",
+            ),
+            (
+                ["quality_gate_failed"],
+                "Quality",
+                "The task-specific quality guard failed.",
+            ),
+            (
+                ["throughput_relative_spread_above_maximum"],
+                "Throughput stability",
+                "Generation throughput varied too much between the mirrored passes.",
+            ),
+            (
+                ["e2e_relative_spread_above_maximum"],
+                "E2E stability",
+                "End-to-end latency varied too much between the mirrored passes.",
+            ),
+        )
+        for reasons, expected_short, expected_explanation in cases:
+            with self.subTest(reasons=reasons):
+                short, explanation = _capacity_failure_label(reasons)
+                self.assertEqual(short, expected_short)
+                self.assertEqual(explanation, expected_explanation)
+
+        short, explanation = _capacity_failure_label(
+            [
+                "one_or_more_passes_failed_load_slo",
+                "forward:ttft_ms_p95_above_maximum",
+                "reverse:e2e_latency_ms_p95_above_maximum",
+            ]
+        )
+        self.assertEqual(short, "TTFT + E2E")
+        self.assertIn("time to first token", explanation)
+        self.assertIn("end-to-end latency", explanation)
+
+    def test_capacity_flight_brief_puts_measured_decision_and_proof_first(self) -> None:
+        with TemporaryDirectory() as directory:
+            study = CapacityFixture(Path(directory)).assemble()
+            result = _capacity_result_from_study(study)
+            report = rendered_capacity_showcase(study)
+
+        selected_points = result["selected_operating_points"]
+        assert isinstance(selected_points, dict)
+        alternative = next(
+            point
+            for point in selected_points.values()
+            if isinstance(point, dict) and point.get("role") == "resource-alternative"
+        )
+        comparisons = result["q4_vs_q8_at_selected_points_percent"]
+        assert isinstance(comparisons, dict)
+        parallel = int(alternative["server_parallel"])
+        concurrency = int(alternative["client_concurrency"])
+        quality = alternative["quality"]
+        assert isinstance(quality, dict)
+        throughput_phrase = _relative_measure_phrase(
+            float(comparisons["generated_tokens_per_second_median"]),
+            "generation throughput",
+        )
+        rss_phrase = _relative_measure_phrase(
+            float(comparisons["server_peak_rss_mib_max"]),
+            "peak RSS",
+        )
+
+        hero_start = report.index('<div class="hero-layout">')
+        brief_start = report.index('<section class="flight-brief"', hero_start)
+        brief_end = report.index("</section>\n", brief_start) + len("</section>\n")
+        actions_start = report.index('<nav class="hero-actions"', brief_end)
+        capacity_start = report.index('<section id="capacity-envelope"', actions_start)
+        brief = report[brief_start:brief_end]
+
+        self.assertLess(hero_start, brief_start)
+        self.assertLess(brief_start, brief_end)
+        self.assertLess(brief_end, actions_start)
+        self.assertLess(actions_start, capacity_start)
+        self.assertIn("Judge flight brief", brief)
+        self.assertIn("One model call. One serving envelope.", brief)
+        self.assertIn("<strong>Retain Q8 generic reference</strong>", brief)
+        self.assertIn(f"<strong>P{parallel} / C{concurrency}</strong>", brief)
+        self.assertIn(str(alternative["label"]), brief)
+        self.assertIn(throughput_phrase, brief)
+        self.assertIn(rss_phrase, brief)
+        self.assertIn(
+            f"<strong>{result['measured_request_count']} requests · "
+            "zero recorded failures</strong>",
+            brief,
+        )
+        self.assertIn(
+            f"{float(quality['retention_vs_reference']) * 100:.1f}% of reference quality",
+            brief,
+        )
+        self.assertIn(
+            '<a class="flight-brief-primary" href="#capacity-envelope">'
+            "See the measured envelope</a>",
+            brief,
+        )
+        self.assertIn("Use the CI gate</a>", brief)
+        self.assertNotIn("<script", brief)
 
     def test_capacity_relative_claims_preserve_metric_direction(self) -> None:
         self.assertEqual(
@@ -1014,6 +1155,36 @@ class ShowcaseV11Tests(unittest.TestCase):
         )
         self.assertIn("      minmax(0, 1fr);", report)
         self.assertIn(
+            "grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);",
+            css_rule_body(report, ".showcase .tradeoff-row"),
+        )
+        self.assertIn(
+            "overflow-wrap: anywhere;",
+            css_rule_body(report, ".showcase .tradeoff-row > *"),
+        )
+        self.assertIn(
+            "overflow-wrap: anywhere;",
+            css_rule_body(report, ".showcase .decision-rail dd"),
+        )
+        self.assertIn(
+            "min-width: 0;",
+            css_rule_body(report, ".showcase .decision-pair > div"),
+        )
+        self.assertIn(
+            "contain: strict;",
+            css_rule_body(report, ".showcase .sr-only"),
+        )
+        self.assertIn(
+            "min-width: 0;",
+            css_rule_body(report, ".showcase .why-layout > *"),
+        )
+        self.assertIn("html { overflow-x: clip; }", report)
+        self.assertIn("overflow-x: clip;", css_rule_body(report, ".showcase"))
+        self.assertIn(
+            "position: absolute;",
+            css_rule_body(report, ".showcase .tradeoff-board > .sr-only > span"),
+        )
+        self.assertIn(
             "min-width: 0;",
             css_rule_body(report, ".showcase .profile-metrics"),
         )
@@ -1084,8 +1255,14 @@ class ShowcaseV11Tests(unittest.TestCase):
             desktop_css,
         )
         narrow_css = css_rule_body(report, "@media (max-width: 47.99rem)")
-        self.assertNotIn(".hero-layout", narrow_css)
-        self.assertNotIn(".hero-proof", narrow_css)
+        self.assertNotIn(
+            ".showcase .hero-layout {\n    display: grid;",
+            narrow_css,
+        )
+        self.assertIn(
+            ".showcase .hero-layout,\n  .showcase .hero-headline,\n  .showcase .hero-proof,",
+            narrow_css,
+        )
 
     def test_ladder_warning_accents_use_inverse_contrast(self) -> None:
         report = rendered_showcase(benchmarks=attributed_benchmarks())
@@ -1267,7 +1444,7 @@ class ShowcaseV11Tests(unittest.TestCase):
         )
         for label, shape in expected_shapes.items():
             groups = re.findall(
-                rf'<g aria-label="{re.escape(label)}"[^>]*'
+                rf'<g role="group" aria-label="{re.escape(label)}"[^>]*'
                 rf'data-marker-shape="{shape}"[^>]*>(.*?)</g>',
                 report,
                 re.DOTALL,
@@ -1427,6 +1604,10 @@ class ShowcaseV11Tests(unittest.TestCase):
             ("success", "--flight-teal", "--flight-teal-soft"),
             ("warning", "--flight-amber", "--flight-amber-soft"),
             ("danger", "--flight-danger", "--flight-danger-soft"),
+            ("capacity pass label", "--flight-text-muted", "--flight-paper-blue"),
+            ("capacity blocked label", "--flight-text-muted", "--flight-danger-soft"),
+            ("capacity q8 selected label", "--flight-text-muted", "--flight-cobalt-soft"),
+            ("capacity q4 selected label", "--flight-text-muted", "--flight-teal-soft"),
         )
         non_text_pairs = (
             ("control border", "--flight-control-border", "--flight-panel"),
@@ -1560,6 +1741,8 @@ class ShowcaseV11Tests(unittest.TestCase):
         for href in (
             "javascript:alert(1)",
             "http://example.com/report.html",
+            "https://example.com/evidence/report-v1.1.html",
+            "https://github.com/agrovr/ParetoPilot/blob/main/report-v1.1.html",
             "//example.com/report.html",
             "/absolute/report.html",
             "../outside/report.html",
@@ -1613,6 +1796,22 @@ class ShowcaseV11Tests(unittest.TestCase):
                 benchmarks,
                 recommendation,
                 evidence_lock=cross_run,
+                canonical_html=canonical,
+                **kwargs,
+            )
+
+        wrong_release = deepcopy(evidence_lock())
+        wrong_release["archive"]["release_url"] = (
+            "https://github.com/agrovr/ParetoPilot/releases/tag/v9.9.9"
+        )
+        wrong_release["review"]["artifacts_sha256"]["report_v1_1"] = hashlib.sha256(
+            canonical.encode()
+        ).hexdigest()
+        with self.assertRaisesRegex(ValidationError, "release tag"):
+            render_showcase_v11(
+                benchmarks,
+                recommendation,
+                evidence_lock=wrong_release,
                 canonical_html=canonical,
                 **kwargs,
             )
