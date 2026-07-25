@@ -5362,4 +5362,3 @@ def render_showcase_v11(
         "body close",
     )
     return document
-
