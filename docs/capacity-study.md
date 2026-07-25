@@ -144,8 +144,9 @@ envelopes; the frozen canonical Q8 model decision did not change. The original A
 preserved byte-for-byte in the versioned, SHA-256-locked
 [`v1.4.0` release](https://github.com/agrovr/ParetoPilot/releases/tag/v1.4.0).
 Use ParetoPilot
-[`v1.4.1`](https://github.com/agrovr/ParetoPilot/releases/tag/v1.4.1) or newer to run the replay
-command below. The tooling release does not move, replace, or modify the v1.4.0 evidence archive.
+[`0f196a4f`](https://github.com/agrovr/ParetoPilot/commit/0f196a4f3764526db48c0481b69f7f90eaffc9e4)
+or newer to run the replay command below. The version 1.4.1 release is intentionally not linked
+until it is published; the tooling does not move, replace, or modify the v1.4.0 evidence archive.
 
 For the shortest judge path, read the compact reviewed result first, inspect
 `capacity-receipt.md` for every passing and rejected cell, then replay the bundle without rerunning

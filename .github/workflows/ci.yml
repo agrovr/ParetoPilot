@@ -33,6 +33,8 @@ jobs:
       - name: Smoke installed console and fixtures
         run: |
           paretopilot --version
+          paretopilot init launch-kit-smoke
+          paretopilot ci-gate launch-kit-smoke/benchmarks/benchmark-set.json --constraints launch-kit-smoke/constraints/deployment.json --output-dir launch-kit-smoke-output --allow-synthetic --expect-selected-id q4-kleidiai
           paretopilot validate examples/synthetic-results.json
           paretopilot recommend examples/synthetic-results.json --constraints configs/constraints.example.json
           paretopilot passport examples/synthetic-results.json --constraints configs/constraints.example.json --output passport-smoke.json
@@ -76,6 +78,14 @@ jobs:
             examples/synthetic-results.json \
             --constraints configs/constraints.example.json \
             --output "$RUNNER_TEMP/optimization-receipt.md"
+          "$RUNNER_TEMP/paretopilot-wheel-smoke/bin/paretopilot" init \
+            "$RUNNER_TEMP/paretopilot-launch-kit"
+          "$RUNNER_TEMP/paretopilot-wheel-smoke/bin/paretopilot" ci-gate \
+            "$RUNNER_TEMP/paretopilot-launch-kit/benchmarks/benchmark-set.json" \
+            --constraints "$RUNNER_TEMP/paretopilot-launch-kit/constraints/deployment.json" \
+            --output-dir "$RUNNER_TEMP/paretopilot-launch-kit-output" \
+            --allow-synthetic \
+            --expect-selected-id q4-kleidiai
 
   action-smoke:
     runs-on: ubuntu-latest

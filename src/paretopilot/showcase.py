@@ -1808,6 +1808,17 @@ def _capacity_flight_brief_markup(
 
     selected_id = str(recommendation.get("selected_id"))
     selected = benchmarks.by_id(selected_id)
+    objective = _mapping(recommendation.get("objective"), "recommendation.objective")
+    objective_metric = str(objective.get("metric"))
+    if objective_metric not in selected.metrics:
+        raise ValidationError(
+            "capacity flight brief objective metric is missing from selected candidate"
+        )
+    objective_value = _metric_value(
+        objective_metric,
+        float(selected.metrics[objective_metric]),
+    )
+    objective_label = _metric_label(objective_metric)
     selection_verb = "Retain" if selected_id == benchmarks.baseline_id else "Select"
     parallel = int(alternative.get("server_parallel"))
     concurrency = int(alternative.get("client_concurrency"))
@@ -1853,6 +1864,21 @@ def _capacity_flight_brief_markup(
         '<h2 id="flight-brief-heading">One model call. One serving envelope.</h2>'
         "<p>ParetoPilot turns locked Arm64 measurements into a replayable "
         "deployment decision and CI gate.</p></header>"
+        '<div class="flight-brief-verdict" role="note" aria-label="Judge verdict"><dl>'
+        "<div><dt>Canonical latency winner</dt><dd>"
+        f"<strong>{_escape(selected.label)}</strong>"
+        f"<span>{_escape(objective_value)} · {_escape(objective_label)}</span>"
+        "</dd></div>"
+        "<div><dt>Capacity / resource alternative</dt><dd>"
+        f"<strong>{_escape(alternative_label)}</strong>"
+        f"<span>P{parallel} / C{concurrency} · {_escape(throughput_phrase)} · "
+        f"{_escape(rss_phrase)} · "
+        f"{_escape(_format_number(quality_relative, digits=1))}% quality retention"
+        "</span></dd></div></dl>"
+        "<p><strong>Different questions.</strong> "
+        f"{_escape(selection_verb)} {_escape(selected.label)} for the frozen "
+        "single-client latency objective; the capacity result does not replace "
+        "the canonical recommendation.</p></div>"
         '<figure class="flight-brief-instrument" '
         'aria-labelledby="flight-brief-instrument-heading">'
         "<figcaption><div><span>Q8 reference → tuned Q4</span>"
@@ -1860,20 +1886,15 @@ def _capacity_flight_brief_markup(
         f"P{parallel} / C{concurrency}</strong></div>"
         f"<p>{measured_requests} requests · zero recorded failures</p></figcaption>"
         f'<div class="flight-brief-metrics">{metric_markup}</div>'
-        '<p class="flight-brief-boundary"><strong>Decision boundary:</strong> '
-        f"{_escape(selection_verb)} {_escape(selected.label)} for the frozen "
-        "single-client latency objective. "
-        f"{_escape(alternative_label)} sizes serving at its selected "
-        f"P{parallel} / C{concurrency} point; {_escape(throughput_phrase)} and "
-        f"{_escape(rss_phrase)} do not rewrite the canonical model call.</p></figure>"
+        "</figure>"
         '<nav class="flight-brief-actions" aria-label="Judge quick actions">'
         '<a class="flight-brief-primary" href="#optimization-ladder">'
         "See exactly what changed</a>"
         '<a class="flight-brief-secondary" href="#capacity-envelope">'
         "See the serving envelope</a>"
         '<a class="flight-brief-secondary" '
-        'href="https://github.com/agrovr/ParetoPilot/blob/main/docs/github-action.md">'
-        "Use the CI gate</a></nav></section>\n"
+        'href="https://github.com/agrovr/ParetoPilot#launch-your-own-decision">'
+        "Open the Launch Kit</a></nav></section>\n"
     )
 
 
@@ -2907,6 +2928,60 @@ html[data-theme="dark"] .showcase {
   font-size: clamp(1.25rem, 2.25vw, 1.65rem);
   line-height: 1.02;
 }
+.showcase .flight-brief-verdict {
+  max-width: 100%;
+  min-width: 0;
+  margin: .7rem 0 .65rem;
+  border: 1px solid var(--flight-panel-line);
+  font-size: .875rem;
+  line-height: 1.4;
+}
+.showcase .flight-brief-verdict dl { margin: 0; }
+.showcase .flight-brief-verdict dl > div {
+  display: grid;
+  grid-template-columns: minmax(7.5rem, .72fr) minmax(0, 1.28fr);
+  gap: .75rem;
+  min-width: 0;
+  padding: .65rem .75rem;
+}
+.showcase .flight-brief-verdict dl > div + div {
+  border-top: 1px solid var(--flight-panel-line);
+}
+.showcase .flight-brief-verdict dt {
+  color: var(--flight-hero-accent);
+  font-family: "SFMono-Regular", Consolas, "Liberation Mono", monospace;
+  font-weight: 800;
+  letter-spacing: .035em;
+  text-transform: uppercase;
+}
+.showcase .flight-brief-verdict dd {
+  min-width: 0;
+  margin: 0;
+  color: var(--flight-white);
+  overflow-wrap: anywhere;
+}
+.showcase .flight-brief-verdict dd strong,
+.showcase .flight-brief-verdict dd span {
+  display: block;
+  min-width: 0;
+}
+.showcase .flight-brief-verdict dd strong {
+  font-size: 1rem;
+  line-height: 1.25;
+}
+.showcase .flight-brief-verdict dd span {
+  margin-top: .2rem;
+  color: var(--flight-on-dark-muted);
+}
+.showcase .flight-brief-verdict > p {
+  margin: 0;
+  padding: .55rem .75rem;
+  border-top: 1px solid var(--flight-panel-line);
+  color: var(--flight-on-dark-muted);
+}
+.showcase .flight-brief-verdict > p strong {
+  color: var(--flight-white);
+}
 .showcase .flight-brief-instrument {
   min-width: 0;
   margin: .65rem 0 0;
@@ -3023,15 +3098,6 @@ html[data-theme="dark"] .showcase {
   font-family: "SFMono-Regular", Consolas, "Liberation Mono", monospace;
   font-size: .48rem;
   font-variant-numeric: tabular-nums;
-}
-.showcase .flight-brief-boundary {
-  margin: .4rem 0 0;
-  color: var(--flight-on-dark-muted);
-  font-size: .61rem;
-  line-height: 1.35;
-}
-.showcase .flight-brief-boundary strong {
-  color: var(--flight-white);
 }
 .showcase .flight-brief-actions {
   display: flex;
@@ -4717,6 +4783,10 @@ html[data-theme="dark"] .showcase {
   .showcase .flight-brief-instrument figcaption,
   .showcase .flight-brief-metrics {
     grid-template-columns: minmax(0, 1fr);
+  }
+  .showcase .flight-brief-verdict dl > div {
+    grid-template-columns: minmax(0, 1fr);
+    gap: .2rem;
   }
   .showcase .flight-brief-instrument figcaption {
     gap: .2rem;
