@@ -1,4 +1,4 @@
-"""Judge-facing presentation view for locked ParetoPilot v1.1 evidence.
+"""Published-results presentation for locked ParetoPilot v1.1 evidence.
 
 The canonical :mod:`paretopilot.report_v11` document is an immutable evidence
 artifact whose bytes are bound into the v1.1 release.  This module deliberately
@@ -620,7 +620,7 @@ def _prioritize_load_results(
     chart_end = _matching_div_end(section, chart_start, context="load chart grid")
     contract = (
         '<details class="load-contract-disclosure">'
-        "<summary>Inspect exact load contract and prompts</summary>"
+        "<summary>View load-test settings and prompts</summary>"
         f"{context_markup}</details>"
     )
     section = section[:chart_end] + contract + section[chart_end:]
@@ -630,11 +630,11 @@ def _prioritize_load_results(
 def _add_section_kickers(document: str) -> str:
     stages = (
         ("why-heading", "01 · Decision rule"),
-        ("tradeoffs-heading", "02 · Honest tradeoffs"),
-        ("policies-heading", "03 · Policy lenses"),
+        ("tradeoffs-heading", "02 · Tradeoffs"),
+        ("policies-heading", "03 · Policy comparison"),
         ("load-heading", "04 · Load test"),
         ("repeat-heading", "05 · Repeatability"),
-        ("scatter-heading", "06 · Two-metric view"),
+        ("scatter-heading", "06 · Latency and throughput"),
         ("evidence-heading", "07 · Evidence matrix"),
         ("trust-heading", "08 · Reproduction"),
     )
@@ -650,6 +650,228 @@ def _add_section_kickers(document: str) -> str:
             raise ValidationError(f"canonical section heading is not closed: {heading_id}")
         heading_close += len("</h2>")
         result = result[:heading_close] + "</div>" + result[heading_close:]
+    return result
+
+
+def _plain_language_report_copy(document: str) -> str:
+    """Simplify presentation copy without changing the verified report artifact."""
+
+    replacements = (
+        ("Why this decision held", "Why this configuration was selected"),
+        (
+            "The tolerance and preference policy are part of the decision, not a "
+            "post-hoc explanation.",
+            "The objective tolerance and preference order were defined before selection.",
+        ),
+        ("Aligned tradeoffs", "Measured tradeoffs"),
+        (
+            "“Better” and “Tradeoff” use only declared frontier directions.",
+            "Labels follow the stated better-or-worse direction for each metric.",
+        ),
+        ("Deployment policy selector", "All deployment priorities"),
+        (
+            "Every panel below is precomputed. The browser only switches views; it does "
+            "not recalculate or rank candidates.",
+            "Each priority applies a different objective to the same validated measurements.",
+        ),
+        ("Command and plan binding", "Verified test commands"),
+        ("Highest SLO-passing concurrency", "Highest concurrency that met every limit"),
+        (
+            "Curves appear only for supplied, validated measurements. Missing values are "
+            "not interpolated or estimated.",
+            "Charts use only supplied, validated measurements; missing values are left blank.",
+        ),
+        ("Repeat stability", "Repeatability across two passes"),
+        (
+            "This accurately scoped two-dimensional view complements, but does not "
+            "replace, the full constraint and frontier analysis.",
+            "This chart shows latency and generation throughput only. The full decision also "
+            "considers memory, model size, quality, and constraints.",
+        ),
+        (
+            "Missing values remain explicitly unmeasured. Rejection reasons are copied "
+            "from the primary recommendation record.",
+            "Unmeasured values are labeled as missing. Rejection reasons come from the "
+            "recommendation.",
+        ),
+        ("Trust and reproduction", "Verification and reproduction"),
+        (
+            "Hashes and source metadata anchor this deterministic document. No generation "
+            "timestamp or network-loaded asset is added.",
+            "Every result is tied to source files and SHA-256 hashes. The page has no generated "
+            "timestamp and loads no external assets.",
+        ),
+        (
+            "The predeclared objective, tolerance, constraints, and preference order.",
+            "Uses the main objective, tolerance, limits, and preference order.",
+        ),
+        (
+            "The predeclared latency objective and simpler-first preference.",
+            "Uses p95 latency and prefers the simpler configuration when results are "
+            "within tolerance.",
+        ),
+        ("Selected deployment argv", "Selected server command"),
+        (
+            "The command below reproduces only the selected server configuration. "
+            "It was rendered from the validated argv vector; no flags or paths were guessed.",
+            "The command below reproduces only the selected server configuration. It was "
+            "recorded from validated input; no flags or paths were inferred.",
+        ),
+        (
+            "every measured load command was validated as materially identical to its "
+            "canonical deployment command. Only the declared host or port binding may differ.",
+            "Each load test used the same settings as its recorded server command; only the "
+            "host or port could differ.",
+        ),
+        ("Configuration binding:", "Test command match:"),
+        (
+            "Validated load-to-deployment command bindings",
+            "Recorded load and server commands",
+        ),
+        ("ParetoPilot version", "Report version"),
+        ("Canonical report SHA-256", "Published report SHA-256"),
+        (
+            "The v1.1 renderer is additive. The v1.0 renderer remains available for replaying "
+            "the published v1.0 evidence.",
+            "The v1.1 report adds policy, load, and repeatability views while keeping the v1.0 "
+            "replay available.",
+        ),
+        (
+            "ParetoPilot retained the measured baseline under the predeclared "
+            "objective tolerance and preference policy.",
+            "After applying the stated tolerance and preference rules, the baseline remains "
+            "the recommendation.",
+        ),
+        (
+            "ParetoPilot retained the measured baseline because no alternative "
+            "delivered a better eligible objective result on the declared frontier.",
+            "No other configuration that passed every constraint performed better on the "
+            "selected objective, so the baseline remains the recommendation.",
+        ),
+        ("The numeric best was", "The best measured result was"),
+        (
+            "The shortlist accepted values",
+            "The tolerance range included values",
+        ),
+        ("Numeric best", "Best measured result"),
+        ("Outside shortlist", "Outside tolerance"),
+        (
+            "Objective values and shortlist membership",
+            "Measured values and tolerance results",
+        ),
+        ("Canonical measured evidence", "Published Arm64 results"),
+        ("Canonical policy", "Published latency priority"),
+        (
+            "This is the canonical predeclared decision.",
+            "This is the published latency result.",
+        ),
+        (
+            "Derived scenario only; it does not replace the canonical decision.",
+            "This is an alternative priority using the same measurements.",
+        ),
+        (
+            "ParetoPilot keeps the primary recommendation, derived policy scenarios, "
+            "measurements, and evidence limits visibly separate.",
+            "The published recommendation, alternative priorities, measurements, "
+            "and limitations are shown separately.",
+        ),
+        (
+            "Uses the submission's end-to-end p95 latency objective, 1% practical "
+            "tolerance, and declared preference order.",
+            "Uses p95 end-to-end latency, a 1% practical tolerance, and the declared "
+            "preference order.",
+        ),
+        (
+            "Explores the candidate with the lowest measured peak resident memory after "
+            "the canonical quality and resource gates.",
+            "Selects the candidate with the lowest measured peak memory after the same "
+            "quality and resource checks.",
+        ),
+        (
+            "Explores the candidate with the lowest measured p95 time to first token after "
+            "the canonical gates.",
+            "Selects the candidate with the lowest measured p95 time to first token after "
+            "the same checks.",
+        ),
+        (
+            "Explores the candidate with the highest measured prompt-processing throughput "
+            "after the canonical gates.",
+            "Selects the candidate with the highest measured prompt-processing throughput "
+            "after the same checks.",
+        ),
+        (
+            "Explores the candidate with the highest measured token-generation throughput "
+            "after the canonical gates.",
+            "Selects the candidate with the highest measured generation throughput after "
+            "the same checks.",
+        ),
+        (
+            "The highest-preference shortlisted candidate is the numeric objective winner.",
+            "The best measured result also ranked first under the stated preference order.",
+        ),
+        (
+            "Selected the numeric objective winner; candidate id breaks exact ties.",
+            "This configuration had the best result for this priority. Candidate ID is used "
+            "only if two results are exactly equal.",
+        ),
+        (
+            "Preference order selected a candidate within the objective tolerance instead "
+            "of the numeric objective winner.",
+            "The stated preference order selected a configuration within the tolerance range.",
+        ),
+        (
+            "No preference order was supplied; selected the lexicographically earliest "
+            "candidate id from the objective-tolerance shortlist.",
+            "No preference order was supplied. Candidate ID was used to resolve results "
+            "within the tolerance range.",
+        ),
+        ("Canonical submission decision.", "Published latency decision."),
+        (
+            "Derived, non-canonical scenario; it does not replace the canonical decision.",
+            "Alternative priority using the same measurements.",
+        ),
+        ("Canonical recommendation", "Published latency result"),
+        ("Derived policy scenario", "Alternative priority"),
+        ("Primary predeclared policy", "Primary priority"),
+        ("Decision track", "Decision tolerance"),
+        (
+            "Canonical latency<span>Canonical</span>",
+            "Latency first<span>Published</span>",
+        ),
+        ("<span>Derived</span>", "<span>Alternative</span>"),
+        ("<span>Canonical</span>", "<span>Published</span>"),
+        ('aria-label="Deployment policies"', 'aria-label="Deployment priorities"'),
+        (
+            "Uses the submission&#x27;s end-to-end p95 latency objective, 1% practical "
+            "tolerance, and declared preference order.",
+            "Uses p95 end-to-end latency, a 1% practical tolerance, and the declared "
+            "preference order.",
+        ),
+        (
+            "Uses the submission&#39;s end-to-end p95 latency objective, 1% practical "
+            "tolerance, and declared preference order.",
+            "Uses p95 end-to-end latency, a 1% practical tolerance, and the declared "
+            "preference order.",
+        ),
+        ("The predeclared cutoff was", "The tolerance cutoff was"),
+        ("Predeclared objective tolerance", "Tolerance defined before the run"),
+        ("canonical deployment command", "recorded deployment command"),
+        ("Canonical parallel", "Recorded parallel"),
+        ("Canonical command SHA-256", "Recorded command SHA-256"),
+        ("Source-supplied benchmark metadata", "Benchmark source details"),
+        ("Reproduction contract", "How to reproduce this result"),
+        (
+            "Rebuild the benchmark set and primary recommendation from the validated inputs.",
+            "Rebuild the benchmark data and published recommendation from the verified inputs.",
+        ),
+        (
+            "Render into a fresh path and compare the resulting artifact hash.",
+            "Generate a new report and compare its SHA-256 hash.",
+        ),
+    )
+    result = document
+    for source, target in replacements:
+        result = result.replace(source, target)
     return result
 
 
@@ -918,7 +1140,7 @@ def _add_release_hashes(document: str, proof: Mapping[str, str]) -> str:
     document = _replace_once(
         document,
         "<h3>Source anchors</h3>",
-        "<h3>Source and release anchors</h3>",
+        "<h3>Verification details</h3>",
         "trust anchor heading",
     )
     anchor = "<div><dt>Benchmark schema</dt>"
@@ -1010,7 +1232,7 @@ def _tolerance_visual(
             classes.append("is-inside")
         if candidate.candidate_id == selected_id:
             classes.append("is-selected")
-        role = "Inside cutoff" if inside else "Outside cutoff"
+        role = "Within tolerance" if inside else "Outside tolerance"
         if candidate.candidate_id == selected_id:
             role = f"{role} · selected"
         row_markup.append(
@@ -1027,14 +1249,15 @@ def _tolerance_visual(
         )
 
     direction_copy = "Lower is better" if direction == "min" else "Higher is better"
-    value_kind = "fixture" if benchmarks.synthetic else "measured"
+    value_kind = "example" if benchmarks.synthetic else "measured"
+    metric_name = _metric_label(metric).lower()
     return (
         '<figure class="tolerance-visual" aria-labelledby="tolerance-visual-title">'
         '<div class="tolerance-visual-heading">'
-        '<div><p class="visual-kicker">Decision track</p>'
+        '<div><p class="visual-kicker">Decision tolerance</p>'
         '<h3 id="tolerance-visual-title">'
-        f"{_escape(f'{tolerance:.2f}% objective tolerance')}</h3></div>"
-        f"<p><strong>{_escape(direction_copy)}.</strong> The predeclared cutoff was "
+        f"{_escape(f'{tolerance:.2f}% decision tolerance')}</h3></div>"
+        f"<p><strong>{_escape(direction_copy)}.</strong> The tolerance cutoff was "
         f"<strong>{_escape(_metric_value(metric, boundary))}</strong> for "
         f"{_escape(_metric_label(metric))}.</p></div>"
         '<div class="tolerance-direction" aria-hidden="true">'
@@ -1042,8 +1265,8 @@ def _tolerance_visual(
         f"<span>Cutoff · {_escape(_metric_value(metric, boundary))}</span>"
         f"<span>{'Slower' if direction == 'min' else 'Higher'}</span></div>"
         f'<ol class="tolerance-list">{"".join(row_markup)}</ol>'
-        f"<figcaption>Marker positions show the {value_kind} objective values on one shared scale. "
-        "Exact values and decision roles remain in the evidence table below.</figcaption>"
+        f"<figcaption>Markers show each {value_kind} {_escape(metric_name)} on the same scale. "
+        "Exact values are in the table below.</figcaption>"
         "</figure>"
     )
 
@@ -1289,7 +1512,7 @@ def _technical_change_markup(
         names = tuple(
             name for name in ("quantization", "kleidiai", "ubatch_size") if name in current_settings
         )
-        heading = "Declared reference setup"
+        heading = "Reference configuration"
     else:
         preferred = _STAGE_TECHNICAL_SETTINGS.get(stage_kind)
         compared_names = preferred if preferred is not None else tuple(_TECHNICAL_SETTING_LABELS)
@@ -1300,7 +1523,7 @@ def _technical_change_markup(
             and name in previous_settings
             and current_settings[name] != previous_settings[name]
         )
-        heading = "Declared technical change"
+        heading = "Configuration change"
 
     if names:
         phrases = []
@@ -1319,9 +1542,7 @@ def _technical_change_markup(
             phrases.append(f"<li>{phrase}</li>")
         value_markup = f"<ul>{''.join(phrases)}</ul>"
     else:
-        value_markup = (
-            "<p>Source evidence does not declare a compared setting change for this stage.</p>"
-        )
+        value_markup = "<p>No configuration change was recorded for this stage.</p>"
 
     return f'<div class="stage-technical-change"><p>{_escape(heading)}</p>{value_markup}</div>'
 
@@ -1408,6 +1629,11 @@ def _optimization_ladder_markup(
 
     evidence_grade = str(passport.get("evidence_grade"))
     synthetic_evidence = evidence_grade == "synthetic"
+    evidence_grade_label = {
+        "arm64-attributed": "Verified Arm64 measurements",
+        "measured-unattributed": "Measured; Arm64 source not fully attributed",
+        "synthetic": "Synthetic example",
+    }.get(evidence_grade, evidence_grade.replace("-", " ").title())
     stage_count = len(raw_ladder)
     stage_count_label = {
         1: "One",
@@ -1417,15 +1643,13 @@ def _optimization_ladder_markup(
         5: "Five",
         6: "Six",
     }.get(stage_count, str(stage_count))
-    stage_noun = "stage" if stage_count == 1 else "stages"
-    stage_heading = f"{stage_count_label} {stage_noun}. One honest runway."
-    path_label = "Synthetic fixture path" if synthetic_evidence else "Measured optimization path"
+    stage_noun = "configuration" if stage_count == 1 else "configurations"
+    stage_heading = f"{stage_count_label} {stage_noun}, compared step by step."
+    path_label = "Synthetic example" if synthetic_evidence else "Measured configurations"
     candidate_kind = "synthetic" if synthetic_evidence else "measured"
     effect_labels = _SYNTHETIC_EFFECT_LABELS if synthetic_evidence else _MEASURED_EFFECT_LABELS
     stages_label = (
-        "Synthetic fixture optimization stages"
-        if synthetic_evidence
-        else "Measured optimization stages"
+        "Example optimization stages" if synthetic_evidence else "Measured optimization stages"
     )
     metric = str(objective.get("metric"))
     direction = str(objective.get("direction"))
@@ -1451,8 +1675,8 @@ def _optimization_ladder_markup(
     closest_id = str(closest.get("candidate_id")) if closest is not None else None
     if closest is None:
         closest_markup = (
-            "<div><dt>Closest outside-shortlist stage</dt>"
-            "<dd>Every frontier stage is inside the current shortlist.</dd></div>"
+            "<div><dt>Closest option outside the cutoff</dt>"
+            "<dd>Every Pareto-frontier option is within the cutoff.</dd></div>"
         )
     else:
         shortfall = _mapping(
@@ -1460,7 +1684,7 @@ def _optimization_ladder_markup(
             "decision passport shortlist shortfall",
         )
         closest_markup = (
-            "<div><dt>Closest outside-shortlist stage</dt>"
+            "<div><dt>Closest option outside the cutoff</dt>"
             f"<dd>{_escape(closest.get('label'))}"
             f"<span>{_escape(_metric_value(metric, float(shortfall.get('absolute'))))} "
             "outside the current cutoff</span></dd></div>"
@@ -1481,18 +1705,18 @@ def _optimization_ladder_markup(
         stage_classes = ["optimization-stage"]
         if stage.get("selected") is True:
             stage_classes.append("is-selected")
-            decision_label = "Canonical selected stage"
+            decision_label = "Selected"
         elif candidate_id == closest_id:
             stage_classes.append("is-closest")
-            decision_label = "Closest outside shortlist"
+            decision_label = "Closest option outside cutoff"
         elif stage.get("shortlisted") is True:
-            decision_label = "Inside current shortlist"
+            decision_label = "Within cutoff"
         elif stage.get("eligible") is True and stage.get("frontier") is True:
-            decision_label = "Eligible frontier stage"
+            decision_label = "Eligible Pareto-frontier option"
         elif stage.get("eligible") is True:
-            decision_label = f"Eligible {candidate_kind} stage"
+            decision_label = "Eligible"
         else:
-            decision_label = "Outside declared constraints"
+            decision_label = "Failed a declared constraint"
 
         objective_value = stage.get("objective_value")
         objective_text = (
@@ -1521,10 +1745,8 @@ def _optimization_ladder_markup(
                 f'previous stage">{"".join(change_items)}</ul>'
             )
         else:
-            reference_kind = "fixture" if synthetic_evidence else "measurement"
             changes_markup = (
-                f'<p class="stage-reference-note">Reference {reference_kind} for every later '
-                "stage-to-stage comparison.</p>"
+                '<p class="stage-reference-note">Baseline for the following comparisons.</p>'
             )
 
         stage_markup.append(
@@ -1544,8 +1766,13 @@ def _optimization_ladder_markup(
         )
         previous_candidate = candidate
 
-    method = _mapping(passport.get("method"), "decision passport method")
-    boundary_caveat = str(method.get("current_boundary_caveat"))
+    scope_copy = (
+        "These comparisons use the example data and do not describe measured deployment "
+        "performance."
+        if synthetic_evidence
+        else "These comparisons use the supplied measurements and do not change the selected "
+        "configuration. Results apply only to this runner, model, and workload."
+    )
     return (
         '<section id="optimization-ladder" class="optimization-ladder" '
         'aria-labelledby="optimization-ladder-heading">'
@@ -1554,26 +1781,24 @@ def _optimization_ladder_markup(
         f'<div class="section-title"><p class="section-kicker">00 · {_escape(path_label)}</p>'
         f'<h2 id="optimization-ladder-heading">{_escape(stage_heading)}</h2>'
         '</div><div class="ladder-intro-copy">'
-        "<p>Each stop comes from the deterministic decision passport. Source-declared settings "
-        f"show the technical change; highlighted outcomes compare that {candidate_kind} "
-        "candidate with the previous stage. The objective is always shown."
-        '</p><p class="ladder-evidence-grade"><span>Evidence grade</span>'
-        f"<strong>{_escape(evidence_grade)}</strong></p></div></header>"
-        '<div class="ladder-runway" role="group" aria-label="Honest runway to the current cutoff">'
-        '<p class="runway-call-sign">Current objective runway</p><dl>'
-        "<div><dt>Current shortlist cutoff</dt>"
+        "<p>Each row shows one tested configuration, what changed, and the largest "
+        f"{candidate_kind} differences from the previous row."
+        '</p><p class="ladder-evidence-grade"><span>Evidence status</span>'
+        f"<strong>{_escape(evidence_grade_label)}</strong></p></div></header>"
+        '<div class="ladder-runway" role="group" aria-label="Decision tolerance details">'
+        '<p class="runway-call-sign">Decision tolerance</p><dl>'
+        "<div><dt>Tolerance cutoff</dt>"
         f"<dd>{_escape(cutoff_symbol)} {_escape(_metric_value(metric, boundary))}"
         f"<span>{_escape(_metric_label(metric))}</span></dd></div>"
-        "<div><dt>Canonical selected stage</dt>"
+        "<div><dt>Selected configuration</dt>"
         f"<dd>{_escape(selected.get('label'))}"
         f"<span>{_escape(runway_text)}</span></dd></div>"
         f"{closest_markup}</dl></div>"
         f'<ol class="optimization-stages" style="--stage-count: {stage_count}" '
         f'aria-label="{_escape(stages_label)}">'
         f"{''.join(stage_markup)}</ol>"
-        '<p class="optimization-ladder-caveat"><strong>Decision boundary:</strong> '
-        "This derived attribution view does not recalculate or replace the canonical decision. "
-        f"{_escape(boundary_caveat)}</p>"
+        '<p class="optimization-ladder-caveat"><strong>Scope:</strong> '
+        f"{_escape(scope_copy)}</p>"
         "</div></section>\n"
     )
 
@@ -2024,10 +2249,10 @@ def _capacity_flight_brief_markup(
     result: Mapping[str, Any],
     proof: Mapping[str, str],
 ) -> str:
-    """Put the locked model and serving decisions in one first-screen briefing."""
+    """Summarize the locked model and serving decisions near the top of the page."""
 
     if benchmarks.synthetic:
-        raise ValidationError("capacity flight brief requires measured evidence")
+        raise ValidationError("capacity summary requires measured evidence")
     selected_points = _mapping(
         result.get("selected_operating_points"),
         "capacity result selected_operating_points",
@@ -2042,7 +2267,7 @@ def _capacity_flight_brief_markup(
         elif point.get("role") == "resource-alternative":
             alternative = point
     if canonical is None or alternative is None:
-        raise ValidationError("capacity flight brief requires canonical and resource roles")
+        raise ValidationError("capacity summary requires canonical and resource roles")
 
     comparisons = _mapping(
         result.get("q4_vs_q8_at_selected_points_percent"),
@@ -2055,7 +2280,7 @@ def _capacity_flight_brief_markup(
     measured_requests = int(result.get("measured_request_count"))
     failed_requests = int(proof.get("failed_request_count", "-1"))
     if measured_requests <= 0 or failed_requests != 0:
-        raise ValidationError("capacity flight brief requires completed measured evidence")
+        raise ValidationError("capacity summary requires completed measured evidence")
 
     selected_id = str(recommendation.get("selected_id"))
     selected = benchmarks.by_id(selected_id)
@@ -2063,14 +2288,13 @@ def _capacity_flight_brief_markup(
     objective_metric = str(objective.get("metric"))
     if objective_metric not in selected.metrics:
         raise ValidationError(
-            "capacity flight brief objective metric is missing from selected candidate"
+            "capacity summary objective metric is missing from selected candidate"
         )
     objective_value = _metric_value(
         objective_metric,
         float(selected.metrics[objective_metric]),
     )
     objective_label = _metric_label(objective_metric)
-    selection_verb = "Retain" if selected_id == benchmarks.baseline_id else "Select"
     parallel = int(alternative.get("server_parallel"))
     concurrency = int(alternative.get("client_concurrency"))
     alternative_label = str(alternative.get("label"))
@@ -2114,43 +2338,41 @@ def _capacity_flight_brief_markup(
 
     return (
         '<section class="flight-brief" aria-labelledby="flight-brief-heading">'
-        '<header><p class="flight-brief-call-sign">Judge flight brief</p>'
-        '<h2 id="flight-brief-heading">One model call. One serving envelope.</h2>'
-        "<p>ParetoPilot turns locked Arm64 measurements into a replayable "
-        "deployment decision and CI gate.</p></header>"
-        '<div class="flight-brief-verdict" role="note" aria-label="Judge verdict"><dl>'
-        "<div><dt>Canonical latency winner</dt><dd>"
+        '<header><p class="flight-brief-call-sign">Measured results</p>'
+        '<h2 id="flight-brief-heading">Latency choice and serving capacity</h2>'
+        "<p>The first study chooses a configuration for single-client latency. "
+        "The second compares server settings for two candidates.</p>"
+        "</header>"
+        '<div class="flight-brief-verdict" role="note" aria-label="Decision summary"><dl>'
+        "<div><dt>Latency recommendation</dt><dd>"
         f"<strong>{_escape(selected.label)}</strong>"
         f"<span>{_escape(objective_value)} · {_escape(objective_label)}</span>"
         "</dd></div>"
-        "<div><dt>Capacity / resource alternative</dt><dd>"
+        "<div><dt>Capacity alternative</dt><dd>"
         f"<strong>{_escape(alternative_label)}</strong>"
-        f"<span>P{parallel} / C{concurrency} · {_escape(throughput_phrase)} · "
+        f"<span>{parallel} server slots / {concurrency} clients · "
+        f"{_escape(throughput_phrase)} · "
         f"{_escape(rss_phrase)} · "
         f"{_escape(_format_number(quality_relative, digits=1))}% quality retention"
-        "</span></dd></div></dl>"
-        "<p><strong>Different questions.</strong> "
-        f"{_escape(selection_verb)} {_escape(selected.label)} for the frozen "
-        "single-client latency objective; the capacity result does not replace "
-        "the canonical recommendation.</p></div>"
+        "</span></dd></div></dl></div>"
         '<figure class="flight-brief-instrument" '
         'aria-labelledby="flight-brief-instrument-heading">'
         "<figcaption><div><span>Q8 reference → tuned Q4</span>"
         '<strong id="flight-brief-instrument-heading">Measured tradeoff at '
-        f"P{parallel} / C{concurrency}</strong></div>"
+        f"{parallel} server slots / {concurrency} clients</strong></div>"
         f'<p><a href="{_escape(capacity_run_url)}">Capacity run '
         f"{_escape(capacity_run_id)}</a> · {_escape(capacity_release_tag)} · "
         f"{measured_requests} requests · zero recorded failures</p></figcaption>"
         f'<div class="flight-brief-metrics">{metric_markup}</div>'
         "</figure>"
-        '<nav class="flight-brief-actions" aria-label="Judge quick actions">'
+        '<nav class="flight-brief-actions" aria-label="Result links">'
         '<a class="flight-brief-primary" href="#optimization-ladder">'
-        "See exactly what changed</a>"
+        "Compare configurations</a>"
         '<a class="flight-brief-secondary" href="#capacity-envelope">'
-        "See the serving envelope</a>"
+        "View capacity results</a>"
         '<a class="flight-brief-secondary" '
-        'href="https://github.com/agrovr/ParetoPilot#launch-your-own-decision">'
-        "Open the Launch Kit</a></nav></section>\n"
+        'href="https://github.com/agrovr/ParetoPilot#run-an-example">'
+        "Run an example</a></nav></section>\n"
     )
 
 
@@ -2172,7 +2394,7 @@ def _capacity_failure_label(reasons: object) -> tuple[str, str]:
         (
             "ttft_ms_p95_above_maximum",
             "TTFT",
-            "Observed-p95 time to first token exceeded the predeclared limit.",
+            "The observed p95 time to first token exceeded the declared limit.",
         ),
         (
             "no_completed_request_e2e",
@@ -2182,7 +2404,7 @@ def _capacity_failure_label(reasons: object) -> tuple[str, str]:
         (
             "e2e_latency_ms_p95_above_maximum",
             "E2E",
-            "Observed-p95 end-to-end latency exceeded the predeclared limit.",
+            "The observed p95 end-to-end latency exceeded the declared limit.",
         ),
         (
             "server_peak_rss_above_maximum",
@@ -2389,7 +2611,7 @@ def _capacity_envelope_markup(
 
         role = str(candidate.get("role"))
         role_label = {
-            "canonical-reference": "Canonical reference",
+            "canonical-reference": "Reference configuration",
             "resource-alternative": "Resource alternative",
         }.get(role, role.replace("-", " ").title())
         accent_class = "is-q8" if role == "canonical-reference" else "is-q4"
@@ -2398,24 +2620,27 @@ def _capacity_envelope_markup(
             '<header class="capacity-board-heading">'
             f"<p>{_escape(role_label)}</p><h3>{_escape(candidate.get('label'))}</h3>"
             '<dl class="capacity-selected-summary">'
-            f"<div><dt>Selected point</dt><dd>P{selected_key[1]} / C{selected_key[2]}</dd></div>"
+            f"<div><dt>Selected point</dt>"
+            f"<dd>{selected_key[1]} slots / {selected_key[2]} clients</dd></div>"
             "<div><dt>Peak RSS</dt>"
             f"<dd>{_format_number(float(selected_summary.get('server_peak_rss_mib_max')), digits=1)} MiB</dd></div>"
             "<div><dt>Quality</dt>"
             f"<dd>{int(quality.get('passed'))}/{int(quality.get('total'))}</dd></div>"
-            f"<div><dt>Eligible</dt><dd>{int(selection.get('eligible_cell_count'))}/9</dd></div>"
+            f"<div><dt>Passing points</dt>"
+            f"<dd>{int(selection.get('eligible_cell_count'))}/9</dd></div>"
             "</dl></header>"
             '<div class="capacity-table-wrap" role="region" tabindex="0" '
             f'aria-label="Scrollable {_escape(candidate.get("label"))} serving-capacity matrix">'
             '<p class="capacity-scroll-hint">Swipe to inspect every client level →</p>'
             f'<table class="capacity-matrix"><caption>{_escape(candidate.get("label"))} '
             "serving-capacity matrix</caption>"
-            '<thead><tr><th scope="col">P × C</th>'
+            '<thead><tr><th scope="col">Slots × clients</th>'
             + "".join(
                 f'<th scope="col"><span>Clients</span>C{level}</th>' for level in levels_concurrency
             )
             + f"</tr></thead><tbody>{''.join(rows)}</tbody></table></div>"
-            '<details class="capacity-blocked-details"><summary>Why cells were blocked</summary>'
+            '<details class="capacity-blocked-details">'
+            "<summary>Why operating points were blocked</summary>"
             f"<ul>{''.join(blocked_items)}</ul></details></article>"
         )
 
@@ -2452,17 +2677,17 @@ def _capacity_envelope_markup(
     rss_phrase = _relative_measure_phrase(rss_delta, "peak RSS")
     if canonical_point == alternative_point:
         parallel, concurrency = canonical_point
-        heading = f"Selected operating point: P{parallel} / C{concurrency}."
+        heading = f"Selected capacity point: {parallel} server slots / {concurrency} clients"
         selection_summary = (
-            "Both candidates met every declared gate at "
-            f"{parallel} server slots and {concurrency} concurrent clients; "
-            "the predeclared tiebreakers selected that point."
+            "Both configurations passed every limit at "
+            f"{parallel} server slots and {concurrency} concurrent clients. "
+            "The stated tiebreakers selected this point."
         )
-        comparison_label = f"At separately selected P{parallel}/C{concurrency} points:"
+        comparison_label = f"At the selected {parallel}-slot / {concurrency}-client point:"
     else:
-        heading = "Two candidates. Two selected envelopes."
+        heading = "Selected serving points by candidate"
         selection_summary = (
-            "The predeclared gate-and-tiebreaker policy selected "
+            "The stated limits and tiebreakers selected "
             f"Q8 P{canonical_point[0]}/C{canonical_point[1]} and "
             f"Q4 P{alternative_point[0]}/C{alternative_point[1]}."
         )
@@ -2479,21 +2704,21 @@ def _capacity_envelope_markup(
         'aria-labelledby="capacity-heading">'
         '<div class="capacity-envelope-inner">'
         '<header class="capacity-heading"><div class="section-title">'
-        '<p class="section-kicker">S1 · Supplementary capacity</p>'
+        '<p class="section-kicker">Capacity study</p>'
         f'<h2 id="capacity-heading">{_escape(heading)}</h2></div>'
-        f"<div><p>{_escape(selection_summary)} This sizes each candidate; it does "
-        "not replace the canonical Q8 model decision.</p>"
+        f"<div><p>{_escape(selection_summary)} This study compares the measured server "
+        "settings for each candidate.</p>"
         f'<p class="capacity-compare"><strong>{_escape(comparison_label)}</strong> '
         f"compared with Q8, {_escape(alternative_label)} measured {throughput_phrase} "
         f"and {rss_phrase}.</p></div></header>"
         '<dl class="capacity-facts" aria-label="Capacity study at a glance">'
         f"<div><dt>Operating points</dt><dd>{len(cells)}</dd></div>"
         f"<div><dt>Measured requests</dt><dd>{measured_request_count}</dd></div>"
-        f"<div><dt>Exact-reversal passes</dt><dd>{len(raw_passes)}</dd></div>"
-        f"<div><dt>Gate-blocked cells</dt><dd>{blocked_count}</dd></div>"
+        f"<div><dt>Repeat passes</dt><dd>{len(raw_passes)}</dd></div>"
+        f"<div><dt>Blocked points</dt><dd>{blocked_count}</dd></div>"
         "</dl>"
         f'<div class="capacity-boards">{"".join(candidate_boards)}</div>'
-        '<dl class="capacity-slo-strip" aria-label="Predeclared capacity limits">'
+        '<dl class="capacity-slo-strip" aria-label="Capacity limits">'
         "<div><dt>TTFT p95</dt>"
         f"<dd>≤ {_format_number(float(load_slo.get('max_ttft_ms_p95')), digits=0)} ms</dd></div>"
         "<div><dt>E2E p95</dt>"
@@ -2504,34 +2729,35 @@ def _capacity_envelope_markup(
         f"<dd>≥ {float(load_slo.get('min_completion_rate')) * 100:.0f}%</dd></div>"
         "<div><dt>Quality</dt>"
         f"<dd>≥ {float(quality_gate.get('minimum_score')) * 100:.0f}% · "
-        f"≥ {float(quality_gate.get('minimum_retention_vs_reference')) * 100:.0f}% ref</dd></div>"
-        "<div><dt>Quality outcomes</dt><dd>Same across P levels</dd></div>"
+        f"≥ {float(quality_gate.get('minimum_retention_vs_reference')) * 100:.0f}% "
+        "of reference</dd></div>"
+        "<div><dt>Quality outcomes</dt><dd>Same result at every server-slot setting</dd></div>"
         "<div><dt>Generation stability</dt>"
         f"<dd>≤ {_format_number(float(capacity_gate.get('max_throughput_relative_spread_percent')), digits=1)}%</dd></div>"
         "<div><dt>E2E stability</dt>"
         f"<dd>≤ {_format_number(float(capacity_gate.get('max_e2e_relative_spread_percent')), digits=1)}%</dd></div></dl>"
         '<nav class="capacity-actions" aria-label="Capacity evidence links">'
-        f'<a href="{_escape(receipt_href)}">Open capacity receipt</a>'
-        f'<a href="{_escape(study_href)}">Inspect validated JSON</a>'
+        f'<a href="{_escape(receipt_href)}">Open capacity details</a>'
+        f'<a href="{_escape(study_href)}">View capacity data (JSON)</a>'
         f'<a href="{_escape(proof["archive_url"])}">Download {_escape(proof["release_tag"])} evidence</a>'
         "</nav>"
-        '<p class="capacity-proof-line"><strong>Locked proof:</strong> '
-        f"{_escape(proof['checksum_entries'])} payload checksums · study "
+        '<p class="capacity-proof-line"><strong>Verification:</strong> '
+        f"{_escape(proof['checksum_entries'])} files matched their checksums · study "
         f"<code>{_escape(proof['study_sha256'][:12])}…</code> · archive "
         f"<code>{_escape(proof['archive_sha256'][:12])}…</code></p>"
-        '<p class="capacity-boundary"><strong>Boundary:</strong> This is a bounded, closed-loop '
-        "study on one native Arm64 runner. Each displayed p95 is the median of two pass-level "
-        "p95 values; within each pass, eight measured requests make p95 the observed maximum. "
-        "The KleidiAI marker confirms the enabled model-buffer path, not universal microkernel "
-        "execution.</p>"
+        '<p class="capacity-boundary"><strong>Study limits:</strong> This is a bounded, '
+        "closed-loop study on one native Arm64 runner. Each displayed p95 is the median of two "
+        "pass-level p95 values. Each pass contains eight requests, so its p95 is the observed "
+        "maximum. The KleidiAI log marker confirms the enabled model-buffer path; it does not "
+        "prove universal microkernel use.</p>"
         "</div></section>\n"
     )
 
 
 _COCKPIT_PROFILES = (
-    ("canonical-latency", "Latency first", "Canonical"),
-    ("memory-first", "Memory first", "Derived"),
-    ("first-token-first", "First token first", "Derived"),
+    ("canonical-latency", "Latency first", "Published"),
+    ("memory-first", "Memory first", "Alternative"),
+    ("first-token-first", "First token first", "Alternative"),
 )
 _COCKPIT_METRIC_DIRECTIONS = {
     "e2e_latency_ms_p95": "min",
@@ -2625,31 +2851,34 @@ def _cockpit_delta_markup(
     *,
     improvement: bool,
     synthetic: bool,
+    baseline_selected: bool,
 ) -> str:
     selected_delta = _cockpit_delta(recommendation, improvement=improvement)
     label = (
-        ("Fixture improvement" if synthetic else "Strongest improvement")
+        ("Fixture improvement" if synthetic else "Largest improvement")
         if improvement
         else ("Fixture tradeoff" if synthetic else "Main tradeoff")
     )
     class_name = "is-improvement" if improvement else "is-tradeoff"
     if selected_delta is None:
-        baseline_copy = (
-            "No beneficial profile delta versus the fixture baseline."
-            if improvement and synthetic
-            else (
-                "No adverse profile delta versus the fixture baseline."
-                if synthetic
+        if baseline_selected:
+            value = "Example baseline" if synthetic and improvement else "None"
+            baseline_copy = (
+                "This example keeps its starting configuration."
+                if synthetic and improvement
                 else (
-                    "No beneficial profile delta versus the measured baseline."
+                    "The baseline already had the best result for this priority."
                     if improvement
-                    else "No adverse profile delta versus the measured baseline."
+                    else "There is no change from the baseline."
                 )
             )
-        )
+        else:
+            value = "No measured change"
+            baseline_copy = "This configuration matches the baseline on the compared metrics."
         return (
             f'<div class="{class_name}"><dt>{_escape(label)}</dt>'
-            f"<dd><strong>No change</strong><span>{_escape(baseline_copy)}</span></dd></div>"
+            f"<dd><strong>{_escape(value)}</strong>"
+            f"<span>{_escape(baseline_copy)}</span></dd></div>"
         )
 
     metric, percent = selected_delta
@@ -2718,38 +2947,40 @@ def _policy_cockpit_markup(
             f"<div><dt>Result</dt><dd>{_escape(_metric_value(objective_metric, float(selected.metrics[objective_metric])))}</dd></div>"
             "</dl></div>"
             '<dl class="cockpit-deltas">'
-            f"{_cockpit_delta_markup(recommendation, improvement=True, synthetic=benchmarks.synthetic)}"
-            f"{_cockpit_delta_markup(recommendation, improvement=False, synthetic=benchmarks.synthetic)}"
+            f"{_cockpit_delta_markup(recommendation, improvement=True, synthetic=benchmarks.synthetic, baseline_selected=selected_id == benchmarks.baseline_id)}"
+            f"{_cockpit_delta_markup(recommendation, improvement=False, synthetic=benchmarks.synthetic, baseline_selected=selected_id == benchmarks.baseline_id)}"
             "</dl></section>"
         )
 
     source_copy = (
-        "Three synthetic fixture decisions are already computed; the browser only switches views."
+        "Each tab shows a decision already calculated from the same synthetic example."
         if benchmarks.synthetic
-        else "Three validated Arm64 decisions are already computed; the browser only switches views."
+        else "Each tab shows a decision already calculated from the same validated "
+        "Arm64 measurements."
     )
     initial_status = (
         "Latency first selected. Primary fixture result shown."
         if benchmarks.synthetic
-        else "Latency first selected. Canonical result shown."
+        else "Latency first selected. Published result shown."
     )
     return (
         '<section class="policy-cockpit" aria-labelledby="policy-cockpit-heading">'
         '<div class="cockpit-heading"><div>'
-        '<p class="cockpit-call-sign">Precomputed policy cockpit</p>'
-        '<h2 id="policy-cockpit-heading">Try ParetoPilot</h2></div>'
-        f"<p>{_escape(source_copy)} No browser-side ranking or benchmark calculation occurs.</p>"
+        '<p class="cockpit-call-sign">Three common priorities</p>'
+        '<h2 id="policy-cockpit-heading">Compare deployment priorities</h2></div>'
+        f"<p>{_escape(source_copy)}</p>"
         "</div>"
         '<div class="cockpit-tabs" role="tablist" aria-label="Choose a deployment priority">'
         f"{''.join(tabs)}</div>"
         f'<p class="sr-only" data-cockpit-status aria-live="polite" aria-atomic="true">{_escape(initial_status)}</p>'
         f'<div class="cockpit-panels">{"".join(panels)}</div>'
-        '<div class="cockpit-proof"><span aria-label="Decision pipeline">'
-        "Verify provenance → Apply gates → Compute frontier → Select policy</span>"
-        '<a href="evidence/optimization-receipt.md">Open this decision’s evidence receipt</a>'
+        '<div class="cockpit-proof"><span aria-label="How the result is chosen">'
+        "Verified sources → Declared limits → Pareto frontier → Selected priority</span>"
+        '<a href="evidence/optimization-receipt.md">View calculation details</a>'
         "</div>"
-        '<noscript><p class="cockpit-noscript">JavaScript is unavailable, so the canonical '
-        "latency result remains shown.</p></noscript>"
+        '<noscript><p class="cockpit-noscript">JavaScript is unavailable. The latency-first '
+        "summary is shown here; all policy results appear in the detailed section below.</p>"
+        "</noscript>"
         "</section>\n"
     )
 
@@ -2775,7 +3006,7 @@ def _hero_markup(
 
     candidate_kind = "synthetic fixture" if benchmarks.synthetic else "measured"
     provenance_items = [
-        f"{'Canonical' if proof else 'Source'} run {source['run_id']}",
+        f"{'Published' if proof else 'Source'} run {source['run_id']}",
         source["cpu"],
         f"{source['cpu_count']} {source['architecture']} vCPUs",
         f"{len(benchmarks.candidates)} {candidate_kind} candidates",
@@ -2784,7 +3015,7 @@ def _hero_markup(
         provenance_items.extend(
             (
                 f"{proof['checksum_entries']} files verified",
-                f"{proof['comparison_count']} authoritative comparisons",
+                f"{proof['comparison_count']} outputs replayed and matched",
             )
         )
     provenance = (
@@ -2795,40 +3026,37 @@ def _hero_markup(
 
     headline = (
         (
-            "<h1>Explore the deployment decision that "
-            '<span class="hero-selection">survives the fixture.</span></h1>\n'
+            "<h1>Explore a deployment decision from "
+            '<span class="hero-selection">synthetic data.</span></h1>\n'
         )
         if benchmarks.synthetic
         else (
-            "<h1>Choose the Arm64 deployment that "
-            '<span class="hero-selection">survives the evidence.</span></h1>\n'
+            "<h1>Compare measured Arm64 "
+            '<span class="hero-selection">inference configurations.</span></h1>\n'
         )
     )
     evidence_copy = (
-        "This presentation view is derived from the byte-verified, locked v1.1 evidence."
+        "The published v1.1 archive was verified and reproduced."
         if proof
-        else (
-            "This is an unverified presentation preview; no release lock or byte-verified "
-            "canonical report was supplied."
-        )
+        else ("This preview is not connected to a verified release.")
     )
-    study_verb = "evaluated"
-    study_kind = "synthetic fixture" if benchmarks.synthetic else "Arm64"
-    if not benchmarks.synthetic:
-        study_verb = "measured"
+    study_kind = "example" if benchmarks.synthetic else "measured Arm64"
     lede = (
-        f'<p class="report-lede">ParetoPilot {study_verb} {len(benchmarks.candidates)} '
-        f"{study_kind} configurations and retained {_escape(selected.label)} after quality, "
-        f"Pareto-frontier, and {_escape(_metric_label(metric))} checks. "
+        f'<p class="report-lede">ParetoPilot compared {len(benchmarks.candidates)} '
+        f"{study_kind} configurations and selected {_escape(selected.label)} using the stated "
+        "quality requirements, performance tradeoffs, and "
+        f"{_escape(_metric_label(metric))} policy. "
         f"{_escape(evidence_copy)}</p>\n"
     )
     hero_summary = capacity_brief or lede
     decision_rail = policy_cockpit or (
         '<dl class="decision-rail" aria-label="Decision at a glance">'
-        f"<div><dt>Selected objective</dt><dd>{_escape(_metric_value(metric, selected_value))}</dd></div>"
-        f"<div><dt>Inside cutoff</dt><dd>{len(shortlist)} of {len(benchmarks.candidates)}</dd></div>"
-        f"<div><dt>Predeclared window</dt><dd>{tolerance:.2f}%</dd></div>"
-        f"<div><dt>Evidence class</dt><dd>{'Locked canonical' if proof else 'Unverified preview'}</dd></div>"
+        f"<div><dt>Selected {_escape(_metric_label(metric).lower())}</dt>"
+        f"<dd>{_escape(_metric_value(metric, selected_value))}</dd></div>"
+        f"<div><dt>Within tolerance</dt><dd>{len(shortlist)} of "
+        f"{len(benchmarks.candidates)}</dd></div>"
+        f"<div><dt>Decision tolerance</dt><dd>{tolerance:.2f}%</dd></div>"
+        f"<div><dt>Verification</dt><dd>{'Published and reproduced' if proof else 'Preview only'}</dd></div>"
         "</dl>\n"
     )
     actions = (
@@ -2843,7 +3071,7 @@ def _hero_markup(
         else [
             (
                 "#optimization-ladder",
-                "Trace the optimization ladder",
+                "Compare configurations",
                 "secondary",
             ),
             (
@@ -2863,12 +3091,12 @@ def _hero_markup(
         actions[0:0] = (
             (
                 canonical_report_href,
-                "Open exact canonical report",
+                "View archived v1.1 report",
                 report_kind,
             ),
             (
                 proof["release_url"],
-                f"Open {proof['release_tag']} evidence release",
+                f"View {proof['release_tag']} release",
                 "secondary",
             ),
         )
@@ -2881,13 +3109,13 @@ def _hero_markup(
         + "</nav>\n"
     )
     section_links = [
-        ("optimization-ladder", "00", "Optimize"),
+        ("optimization-ladder", "00", "Configurations"),
         ("why-heading", "01", "Decision"),
         ("tradeoffs-heading", "02", "Tradeoffs"),
         ("policies-heading", "03", "Policies"),
         ("load-heading", "04", "Load"),
         ("repeat-heading", "05", "Repeat"),
-        ("scatter-heading", "06", "Two-metric"),
+        ("scatter-heading", "06", "Latency chart"),
         ("evidence-heading", "07", "Evidence"),
         ("trust-heading", "08", "Reproduce"),
     ]
@@ -2895,7 +3123,7 @@ def _hero_markup(
         section_links.insert(1, ("capacity-envelope", "S1", "Capacity"))
     flight_log = (
         '<nav class="flight-log" aria-label="Report sections">'
-        '<span class="flight-log-label">Flight log</span><ol>'
+        '<span class="flight-log-label">On this page</span><ol>'
         + "".join(
             f'<li><a href="#{heading_id}"><strong>{number}</strong>{label}</a></li>'
             for heading_id, number, label in section_links
@@ -2912,7 +3140,7 @@ def _hero_markup(
 
 _SHOWCASE_CSS = r"""
 
-/* Judge-facing presentation layer. The canonical report remains byte-frozen. */
+/* Published-results presentation. The canonical report remains byte-frozen. */
 html { overflow-x: clip; }
 .showcase {
   --flight-ink: #13233d;
@@ -5083,8 +5311,10 @@ html[data-theme="dark"] .showcase {
   .showcase .provenance-strip li + li::before { content: none; }
   .showcase .brand-line { margin: 1.6rem 0 2.4rem; }
   .showcase h1 {
-    font-size: clamp(3rem, 15vw, 4.5rem);
-    overflow-wrap: anywhere;
+    font-size: clamp(2.2rem, 11vw, 3.5rem);
+    overflow-wrap: normal;
+    word-break: normal;
+    hyphens: none;
   }
   .showcase .report-header,
   .showcase .hero-layout,
@@ -5344,8 +5574,8 @@ _SHOWCASE_THEME_BOOTSTRAP = r"""
 """
 
 _SHOWCASE_NOSCRIPT_HEAD = r"""
-  <noscript>
-    <style>
+<noscript>
+  <style>
       .showcase .theme-toggle { display: none; }
       .showcase .cockpit-tabs { display: none; }
       .showcase .profile-tabs { display: none; }
@@ -5356,7 +5586,7 @@ _SHOWCASE_NOSCRIPT_HEAD = r"""
 
 _SHOWCASE_SCRIPT = r"""
   <noscript>
-    <p class="sr-only">JavaScript is unavailable, so every precomputed policy panel is shown.</p>
+    <p class="sr-only">JavaScript is unavailable. All detailed policy panels are shown below.</p>
   </noscript>
   <script>
   (() => {
@@ -5572,7 +5802,7 @@ def render_showcase_v11(
     legend, style_by_id = _series_key(
         benchmarks,
         recommendation,
-        label="Candidate encoding used in every chart",
+        label="Chart legend",
     )
     tolerance = _tolerance_visual(benchmarks, recommendation)
 
@@ -5596,7 +5826,7 @@ def render_showcase_v11(
     if not proof:
         document, source_badge_count = re.subn(
             r'(<span class="source-type">).*?(</span>)',
-            r"\1Unverified presentation preview · v1.1 view\2",
+            r"\1Unverified preview · v1.1 report layout\2",
             document,
             count=1,
         )
@@ -5605,7 +5835,7 @@ def render_showcase_v11(
     if capacity_envelope:
         document, capacity_badge_count = re.subn(
             r'(<span class="source-type">).*?(</span>)',
-            r"\1Measured Arm64 evidence · Canonical v1.1 · Capacity v1.4\2",
+            r"\1Measured Arm64 results · Report v1.1 · Capacity v1.4\2",
             document,
             count=1,
         )
@@ -5635,7 +5865,7 @@ def render_showcase_v11(
     page_title = (
         "ParetoPilot | synthetic decision preview"
         if benchmarks.synthetic
-        else "ParetoPilot | Arm64 measured flight log"
+        else "ParetoPilot | Arm64 inference results"
     )
     document_title = f"<title>{page_title}</title>"
     document = _replace_once(
@@ -5645,7 +5875,7 @@ def render_showcase_v11(
         "document title",
     )
     meta_description = (
-        "Byte-verified Arm64 deployment decision from ParetoPilot canonical run data."
+        "Reproducible Arm64 inference results from ParetoPilot's published benchmark archives."
         if proof
         else "Unverified preview of a ParetoPilot Arm64 deployment decision."
     )
@@ -5748,15 +5978,15 @@ def render_showcase_v11(
         document = _wrap_table_region(
             document,
             aria_label="Scrollable load command bindings",
-            summary="Inspect validated command bindings",
+            summary="View exact commands used",
         )
         document = _wrap_table_region(
             document,
             aria_label="Scrollable load sweep evidence",
             summary=(
-                "Inspect every synthetic fixture load row"
+                "View all synthetic load results"
                 if benchmarks.synthetic
-                else "Inspect every measured load row"
+                else "View all measured load results"
             ),
         )
     if stability_summary is not None:
@@ -5788,6 +6018,7 @@ def render_showcase_v11(
         "candidate evidence table",
     )
     document = _add_release_hashes(document, proof)
+    document = _plain_language_report_copy(document)
     scatter_kind = "synthetic fixture" if benchmarks.synthetic else "measured"
     document = document.replace(
         (

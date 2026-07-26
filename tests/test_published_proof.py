@@ -239,7 +239,7 @@ class PublishedProofTests(unittest.TestCase):
                 self.assertEqual(extracted["canonical"], b"canonical\n")
                 self.assertEqual(extracted["capacity"], b"capacity\n")
                 markdown = (output / "published-proof.md").read_text(encoding="utf-8")
-                self.assertIn("All nine authoritative outputs matched byte for byte", markdown)
+                self.assertIn("All nine archived outputs matched byte for byte", markdown)
                 self.assertIn("`30055662526`", markdown)
                 self.assertIn("`30144901854`", markdown)
                 self.assertIn(
@@ -783,7 +783,7 @@ class PublishedProofTests(unittest.TestCase):
                 stdout.getvalue().splitlines(),
                 [
                     "PASS: test proof",
-                    f"Proof: {output.resolve() / 'published-proof.md'}",
+                    f"Report: {output.resolve() / 'published-proof.md'}",
                 ],
             )
             verify.assert_called_once_with(
@@ -810,7 +810,7 @@ class PublishedProofTests(unittest.TestCase):
         )
         self.assertIn("must not already exist", normalized_help)
         self.assertIn(
-            "new directory for the human-readable Markdown and machine-readable JSON proofs",
+            "new directory for the Markdown and JSON verification results",
             normalized_help,
         )
 

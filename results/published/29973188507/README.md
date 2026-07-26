@@ -1,18 +1,16 @@
-# Canonical Arm64 study 29973188507
+# Historical Arm64 study: run 29973188507
 
 [GitHub Actions run `29973188507`](https://github.com/agrovr/ParetoPilot/actions/runs/29973188507)
-completed on July 23, 2026 UTC. The workflow classified the study as canonical with
-`measurement_valid: true` and `valid_evidence: true`.
+completed successfully on July 23, 2026 UTC and became the published v1.0 result.
 
 ## Decision
 
 ParetoPilot retained **Q8 generic reference** for the declared p95 end-to-end latency objective.
 Q4 generic was the numeric best at 2330.914 ms, but its 0.214% lead over Q8 at 2335.917 ms was
-inside the predeclared 1% objective tolerance. The deterministic simpler-first preference
-therefore kept the reference instead of treating the below-tolerance difference as a deployment
-win.
+within the 1% tolerance defined before the run. The documented simpler-first preference therefore
+kept the reference instead of treating that small difference as a meaningful improvement.
 
-All four candidates passed the quality and resource gates, and all four remained on the Pareto
+All four candidates passed the quality and resource checks, and all four remained on the Pareto
 frontier. The decision shortlist contained Q8 generic, Q4 generic, and Q4 + KleidiAI tuned.
 
 ## Results
@@ -27,8 +25,8 @@ frontier. The decision shortlist contained Q8 generic, Q4 generic, and Q4 + Klei
 No candidate won every metric. Compared with Q8, the tuned Q4 + KleidiAI candidate used a 43.7%
 smaller model and 42.8% less peak RSS, improved prompt throughput by 29.0%, and reduced p95 TTFT
 by 14.6%. Its p95 end-to-end latency was 0.08% higher and generation throughput was 5.2% lower.
-Those visible tradeoffs are the reason ParetoPilot uses a declared decision policy instead of one
-headline speedup.
+ParetoPilot uses a declared decision policy because the best configuration depends on which
+tradeoff matters for the deployment.
 
 ## Experiment identity
 
@@ -52,12 +50,11 @@ The original 234,873-byte Actions artifact is preserved unchanged in the
 fb4f4c86a729a5eb42e23dbd3c6346fd4ab31ce14423dbb8c7672b11b6a6fd00
 ```
 
-A separate verification pass checked all 124 `SHA256SUMS` entries and exact file coverage. Generic
-server passes contained zero KleidiAI dispatch markers; each KleidiAI server pass contained exactly one.
-Using the tagged `v1.0.0` source, rebuilding the benchmark set and regenerating the recommendation
-and archived report produced exact byte-for-byte matches. The machine-readable archive lock is in
-[`evidence.json`](evidence.json). The live report may receive presentation-only improvements while
-continuing to rebuild from the same verified benchmark set and exact recommendation.
+A separate verification pass checked all 124 `SHA256SUMS` entries. Generic server passes contained
+zero KleidiAI dispatch markers; each KleidiAI server pass contained exactly one. Rebuilding the
+benchmark set, recommendation, and report with the tagged `v1.0.0` source produced byte-for-byte
+matches. The machine-readable [`evidence.json`](evidence.json) records the archive and verification
+details.
 
 ## Limits
 

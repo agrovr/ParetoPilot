@@ -1204,8 +1204,8 @@ def _evidence_banner(benchmarks: BenchmarkSet) -> str:
     if classification == "exploratory":
         return (
             '<aside class="evidence-banner" role="alert">'
-            "<strong>Exploratory evidence — not canonical submission evidence.</strong> "
-            "Rerun the study canonically before citing its measurements."
+            "<strong>Exploratory result — not published benchmark evidence.</strong> "
+            "Repeat the study using the published workflow before citing its measurements."
             "</aside>"
         )
     return ""

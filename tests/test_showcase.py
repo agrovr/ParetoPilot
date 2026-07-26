@@ -1,4 +1,4 @@
-"""Tests for the judge-facing presentation layer."""
+"""Tests for the published-results presentation layer."""
 
 from __future__ import annotations
 
@@ -19,6 +19,7 @@ from paretopilot.showcase import (
     _metric_label,
     _metric_value,
     _optimization_ladder_markup,
+    _plain_language_report_copy,
     _relative_measure_phrase,
     render_showcase_v11,
 )
@@ -466,41 +467,47 @@ class ShowcaseV11Tests(unittest.TestCase):
         second = rendered_showcase()
 
         self.assertEqual(first.encode(), second.encode())
-        self.assertIn("<title>ParetoPilot | Arm64 measured flight log</title>", first)
+        self.assertIn("<title>ParetoPilot | Arm64 inference results</title>", first)
         self.assertIn('<link rel="icon" href="data:image/svg+xml,', first)
         self.assertNotIn('<link rel="icon" href="data:,">', first)
         self.assertIn(
-            '<meta property="og:title" content="ParetoPilot | Arm64 measured flight log">',
+            '<meta property="og:title" content="ParetoPilot | Arm64 inference results">',
             first,
         )
         self.assertIn(
             '<meta name="twitter:description" '
-            'content="Byte-verified Arm64 deployment decision from ParetoPilot '
-            'canonical run data.">',
+            'content="Reproducible Arm64 inference results from ParetoPilot&#x27;s '
+            'published benchmark archives.">',
             first,
         )
         self.assertIn('class="showcase is-verified"', first)
         self.assertIn(
-            "Choose the Arm64 deployment that "
-            '<span class="hero-selection">survives the evidence.</span>',
+            'Compare measured Arm64 <span class="hero-selection">inference configurations.</span>',
             first,
         )
-        self.assertIn("retained Q8 generic reference after quality", first)
-        self.assertIn("1.00% objective tolerance", first)
+        self.assertIn(
+            "selected Q8 generic reference using the stated quality requirements",
+            first,
+        )
+        self.assertIn("The published v1.1 archive was verified and reproduced.", first)
+        self.assertIn("1.00% decision tolerance", first)
         self.assertIn("150 files verified", first)
-        self.assertIn("9 authoritative comparisons", first)
+        self.assertIn("9 outputs replayed and matched", first)
         self.assertIn("arm64 vCPUs", first)
-        self.assertIn("Open exact canonical report", first)
-        self.assertIn("Open v1.1.0 evidence release", first)
-        self.assertNotIn("Download v1.1.0 evidence", first)
+        self.assertIn("View archived v1.1 report", first)
+        self.assertIn("View v1.1.0 release", first)
         self.assertIn('href="evidence/report-v1.1.html"', first)
-        self.assertIn("Canonical recommendation", first)
-        self.assertIn("Derived policy scenario", first)
-        self.assertIn("Trust and reproduction", first)
+        self.assertIn("Published latency result", first)
+        self.assertIn("Alternative priority", first)
+        self.assertNotIn("submission decision", first.lower())
+        self.assertNotIn("uses the submission", first.lower())
+        self.assertIn("Verification and reproduction", first)
         self.assertIn("Benchmark SHA-256", first)
-        self.assertIn("Canonical report SHA-256", first)
+        self.assertIn("Published report SHA-256", first)
         self.assertIn("Evidence archive SHA-256", first)
         self.assertIn("Checksum manifest SHA-256", first)
+        self.assertIn("Published run", first)
+        self.assertIn("<dt>Report version</dt>", first)
 
     def test_policy_cockpit_uses_only_three_precomputed_profiles_above_the_fold(
         self,
@@ -516,9 +523,9 @@ class ShowcaseV11Tests(unittest.TestCase):
         self.assertLess(cockpit_end, hero_end)
         self.assertEqual(cockpit.count('data-cockpit-target="'), 3)
         self.assertEqual(cockpit.count('data-cockpit-panel="'), 3)
-        self.assertIn("<strong>Latency first</strong><span>Canonical</span>", cockpit)
-        self.assertIn("<strong>Memory first</strong><span>Derived</span>", cockpit)
-        self.assertIn("<strong>First token first</strong><span>Derived</span>", cockpit)
+        self.assertIn("<strong>Latency first</strong><span>Published</span>", cockpit)
+        self.assertIn("<strong>Memory first</strong><span>Alternative</span>", cockpit)
+        self.assertIn("<strong>First token first</strong><span>Alternative</span>", cockpit)
         self.assertIn("<h3>Q8 generic reference</h3>", cockpit)
         self.assertIn("<h3>Q4 generic</h3>", cockpit)
         self.assertIn("<dt>Objective</dt><dd>p95 end-to-end latency</dd>", cockpit)
@@ -533,7 +540,7 @@ class ShowcaseV11Tests(unittest.TestCase):
         )
         self.assertNotIn('class="decision-rail"', report[hero_start:hero_end])
         self.assertIn(
-            '<div class="profile-tabs" role="tablist" aria-label="Deployment policies">',
+            '<div class="profile-tabs" role="tablist" aria-label="Deployment priorities">',
             report,
         )
 
@@ -541,12 +548,12 @@ class ShowcaseV11Tests(unittest.TestCase):
         report = rendered_cockpit_showcase()
 
         self.assertIn(
-            '<a href="evidence/optimization-receipt.md">Open this decision’s evidence receipt</a>',
+            '<a href="evidence/optimization-receipt.md">View calculation details</a>',
             report,
         )
         self.assertEqual(report.count('href="evidence/optimization-receipt.md"'), 1)
         self.assertIn(
-            "Verify provenance → Apply gates → Compute frontier → Select policy",
+            "Verified sources → Declared limits → Pareto frontier → Selected priority",
             report,
         )
 
@@ -573,7 +580,11 @@ class ShowcaseV11Tests(unittest.TestCase):
         self.assertEqual(cockpit.count('data-cockpit-panel="1" tabindex="0" hidden'), 1)
         self.assertEqual(cockpit.count('data-cockpit-panel="2" tabindex="0" hidden'), 1)
         self.assertIn('aria-live="polite" aria-atomic="true"', cockpit)
-        self.assertIn("canonical latency result remains shown", cockpit)
+        self.assertIn(
+            "The latency-first summary is shown here; all policy results appear in the "
+            "detailed section below.",
+            cockpit,
+        )
         for key in ("ArrowLeft", "ArrowRight", "Home", "End"):
             self.assertIn(f'"{key}"', report)
         self.assertIn(
@@ -611,13 +622,164 @@ class ShowcaseV11Tests(unittest.TestCase):
         cockpit_end = report.index("</section>\n", cockpit_start) + len("</section>\n")
         cockpit = report[cockpit_start:cockpit_end]
 
-        self.assertIn("Three synthetic fixture decisions are already computed", cockpit)
+        self.assertIn(
+            "Each tab shows a decision already calculated from the same synthetic example.",
+            cockpit,
+        )
         self.assertIn("<span>Primary fixture</span>", cockpit)
         self.assertEqual(cockpit.count("<span>Derived fixture</span>"), 2)
         self.assertIn("<dt>Fixture improvement</dt>", cockpit)
         self.assertIn("<dt>Fixture tradeoff</dt>", cockpit)
-        self.assertIn("fixture baseline", cockpit)
+        self.assertIn("synthetic example", cockpit)
+        self.assertIn("This example keeps its starting configuration.", cockpit)
         self.assertNotIn("measured", cockpit.lower())
+
+    def test_policy_cockpit_explains_a_retained_baseline_plainly(self) -> None:
+        report = rendered_cockpit_showcase()
+        cockpit_start = report.index('<section class="policy-cockpit"')
+        cockpit_end = report.index("</section>\n", cockpit_start) + len("</section>\n")
+        cockpit = report[cockpit_start:cockpit_end]
+        canonical_start = cockpit.index('id="cockpit-panel-0"')
+        canonical_end = cockpit.index("</section>", canonical_start)
+        canonical_panel = cockpit[canonical_start:canonical_end]
+
+        self.assertEqual(cockpit.count("<strong>None</strong>"), 2)
+        self.assertIn(
+            "The baseline already had the best result for this priority.",
+            cockpit,
+        )
+        self.assertIn("There is no change from the baseline.", cockpit)
+        self.assertIn(
+            "<dt>Largest improvement</dt><dd><strong>None</strong>"
+            "<span>The baseline already had the best result for this priority.</span>",
+            canonical_panel,
+        )
+        self.assertIn(
+            "<dt>Main tradeoff</dt><dd><strong>None</strong>"
+            "<span>There is no change from the baseline.</span>",
+            canonical_panel,
+        )
+        self.assertNotIn("does not improve", cockpit)
+        self.assertNotIn("does not worsen", cockpit)
+
+    def test_showcase_rephrases_frozen_report_copy_without_changing_it(self) -> None:
+        source = (
+            "ParetoPilot retained the measured baseline under the predeclared "
+            "objective tolerance and preference policy. "
+            "ParetoPilot retained the measured baseline because no alternative "
+            "delivered a better eligible objective result on the declared frontier. "
+            "Canonical measured evidence. Canonical policy. "
+            "This is the canonical predeclared decision. "
+            "Derived scenario only; it does not replace the canonical decision. "
+            "ParetoPilot keeps the primary recommendation, derived policy scenarios, "
+            "measurements, and evidence limits visibly separate. "
+            "Preference order selected a candidate within the objective tolerance instead "
+            "of the numeric objective winner. "
+            "No preference order was supplied; selected the lexicographically earliest "
+            "candidate id from the objective-tolerance shortlist. "
+            "Canonical latency<span>Canonical</span> "
+            "Published latency priority<span>Canonical</span> "
+            "Memory first<span>Derived</span> "
+            "Uses the submission&#x27;s end-to-end p95 latency objective, 1% practical "
+            "tolerance, and declared preference order. "
+            "The predeclared objective, tolerance, constraints, and preference order. "
+            "The predeclared latency objective and simpler-first preference. "
+            "Configuration binding: every measured load command was validated as materially "
+            "identical to its canonical deployment command. Only the declared host or port "
+            "binding may differ. Validated load-to-deployment command bindings. "
+            "Source-supplied benchmark metadata. Reproduction contract. "
+            "Rebuild the benchmark set and primary recommendation from the validated inputs. "
+            "Render into a fresh path and compare the resulting artifact hash. "
+            "“Better” and “Tradeoff” use only declared frontier directions. "
+            "The predeclared cutoff was 100 ms. Predeclared objective tolerance. "
+            "canonical deployment command. Canonical parallel. Canonical command SHA-256."
+        )
+
+        rendered = _plain_language_report_copy(source)
+
+        self.assertIn(
+            "After applying the stated tolerance and preference rules, the baseline "
+            "remains the recommendation.",
+            rendered,
+        )
+        self.assertIn(
+            "No other configuration that passed every constraint performed better on "
+            "the selected objective, so the baseline remains the recommendation.",
+            rendered,
+        )
+        self.assertIn("Published Arm64 results", rendered)
+        self.assertIn("Published latency priority", rendered)
+        self.assertIn("This is the published latency result.", rendered)
+        self.assertIn(
+            "This is an alternative priority using the same measurements.",
+            rendered,
+        )
+        self.assertIn(
+            "The published recommendation, alternative priorities, measurements, "
+            "and limitations are shown separately.",
+            rendered,
+        )
+        self.assertIn(
+            "The stated preference order selected a configuration within the tolerance range.",
+            rendered,
+        )
+        self.assertIn(
+            "No preference order was supplied. Candidate ID was used to resolve results "
+            "within the tolerance range.",
+            rendered,
+        )
+        self.assertIn("Latency first<span>Published</span>", rendered)
+        self.assertIn("Published latency priority<span>Published</span>", rendered)
+        self.assertIn("Memory first<span>Alternative</span>", rendered)
+        self.assertIn(
+            "Uses p95 end-to-end latency, a 1% practical tolerance, and the declared "
+            "preference order.",
+            rendered,
+        )
+        self.assertIn("The tolerance cutoff was 100 ms", rendered)
+        self.assertIn("Tolerance defined before the run", rendered)
+        self.assertIn("recorded deployment command", rendered)
+        self.assertIn("Recorded parallel", rendered)
+        self.assertIn("Recorded command SHA-256", rendered)
+        self.assertIn(
+            "Uses the main objective, tolerance, limits, and preference order.",
+            rendered,
+        )
+        self.assertIn(
+            "Uses p95 latency and prefers the simpler configuration when results are "
+            "within tolerance.",
+            rendered,
+        )
+        self.assertIn(
+            "Each load test used the same settings as its recorded server command; only "
+            "the host or port could differ.",
+            rendered,
+        )
+        self.assertIn("Test command match:", rendered)
+        self.assertIn("Recorded load and server commands", rendered)
+        self.assertIn("Benchmark source details", rendered)
+        self.assertIn("How to reproduce this result", rendered)
+        self.assertIn(
+            "Rebuild the benchmark data and published recommendation from the verified inputs.",
+            rendered,
+        )
+        self.assertIn(
+            "Generate a new report and compare its SHA-256 hash.",
+            rendered,
+        )
+        self.assertIn(
+            "Labels follow the stated better-or-worse direction for each metric.",
+            rendered,
+        )
+        self.assertNotIn("<span>Canonical</span>", rendered)
+        self.assertNotIn("materially identical", rendered)
+        self.assertNotIn("predeclared", rendered)
+        self.assertNotIn("eligible objective result", rendered)
+        self.assertNotIn("Canonical measured evidence", rendered)
+        self.assertNotIn("Derived scenario only", rendered)
+        self.assertNotIn("derived policy scenarios", rendered)
+        self.assertNotIn("submission", rendered.lower())
+        self.assertNotIn("predeclared", rendered.lower())
 
     def test_policy_cockpit_falls_back_when_a_required_profile_is_missing(self) -> None:
         complete = cockpit_profiles(canonical_benchmarks())
@@ -631,8 +793,10 @@ class ShowcaseV11Tests(unittest.TestCase):
 
         self.assertNotIn('class="policy-cockpit"', report)
         self.assertIn('class="decision-rail"', report[hero_start:hero_end])
-        self.assertIn("Selected objective", report[hero_start:hero_end])
-        self.assertIn("Deployment policy selector", report)
+        self.assertIn("Selected p95 end-to-end latency", report[hero_start:hero_end])
+        self.assertIn("Within tolerance", report[hero_start:hero_end])
+        self.assertIn("Decision tolerance", report[hero_start:hero_end])
+        self.assertIn("All deployment priorities", report)
 
     def test_optimization_ladder_is_passport_derived_accessible_and_first(self) -> None:
         benchmarks = attributed_benchmarks()
@@ -652,7 +816,10 @@ class ShowcaseV11Tests(unittest.TestCase):
         self.assertLess(main_start, ladder_start)
         self.assertLess(ladder_start, canonical_start)
         self.assertIn(
-            '<h2 id="optimization-ladder-heading">Four stages. One honest runway.</h2>',
+            (
+                '<h2 id="optimization-ladder-heading">'
+                "Four configurations, compared step by step.</h2>"
+            ),
             report,
         )
         self.assertIn(
@@ -661,20 +828,26 @@ class ShowcaseV11Tests(unittest.TestCase):
             report,
         )
         self.assertIn(
-            'role="group" aria-label="Honest runway to the current cutoff"',
+            'role="group" aria-label="Decision tolerance details"',
             report,
         )
-        self.assertIn("Canonical selected stage", report)
-        self.assertIn("Closest outside shortlist", report)
+        self.assertIn("Decision tolerance", report)
+        self.assertIn("Tolerance cutoff", report)
+        self.assertIn("Selected configuration", report)
+        self.assertIn("Closest option outside the cutoff", report)
         self.assertIn("inside the current cutoff", report)
         self.assertIn("outside the current cutoff", report)
         self.assertIn(
-            "This derived attribution view does not recalculate or replace the canonical decision.",
+            "These comparisons use the supplied measurements and do not change the "
+            "selected configuration.",
             report,
         )
-        self.assertIn("current measured context", report)
+        self.assertIn("Results apply only to this runner, model, and workload.", report)
         self.assertIn(
-            "<span>Evidence grade</span><strong>measured-unattributed</strong>",
+            (
+                "<span>Evidence status</span>"
+                "<strong>Measured; Arm64 source not fully attributed</strong>"
+            ),
             report,
         )
 
@@ -687,7 +860,7 @@ class ShowcaseV11Tests(unittest.TestCase):
             self.assertIn(f"<h3>{stage['label']}</h3>", report)
             self.assertIn(f'<code class="stage-id">{stage["candidate_id"]}</code>', report)
         self.assertEqual(report.count('class="stage-technical-change"'), 4)
-        self.assertIn("Declared reference setup", report)
+        self.assertIn("Reference configuration", report)
         self.assertIn(
             "<span>Quantization</span> <code>Q8_0</code>",
             report,
@@ -723,12 +896,11 @@ class ShowcaseV11Tests(unittest.TestCase):
         self.assertIn(expected_change, report)
 
         self.assertIn(
-            '<a class="action-secondary" href="#optimization-ladder">'
-            "Trace the optimization ladder</a>",
+            '<a class="action-secondary" href="#optimization-ladder">Compare configurations</a>',
             report,
         )
         self.assertIn(
-            '<a href="#optimization-ladder"><strong>00</strong>Optimize</a>',
+            '<a href="#optimization-ladder"><strong>00</strong>Configurations</a>',
             report,
         )
         scripts = "\n".join(re.findall(r"<script[^>]*>(.*?)</script>", report, re.DOTALL))
@@ -750,12 +922,17 @@ class ShowcaseV11Tests(unittest.TestCase):
         self.assertLess(ladder_start, capacity_start)
         self.assertLess(capacity_start, canonical_start)
         self.assertIn(
-            '<p class="section-kicker">S1 · Supplementary capacity</p>',
+            '<p class="section-kicker">Capacity study</p>',
             capacity,
         )
         self.assertIn(
-            "Measured Arm64 evidence · Canonical v1.1 · Capacity v1.4",
+            "Measured Arm64 results · Report v1.1 · Capacity v1.4",
             report,
+        )
+        self.assertIn("Reference configuration", capacity)
+        self.assertIn(
+            '<a href="evidence/capacity-receipt.md">Open capacity details</a>',
+            capacity,
         )
         selections = study["selections"]
         assert isinstance(selections, list)
@@ -771,8 +948,8 @@ class ShowcaseV11Tests(unittest.TestCase):
         parallel, concurrency = selected_coordinates.pop()
         self.assertIn(
             (
-                f'<h2 id="capacity-heading">Selected operating point: '
-                f"P{parallel} / C{concurrency}.</h2>"
+                f'<h2 id="capacity-heading">Selected capacity point: '
+                f"{parallel} server slots / {concurrency} clients</h2>"
             ),
             capacity,
         )
@@ -811,9 +988,9 @@ class ShowcaseV11Tests(unittest.TestCase):
         )
         self.assertEqual(capacity.count('<th scope="row">'), 6)
         self.assertIn("Measured requests</dt><dd>288</dd>", capacity)
-        self.assertIn("Exact-reversal passes</dt><dd>2</dd>", capacity)
+        self.assertIn("Repeat passes</dt><dd>2</dd>", capacity)
         self.assertIn(
-            f"Gate-blocked cells</dt><dd>{expected_blocked}</dd>",
+            f"Blocked points</dt><dd>{expected_blocked}</dd>",
             capacity,
         )
         for gate_label in (
@@ -828,9 +1005,13 @@ class ShowcaseV11Tests(unittest.TestCase):
         ):
             with self.subTest(gate_label=gate_label):
                 self.assertIn(f"<dt>{gate_label}</dt>", capacity)
-        self.assertIn("Same across P levels", capacity)
-        self.assertIn("This sizes each candidate", capacity)
-        self.assertIn("does not replace the canonical Q8 model decision", capacity)
+        self.assertIn("Same result at every server-slot setting", capacity)
+        self.assertIn('aria-label="Capacity limits"', capacity)
+        self.assertIn("View capacity data (JSON)", capacity)
+        self.assertIn(
+            "This study compares the measured server settings for each candidate.",
+            capacity,
+        )
         self.assertIn(
             "Each displayed p95 is the median of two pass-level p95 values",
             capacity,
@@ -856,12 +1037,12 @@ class ShowcaseV11Tests(unittest.TestCase):
             (
                 ["forward:ttft_ms_p95_above_maximum"],
                 "TTFT",
-                "Observed-p95 time to first token exceeded the predeclared limit.",
+                "The observed p95 time to first token exceeded the declared limit.",
             ),
             (
                 ["reverse:e2e_latency_ms_p95_above_maximum"],
                 "E2E",
-                "Observed-p95 end-to-end latency exceeded the predeclared limit.",
+                "The observed p95 end-to-end latency exceeded the declared limit.",
             ),
             (
                 ["server_peak_rss_above_maximum"],
@@ -951,7 +1132,7 @@ class ShowcaseV11Tests(unittest.TestCase):
         capacity_start = report.index('<section id="capacity-envelope"', actions_start)
         brief = report[brief_start:brief_end]
         verdict_start = brief.index(
-            '<div class="flight-brief-verdict" role="note" aria-label="Judge verdict">'
+            '<div class="flight-brief-verdict" role="note" aria-label="Decision summary">'
         )
         instrument_start = brief.index('<figure class="flight-brief-instrument"')
 
@@ -959,18 +1140,23 @@ class ShowcaseV11Tests(unittest.TestCase):
         self.assertLess(brief_start, brief_end)
         self.assertLess(brief_end, actions_start)
         self.assertLess(actions_start, capacity_start)
-        self.assertIn("Judge flight brief", brief)
-        self.assertIn("One model call. One serving envelope.", brief)
-        self.assertIn("Retain Q8 generic reference for the frozen", brief)
-        self.assertEqual(brief.count('role="note" aria-label="Judge verdict"'), 1)
+        self.assertIn("Measured results", brief)
+        self.assertIn("Latency choice and serving capacity", brief)
+        self.assertIn(
+            "The first study chooses a configuration for single-client latency. "
+            "The second compares server settings for two candidates.",
+            brief,
+        )
+        self.assertEqual(brief.count('role="note" aria-label="Decision summary"'), 1)
         self.assertLess(verdict_start, instrument_start)
-        self.assertIn("Canonical latency winner", brief)
+        self.assertIn("Latency recommendation", brief)
         self.assertIn(objective_summary, brief)
-        self.assertIn("Capacity / resource alternative", brief)
-        self.assertIn(f"P{parallel} / C{concurrency}", brief)
-        self.assertIn("Different questions.", brief)
-        self.assertIn("does not replace the canonical recommendation", brief)
-        self.assertIn(f"Measured tradeoff at P{parallel} / C{concurrency}", brief)
+        self.assertIn("Capacity alternative", brief)
+        self.assertIn(f"{parallel} server slots / {concurrency} clients", brief)
+        self.assertIn(
+            f"Measured tradeoff at {parallel} server slots / {concurrency} clients",
+            brief,
+        )
         self.assertIn(str(alternative["label"]), brief)
         self.assertIn(throughput_phrase, brief)
         self.assertIn(rss_phrase, brief)
@@ -992,15 +1178,19 @@ class ShowcaseV11Tests(unittest.TestCase):
         )
         self.assertIn(
             '<a class="flight-brief-primary" href="#optimization-ladder">'
-            "See exactly what changed</a>",
+            "Compare configurations</a>",
             brief,
         )
         self.assertIn(
-            '<a class="flight-brief-secondary" href="#capacity-envelope">'
-            "See the serving envelope</a>",
+            '<a class="flight-brief-secondary" href="#capacity-envelope">View capacity results</a>',
             brief,
         )
-        self.assertIn("Open the Launch Kit</a>", brief)
+        self.assertIn(
+            '<a class="flight-brief-secondary" '
+            'href="https://github.com/agrovr/ParetoPilot#run-an-example">'
+            "Run an example</a>",
+            brief,
+        )
         self.assertIn("Measured tradeoff at", brief)
         self.assertNotIn("flight-brief-boundary", brief)
         self.assertIn("Q8 reference → tuned Q4", brief)
@@ -1187,20 +1377,23 @@ class ShowcaseV11Tests(unittest.TestCase):
 
         markup = _optimization_ladder_markup(passport, synthetic)
 
-        self.assertIn("00 · Synthetic fixture path", markup)
-        self.assertIn("Three stages. One honest runway.", markup)
+        self.assertIn("00 · Synthetic example", markup)
+        self.assertIn("Three configurations, compared step by step.", markup)
         self.assertIn('style="--stage-count: 3"', markup)
-        self.assertIn('aria-label="Synthetic fixture optimization stages"', markup)
-        self.assertIn("compare that synthetic candidate", markup)
-        self.assertIn("not Arm64 benchmark evidence", markup)
+        self.assertIn('aria-label="Example optimization stages"', markup)
+        self.assertIn("largest synthetic differences from the previous row", markup)
+        self.assertIn(
+            "example data and do not describe measured deployment performance",
+            markup,
+        )
         self.assertIn("<strong>Unavailable</strong>", markup)
         self.assertIn("Fixture improvement", markup)
         self.assertIn("Fixture tradeoff", markup)
-        self.assertIn("Reference fixture", markup)
-        self.assertNotIn("Measured optimization path", markup)
+        self.assertIn("Reference configuration", markup)
+        self.assertNotIn("Measured configurations", markup)
         self.assertNotIn("Measured improvement", markup)
         self.assertNotIn("Measured tradeoff", markup)
-        self.assertNotIn("Reference measurement", markup)
+        self.assertNotIn("Verified Arm64 measurements", markup)
 
         report = render_showcase_v11(
             synthetic,
@@ -1211,15 +1404,19 @@ class ShowcaseV11Tests(unittest.TestCase):
         )
         self.assertIn("<title>ParetoPilot | synthetic decision preview</title>", report)
         self.assertIn("4 synthetic fixture candidates", report)
-        self.assertIn("ParetoPilot evaluated 4 synthetic fixture configurations", report)
-        self.assertIn("survives the fixture", report)
+        self.assertIn("ParetoPilot compared 4 example configurations", report)
+        self.assertIn(
+            "Explore a deployment decision from "
+            '<span class="hero-selection">synthetic data.</span>',
+            report,
+        )
+        self.assertIn('<h2 id="tradeoffs-heading">Measured tradeoffs</h2>', report)
         for measured_claim in (
             "measured candidates",
             "ParetoPilot measured",
             "Measured improvement",
-            "Measured tradeoff",
             "Measured change",
-            "Reference measurement",
+            "Verified Arm64 measurements",
             "Measured stage",
             "one measured candidate",
             "measured objective values",
@@ -1308,7 +1505,7 @@ class ShowcaseV11Tests(unittest.TestCase):
             markup,
         )
         self.assertIn(
-            "Source evidence does not declare a compared setting change for this stage.",
+            "No configuration change was recorded for this stage.",
             markup,
         )
 
@@ -1388,7 +1585,7 @@ class ShowcaseV11Tests(unittest.TestCase):
         arm_stage_markup = markup[arm_stage_start:next_stage_start]
 
         self.assertIn(
-            "Source evidence does not declare a compared setting change for this stage.",
+            "No configuration change was recorded for this stage.",
             arm_stage_markup,
         )
         self.assertNotIn("Micro-batch", arm_stage_markup)
@@ -1538,6 +1735,7 @@ class ShowcaseV11Tests(unittest.TestCase):
         self.assertIn("max-width: 100%;", cockpit_tabs)
         self.assertIn("overflow-x: auto;", cockpit_tabs)
         self.assertIn("scrollbar-width: none;", cockpit_tabs)
+
         self.assertIn(
             "min-width: 0;",
             css_rule_body(report, ".showcase .cockpit-tabs button"),
@@ -1552,6 +1750,26 @@ class ShowcaseV11Tests(unittest.TestCase):
         self.assertIn(
             ".showcase .cockpit-deltas { grid-template-columns: minmax(0, 1fr); }",
             narrow_css,
+        )
+
+    def test_mobile_headline_wraps_only_between_words(self) -> None:
+        report = rendered_showcase()
+        mobile_css = css_rule_body(report, "@media (max-width: 47.99rem)")
+        heading_rule = (
+            ".showcase h1 {\n"
+            "    font-size: clamp(2.2rem, 11vw, 3.5rem);\n"
+            "    overflow-wrap: normal;\n"
+            "    word-break: normal;\n"
+            "    hyphens: none;\n"
+            "  }"
+        )
+
+        self.assertIn(heading_rule, mobile_css)
+        self.assertNotIn(
+            ".showcase h1 {\n"
+            "    font-size: clamp(2.2rem, 11vw, 3.5rem);\n"
+            "    overflow-wrap: anywhere;",
+            mobile_css,
         )
 
     def test_desktop_hero_pairs_headline_with_proof_without_wrapping_full_width_rows(
@@ -1639,14 +1857,13 @@ class ShowcaseV11Tests(unittest.TestCase):
         for measurement in canonical_measurements:
             self.assertIn(f">{measurement}<", showcase)
         for caption in canonical_captions:
-            self.assertIn(caption, showcase)
+            self.assertIn(_plain_language_report_copy(caption), showcase)
         self.assertIn(
             '<main id="main-content" class="report-main" tabindex="-1">',
             showcase,
         )
         self.assertIn(
-            "Choose the Arm64 deployment that "
-            '<span class="hero-selection">survives the evidence.</span>',
+            'Compare measured Arm64 <span class="hero-selection">inference configurations.</span>',
             showcase,
         )
         self.assertIn("Use the GitHub Action", showcase)
@@ -1728,7 +1945,7 @@ class ShowcaseV11Tests(unittest.TestCase):
         }
 
         self.assertGreaterEqual(report.count('data-series-style="0"'), 6)
-        self.assertIn("Candidate encoding used in every chart", report)
+        self.assertIn("Chart legend", report)
         self.assertIn('<span class="series-name">Q4 + KleidiAI tuned</span>', report)
         self.assertIn(".showcase .chart-figure svg", report)
         self.assertIn("min-width: 0;", report)
@@ -1842,7 +2059,7 @@ class ShowcaseV11Tests(unittest.TestCase):
         )
         self.assertIn(
             '<details class="load-contract-disclosure">'
-            "<summary>Inspect exact load contract and prompts</summary>"
+            "<summary>View load-test settings and prompts</summary>"
             '<div class="load-context-grid">',
             load_section,
         )
@@ -1856,9 +2073,9 @@ class ShowcaseV11Tests(unittest.TestCase):
         )
         self.assertLess(
             load_section.index('<details class="load-contract-disclosure">'),
-            load_section.index("Inspect every measured load row"),
+            load_section.index("View all measured load results"),
         )
-        self.assertEqual(load_section.count("Command and plan binding"), 1)
+        self.assertEqual(load_section.count("Verified test commands"), 1)
         self.assertEqual(load_section.count("Load sweep methodology"), 1)
 
     def test_out_of_range_slo_is_annotated_without_a_false_reference_line(self) -> None:
@@ -2059,11 +2276,15 @@ class ShowcaseV11Tests(unittest.TestCase):
         self.assertIn('<figure class="tolerance-visual"', report)
         self.assertIn("Q8 generic reference", report)
         self.assertIn("Q4 + KleidiAI tuned", report)
-        self.assertIn("Inside cutoff", report)
-        self.assertIn("Outside cutoff", report)
+        self.assertIn("Within tolerance", report)
+        self.assertIn("Outside tolerance", report)
         self.assertIn("2,330.9 ms", report)
         self.assertIn("2,354.2 ms", report)
-        self.assertIn("Exact values and decision roles remain in the evidence table", report)
+        self.assertIn(
+            "Markers show each measured p95 end-to-end latency on the same scale.",
+            report,
+        )
+        self.assertIn("Exact values are in the table below.", report)
 
     def test_showcase_rejects_a_different_canonical_report(self) -> None:
         with self.assertRaisesRegex(ValidationError, "does not match"):
@@ -2112,9 +2333,10 @@ class ShowcaseV11Tests(unittest.TestCase):
 
         preview = render_showcase_v11(benchmarks, recommendation, **kwargs)
         self.assertIn("Unverified preview", preview)
-        self.assertIn("Unverified presentation preview · v1.1 view", preview)
+        self.assertIn("Unverified preview · v1.1 report layout", preview)
         self.assertIn("Source run", preview)
-        self.assertNotIn("Open exact canonical report", preview)
+        self.assertIn("This preview is not connected to a verified release.", preview)
+        self.assertNotIn("View archived v1.1 report", preview)
 
     def test_showcase_rejects_unsafe_canonical_report_links(self) -> None:
         benchmarks = canonical_benchmarks()

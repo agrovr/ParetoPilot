@@ -1,16 +1,14 @@
 # ParetoPilot architecture
 
-![ParetoPilot evidence-to-deployment architecture](assets/architecture.svg)
+![ParetoPilot Arm64 benchmark and decision flow](assets/architecture.svg)
 
-ParetoPilot is an evidence-to-deployment decision pipeline. It does not sit in the inference
-request path. Instead, it runs controlled candidates on one native Arm64 runner, validates their
-artifacts, applies declared quality and resource constraints, and exports a reproducible
-deployment recommendation with an offline report.
+ParetoPilot compares controlled inference configurations on one native Arm64 runner. It validates
+the results, applies declared quality and resource limits, and writes a reproducible recommendation
+and offline report; it does not run in the live inference request path.
 
-Canonical v1.1 [run `30055662526`](../results/published/30055662526/README.md) completed the core
-path and the additive behavior, policy, load, and repeat-stability lane. The earlier
-[v1.0 result](../results/published/29973188507/README.md) remains preserved as a separate
-historical experiment.
+The current model result is v1.1
+[run `30055662526`](../results/published/30055662526/README.md). The earlier
+[v1.0 result](../results/published/29973188507/README.md) is kept as a separate experiment.
 
 ## End-to-end flow
 
@@ -20,35 +18,34 @@ historical experiment.
 2. **Build on native Arm64.** One `ubuntu-24.04-arm` job builds CPU-only generic and
    KleidiAI-enabled `llama.cpp` binaries and records the runner, operating system, compiler,
    build options, executable hashes, and exact launch arguments.
-3. **Run attributable candidates.** Four candidates separate the Q8 reference, Q4 quantization,
+3. **Run controlled configurations.** Four candidates separate the Q8 reference, Q4 quantization,
    a KleidiAI-enabled build with an observed model-buffer marker, and one runtime micro-batch
    change. Throughput and server measurements use the mirrored order `A-B-C-D-D-C-B-A` on the
    same hosted runner.
-4. **Measure authoritative producers.** `llama-bench` produces prompt and generation throughput.
+4. **Collect each metric from its source.** `llama-bench` produces prompt and generation throughput.
    `llama-server` records exact-match behavior, streamed TTFT, end-to-end latency for fixed
    64-token generations, and bounded multi-client results. GNU `time -v` records peak RSS.
-5. **Assemble strictly.** `paretopilot assemble-experiment` verifies the closed manifest schema,
+5. **Validate and assemble results.** `paretopilot assemble-experiment` verifies the manifest,
    SHA-256 digests, candidate identities, model and runtime pins, evaluation-suite identity,
    exact commands, mirrored-pass aggregate recomputation, and captured model-buffer-marker logs
    before producing a `BenchmarkSet`.
 6. **Decide under declared constraints.** The recommendation engine rejects candidates that fail
-   quality or resource gates, computes the Pareto frontier, and minimizes the declared objective.
-   A predeclared 1% tolerance prevents a practically tiny latency difference from being treated
-   as an optimization win.
-7. **Build supplementary views.** The workflow evaluates five deployment policies, assembles the
-   bounded load sweep, reconstructs both mirrored passes from raw evidence, and summarizes
-   observed repeat stability.
-8. **Lock and replay.** A bundle-level `SHA256SUMS` covers 150 released payloads. Offline replay
+   quality or resource checks, computes the Pareto frontier, and minimizes the declared objective.
+   A 1% tolerance defined before the run prevents a tiny latency difference from being treated
+   as a meaningful improvement.
+7. **Build additional views.** The workflow evaluates five deployment priorities, assembles the
+   bounded load sweep, reconstructs both mirrored passes from raw data, and summarizes
+   repeatability.
+8. **Verify and replay.** A bundle-level `SHA256SUMS` covers 150 released payloads. Offline replay
    verifies safe paths and checksums, rebuilds the core and extension outputs, and compares both
    self-contained reports without rerunning inference.
-9. **Gate downstream deployment.** The reusable GitHub Action consumes any validated benchmark
-   set and constraints, rejects synthetic inputs by default, writes a recommendation, decision
-   passport, human-readable Optimization Receipt, and self-contained report, and can fail CI when
-   the selected candidate changes or complete native Arm64 attribution is required but missing.
+9. **Check changes in CI.** The reusable GitHub Action validates a benchmark set and its
+   constraints, rejects synthetic inputs by default, writes the recommendation and reports, and
+   can fail CI when the selected candidate changes or required Arm64 source details are missing.
 
-## Candidate attribution
+## Candidate changes
 
-| Candidate | Deliberate change | Attribution stage |
+| Candidate | Deliberate change | Optimization step |
 | --- | --- | --- |
 | `q8-generic` | Q8_0 model on the generic CPU build | Reference baseline |
 | `q4-generic` | Q4_0 model on the generic CPU build | Quantization |
@@ -60,96 +57,77 @@ The workflow hashes and re-verifies runtime logs: generic candidates must not re
 intended build logged the model-buffer marker; it does not prove that a particular microkernel
 executed.
 
-## V1.1 evidence lane
+## V1.1 measurements and validation
 
-### Behavior contract
+### Behavior checks
 
-The 24-case suite is copied into the experiment, identified in the closed manifest, and verified
+The 24-case suite is copied into the experiment, identified in the manifest, and verified
 by SHA-256. Assembly checks every case, accepted answer, match mode, generation length, and pooled
-server result against that exact file. The canonical run measured 21/24 passing cases for Q8 and
+server result against that exact file. The published run measured 21/24 passing cases for Q8 and
 20/24 for each Q4 candidate.
 
 ### Bounded concurrency
 
 Each candidate runs the same declared 1/2/4-client load plan with eight measured requests per
 level. Per-candidate artifacts retain raw request samples, SLO results, the request origin, and
-both the exact load and canonical server commands. Only host and port binding differences are
-allowed. All candidates completed every request in the canonical run; concurrency 1 was the
+both recorded server commands. Only host and port binding differences are allowed. All candidates
+completed every request in the published run; concurrency 1 was the
 highest SLO-passing level for each.
 
 ### Pass reconstruction
 
-`assemble-repeat-pass` follows the source references already bound in the canonical benchmark,
+`assemble-repeat-pass` follows the source references already bound in the published benchmark,
 verifies raw throughput, settings, server-evaluation, and process-memory files, and recomputes one
-supplementary `BenchmarkSet` per pass. It does not estimate pass values by splitting a pooled
-aggregate.
+`BenchmarkSet` per pass. It does not estimate pass values by splitting a pooled aggregate.
 
 The stability summary compares six metrics across the two reconstructed passes. Its direction and
 relative-spread labels describe only the observed passes and do not claim statistical
 significance.
 
-## V1.4 supplementary capacity lane
+## V1.4 capacity study
 
-Capacity [run `30144901854`](../results/published/30144901854/README.md) uses the frozen Q8
-canonical choice and tuned-Q4 resource alternative to evaluate a 3×3 server-slot/client matrix.
+Capacity [run `30144901854`](../results/published/30144901854/README.md) uses the published Q8
+latency choice and tuned-Q4 resource alternative to evaluate a 3×3 server-slot/client matrix.
 It uses two mirrored forward/reverse passes, preserves every request sample and rejected gate, and
-selects an operating point independently within each candidate. It cannot promote the Q4
-alternative or rewrite the canonical v1.1 recommendation.
+selects an operating point independently within each candidate. This study sizes each candidate;
+it does not choose between Q8 and Q4.
 
-The reviewed release retains the original Actions ZIP byte for byte. `replay-capacity` verifies
-complete checksum coverage, rebuilds the capacity study and Markdown receipt from their raw
-sources, requires exact output matches, and then replays the embedded frozen canonical archive.
-Pages consumes the compact reviewed lock only after completing that replay.
+The v1.4 release retains the original Actions ZIP. `replay-capacity` checks every file, rebuilds
+the capacity study and Markdown summary from the raw measurements, and then replays the embedded
+v1.1 archive.
 
-`verify-published` is the cross-platform proof funnel over both release lanes. Its packaged lock
-pins the official URL, run ID, exact byte size, and SHA-256 for each archive. The command performs
-bounded downloads or accepts the same exact files locally, safely extracts them, delegates to the
-existing canonical and capacity replay engines, and emits one deterministic JSON/Markdown proof.
-It does not add measurements or weaken either replay contract.
+`verify-published` checks both published releases. It verifies each URL, run ID, byte size, and
+SHA-256, then rebuilds the archived decisions. The command can download the archives or use local
+copies and writes JSON and Markdown summaries.
 
-### Policy sensitivity
+### Deployment priorities
 
-One canonical and four non-canonical profiles are evaluated from the same validated benchmark
-set. `canonical-latency` must reproduce the core recommendation. The derived profiles expose how
-the measured decision changes under memory, TTFT, prompt-ingest, or decode objectives; they are
-not additional benchmark runs.
+Five priorities are calculated from the same validated benchmark set. `canonical-latency`
+reproduces the published recommendation. The other four show how the result changes when memory,
+TTFT, prompt processing, or generation throughput takes priority; they are not additional runs.
 
-### Canonical reports and Pages presentation
+### Reports and public site
 
 `report.html` presents the core decision and `report-v1.1.html` combines the decision with policy,
-load, and stability evidence. Both are rendered from bound inputs. The canonical release replay
+load, and stability results. Both are rendered from validated inputs. The release replay
 matched all nine core and report comparisons and returned no differences or warnings.
 
-The public Pages homepage is a separate presentation view generated from those same verified
-inputs. The deploy workflow first verifies the pinned v1.1.0 release, replays all nine authoritative
-outputs, and checks the exact `report-v1.1.html` digest. Only then does it generate the showcase.
-Pages preserves the byte-identical canonical report at `evidence/report-v1.1.html`, so visual
-presentation changes cannot silently rewrite the evidence artifact. The presentation's persistent
-light/dark preference changes semantic color tokens only; it never alters the bound evidence.
+The Pages workflow verifies the v1.1.0 release and rebuilds all nine archived outputs before it
+generates the public homepage. The original report remains available at
+`evidence/report-v1.1.html`.
 
-## Evidence and decision boundaries
+## What the result covers
 
-- Every candidate comparison belongs to one ephemeral Arm64 job. Results from different processor
-  identities or runner images are not pooled as one experiment.
-- Missing, malformed, mismatched, non-finite, digest-invalid, or path-escaping source data fails
-  assembly; the pipeline does not estimate absent measurements.
-- Quality, latency, throughput, and peak RSS have separate authoritative producers. TTFT, for
-  example, is not inferred from `llama-bench`.
-- Load evidence must match its declared plan, request endpoint, candidate identity, and server
-  commands. A successful HTTP response alone is not sufficient provenance.
-- A run is canonical only when it uses the default branch, the declared ten repetitions, and
-  every measurement, integrity, selection, and reporting gate passes. Changed inputs remain
-  exploratory.
-- The decision passport recomputes and describes the supplied decision for CI and presentation.
-  It is supplementary: it cannot change the selected candidate or any locked canonical artifact.
-- The Optimization Receipt is a deterministic Markdown rendering of that passport. It makes the
-  baseline, decision, measured stage changes, tradeoffs, provenance, fingerprints, and scope easy
-  to review in CI without creating a second source of truth.
-- Its `arm64-attributed` grade checks source-declared metadata completeness only. The passport
-  explicitly does not authenticate those claims or bind them to candidate artifacts; canonical
-  trust comes from the separately checksummed evidence bundle and exact replay.
-- Arm Performix is an optional follow-up for hotspot analysis. It never blocks measurement,
-  selection, replay, or report generation.
+- Every comparison comes from the same temporary Arm64 job. Results from different processors or
+  runner images are not combined into one experiment.
+- Missing or invalid measurements are rejected rather than estimated. Each metric is read from
+  its declared source; for example, TTFT is not inferred from `llama-bench`.
+- Source files and generated outputs are checksummed. The published archives can be replayed
+  without rerunning inference.
+- The result applies only to the measured runner, model, commands, and workload. Metadata checks
+  confirm that required fields are present; they do not independently authenticate them.
+- Arm Performix is optional for follow-up profiling and is not required to measure, select,
+  replay, or report a result.
 
 ## Implementation map
 
@@ -159,32 +137,32 @@ light/dark preference changes semantic color tokens only; it never alters the bo
 | [`evals/qwen-smoke-v1.json`](../evals/qwen-smoke-v1.json) | Historical v1.0 fixed quality inputs |
 | [`evals/qwen-behavior-v2.json`](../evals/qwen-behavior-v2.json) | V1.1 checksummed 24-case behavior and latency contract |
 | [`configs/load.arm64.json`](../configs/load.arm64.json) | Bounded load shape and SLO declaration |
-| [`configs/policies.arm64.json`](../configs/policies.arm64.json) | Canonical and derived deployment-policy profiles |
+| [`configs/policies.arm64.json`](../configs/policies.arm64.json) | Published and alternative deployment priorities |
 | [`configs/constraints.candidate-study.json`](../configs/constraints.candidate-study.json) | Quality, latency, memory, frontier, and objective policy |
 | [`src/paretopilot/llama_summary.py`](../src/paretopilot/llama_summary.py) | Validated multi-pass throughput aggregation |
 | [`src/paretopilot/server_eval.py`](../src/paretopilot/server_eval.py) | Exact-match behavior and streamed latency evaluation |
-| [`src/paretopilot/experiment.py`](../src/paretopilot/experiment.py) | Strict multi-candidate manifest and artifact assembly |
+| [`src/paretopilot/experiment.py`](../src/paretopilot/experiment.py) | Multi-candidate manifest validation and artifact assembly |
 | [`src/paretopilot/analysis.py`](../src/paretopilot/analysis.py) | Constraint filtering, Pareto frontier, and deterministic selection |
-| [`src/paretopilot/decision_passport.py`](../src/paretopilot/decision_passport.py) | Supplementary Arm64 provenance grade, optimization-stage attribution, cutoff runway, and resource-alternative summary |
-| [`src/paretopilot/optimization_receipt.py`](../src/paretopilot/optimization_receipt.py) | Deterministic, human-readable decision receipt rendered from a validated Decision Passport |
+| [`src/paretopilot/decision_passport.py`](../src/paretopilot/decision_passport.py) | Source metadata status, configuration comparisons, distance to the cutoff, and lower-resource alternative |
+| [`src/paretopilot/optimization_receipt.py`](../src/paretopilot/optimization_receipt.py) | Markdown decision summary rendered from validated decision details |
 | [`src/paretopilot/pass_eval.py`](../src/paretopilot/pass_eval.py) | Raw repeat-pass verification and reconstruction |
 | [`src/paretopilot/load_eval.py`](../src/paretopilot/load_eval.py) | Bounded multi-client evaluation and command binding |
-| [`src/paretopilot/profiles.py`](../src/paretopilot/profiles.py) | Precomputed canonical and derived policy decisions |
+| [`src/paretopilot/profiles.py`](../src/paretopilot/profiles.py) | Policy decisions calculated from the same measurements |
 | [`src/paretopilot/stability.py`](../src/paretopilot/stability.py) | Pass direction and spread summary without significance claims |
 | [`src/paretopilot/replay.py`](../src/paretopilot/replay.py) | Checksummed core and extension regeneration |
-| [`src/paretopilot/capacity_eval.py`](../src/paretopilot/capacity_eval.py) | Strict supplementary capacity assembly, gate recomputation, and operating-point selection |
-| [`src/paretopilot/capacity_receipt.py`](../src/paretopilot/capacity_receipt.py) | Deterministic human-readable capacity envelope and rejected-gate receipt |
-| [`src/paretopilot/capacity_replay.py`](../src/paretopilot/capacity_replay.py) | Checksummed capacity reconstruction plus embedded canonical replay |
-| [`src/paretopilot/published_proof.py`](../src/paretopilot/published_proof.py) | Pinned, safely extracted one-command verification of both public evidence releases |
+| [`src/paretopilot/capacity_eval.py`](../src/paretopilot/capacity_eval.py) | Capacity-study validation, gate checks, and operating-point selection |
+| [`src/paretopilot/capacity_receipt.py`](../src/paretopilot/capacity_receipt.py) | Human-readable capacity results and failed checks |
+| [`src/paretopilot/capacity_replay.py`](../src/paretopilot/capacity_replay.py) | Capacity reconstruction plus embedded v1.1 replay |
+| [`src/paretopilot/published_proof.py`](../src/paretopilot/published_proof.py) | Verification of both published evidence archives |
 | [`src/paretopilot/report.py`](../src/paretopilot/report.py) | Deterministic core HTML decision report |
-| [`src/paretopilot/report_v11.py`](../src/paretopilot/report_v11.py) | Deterministic additive evidence report |
-| [`src/paretopilot/showcase.py`](../src/paretopilot/showcase.py) | Judge-facing presentation generated from verified v1.1 inputs without changing the canonical report |
-| [`action.yml`](../action.yml) | Reusable CI decision gate with measured-evidence and source-declared Arm64 metadata protection, expected-selection enforcement, a decision passport, a human-readable Optimization Receipt, and hashed artifacts |
-| [`.github/workflows/pages.yml`](../.github/workflows/pages.yml) | Release verification, exact replay, canonical-report preservation, and showcase publication |
+| [`src/paretopilot/report_v11.py`](../src/paretopilot/report_v11.py) | Reproducible v1.1 HTML report |
+| [`src/paretopilot/showcase.py`](../src/paretopilot/showcase.py) | Public presentation generated from verified v1.1 inputs |
+| [`action.yml`](../action.yml) | Reusable CI gate that validates evidence, enforces the expected selection, and emits hashed decision artifacts |
+| [`.github/workflows/pages.yml`](../.github/workflows/pages.yml) | Release verification, replay, and public site deployment |
 
 ## Published identity
 
-The current evidence was produced by commit
+The published result was produced by commit
 [`8a9ddce0afa2272c4a4097fe87ef6f06cb7689a9`](https://github.com/agrovr/ParetoPilot/commit/8a9ddce0afa2272c4a4097fe87ef6f06cb7689a9)
 on Ubuntu 24.04 Arm64 with a 4-vCPU Arm Neoverse-N2 CPU. It pins:
 
@@ -193,11 +171,3 @@ on Ubuntu 24.04 Arm64 with a 4-vCPU Arm Neoverse-N2 CPU. It pins:
 - Qwen2.5 1.5B Instruct revision `91cad51170dc346986eccefdc2dd33a9da36ead9`; and
 - evaluation-suite SHA-256
   `e49c16fba32fd65c947264aef4141026ab68b1fd415ef09eeea6e8ade9a545c7`.
-
-## Truthful interpretation
-
-The diagram documents the executable candidate-study path; it is not benchmark evidence by
-itself. Canonical run `30055662526` completed that path and was rebuilt from its pinned
-release archive in a separate verification pass. The result applies to this runner, model,
-workload, and bounded load plan. ParetoPilot does not claim general model quality, statistical
-significance, energy savings, cost savings, or hardware-counter findings that were not measured.

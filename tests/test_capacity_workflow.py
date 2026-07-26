@@ -170,8 +170,8 @@ class CapacityWorkflowContractTests(unittest.TestCase):
     def test_manifest_failure_and_success_contracts_are_truthful(self) -> None:
         workflow = _workflow()
         manifest_section = workflow[
-            workflow.index("- name: Build strict supplementary source manifest") : workflow.index(
-                "- name: Run mirrored forward/reverse server-slot by client-concurrency matrix"
+            workflow.index("- name: Build capacity source manifest") : workflow.index(
+                "- name: Measure the slot and client matrix in mirrored order"
             )
         ]
         self.assertIn('"schema_version": "1.1"', manifest_section)
@@ -185,16 +185,14 @@ class CapacityWorkflowContractTests(unittest.TestCase):
         self.assertIn('"failed_stage": failed_stage', failure_section)
 
         success_section = workflow[
-            workflow.index("- name: Finalize checksummed supplementary bundle") : workflow.index(
-                "- name: Upload validated supplementary capacity study"
+            workflow.index("- name: Finalize checksummed capacity bundle") : workflow.index(
+                "- name: Upload validated capacity study"
             )
         ]
         self.assertIn('"eligible_cell_counts": eligible_cell_counts', success_section)
         self.assertIn('"selected_operating_points": selected_operating_points', success_section)
         self.assertNotIn("integrity gates passed", success_section)
-        self.assertIn(
-            "eligibility and performance-gate outcomes are reported per cell", success_section
-        )
+        self.assertIn("each cell's checks were recorded", success_section)
 
     def test_incomplete_diagnostics_cover_cancellation_and_preserve_raw_quality(self) -> None:
         workflow = _workflow()
@@ -207,7 +205,7 @@ class CapacityWorkflowContractTests(unittest.TestCase):
         )
         self.assertNotIn('local raw_evaluation="$RUNNER_TEMP/quality-', workflow)
         self.assertIn(
-            "the supplementary capacity workflow did not complete",
+            "the Arm64 capacity study did not complete",
             recovery_section,
         )
 

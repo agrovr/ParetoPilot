@@ -125,7 +125,7 @@ jobs:
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
           python-version: "3.12"
-      - name: Run the local Action with an explicit synthetic smoke fixture
+      - name: Test the Action with synthetic data
         id: decision
         uses: ./
         with:
@@ -181,7 +181,7 @@ jobs:
           assert digest == os.environ["OPTIMIZATION_RECEIPT_SHA256"]
           assert digest == receipt["optimization_receipt_sha256"]
           PY
-      - name: Confirm measured-evidence protection fails closed
+      - name: Confirm synthetic inputs are rejected
         shell: bash
         run: |
           set -euo pipefail

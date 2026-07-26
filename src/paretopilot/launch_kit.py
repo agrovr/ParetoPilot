@@ -27,7 +27,7 @@ _TEMPLATE_FILES = (
 
 
 def create_launch_kit(directory: Path) -> Mapping[str, object]:
-    """Create a new synthetic Launch Kit without merging or overwriting files."""
+    """Create a new synthetic starter project without merging or overwriting files."""
 
     destination = _resolve_new_destination(directory)
     templates = _load_validated_templates()
@@ -46,21 +46,21 @@ def create_launch_kit(directory: Path) -> Mapping[str, object]:
             expected_sha256 = hashlib.sha256(templates[relative_path]).hexdigest()
             write_text(target, text)
             if hashlib.sha256(target.read_bytes()).hexdigest() != expected_sha256:
-                raise ValidationError(f"Launch Kit file changed while being written: {target}")
+                raise ValidationError(f"starter-project file changed while being written: {target}")
     except ValidationError as exc:
         suffix = (
-            f"; incomplete Launch Kit remains at {destination}"
+            f"; incomplete starter project remains at {destination}"
             if claimed_destination and os.path.lexists(destination)
             else ""
         )
-        raise ValidationError(f"could not create Launch Kit: {exc}{suffix}") from exc
+        raise ValidationError(f"could not create starter project: {exc}{suffix}") from exc
     except (OSError, UnicodeError, ValueError) as exc:
         suffix = (
-            f"; incomplete Launch Kit remains at {destination}"
+            f"; incomplete starter project remains at {destination}"
             if claimed_destination and os.path.lexists(destination)
             else ""
         )
-        raise ValidationError(f"could not create Launch Kit: {exc}{suffix}") from exc
+        raise ValidationError(f"could not create starter project: {exc}{suffix}") from exc
 
     return {
         "schema_version": "1.0",
@@ -81,24 +81,24 @@ def _resolve_new_destination(directory: Path) -> Path:
     try:
         if os.path.lexists(requested):
             raise ValidationError(
-                f"refusing to overwrite existing Launch Kit destination: {requested}"
+                f"refusing to overwrite existing starter-project destination: {requested}"
             )
         parent = requested.parent.resolve(strict=True)
         if _is_link_or_junction(requested.parent) or not parent.is_dir():
-            raise ValidationError("Launch Kit parent must be an existing real directory")
+            raise ValidationError("starter-project parent must be an existing real directory")
         if not requested.name or requested.name in {".", ".."}:
-            raise ValidationError("Launch Kit destination must name a new directory")
+            raise ValidationError("starter-project destination must name a new directory")
         destination = parent / requested.name
         if os.path.lexists(destination):
             raise ValidationError(
-                f"refusing to overwrite existing Launch Kit destination: {destination}"
+                f"refusing to overwrite existing starter-project destination: {destination}"
             )
         return destination
     except ValidationError:
         raise
     except (OSError, RuntimeError, ValueError) as exc:
         raise ValidationError(
-            f"could not resolve Launch Kit destination {requested}: {exc}"
+            f"could not resolve starter-project destination {requested}: {exc}"
         ) from exc
 
 
@@ -133,7 +133,7 @@ def _load_templates() -> Mapping[PurePosixPath, bytes]:
             for relative_path, resource_name in _TEMPLATE_FILES
         }
     except (OSError, TypeError) as exc:
-        raise ValidationError(f"could not load bundled Launch Kit templates: {exc}") from exc
+        raise ValidationError(f"could not load bundled starter-project templates: {exc}") from exc
 
 
 def _load_validated_templates() -> Mapping[PurePosixPath, bytes]:
@@ -144,29 +144,31 @@ def _load_validated_templates() -> Mapping[PurePosixPath, bytes]:
     except ValidationError:
         raise
     except (OSError, RuntimeError, TypeError, UnicodeError, ValueError) as exc:
-        raise ValidationError(f"could not validate bundled Launch Kit templates: {exc}") from exc
+        raise ValidationError(
+            f"could not validate bundled starter-project templates: {exc}"
+        ) from exc
 
 
 def _validate_templates(templates: Mapping[PurePosixPath, bytes]) -> None:
     expected_paths = {relative for relative, _resource in _TEMPLATE_FILES}
     if set(templates) != expected_paths:
-        raise ValidationError("bundled Launch Kit template set is incomplete")
+        raise ValidationError("bundled starter-project template set is incomplete")
 
     for relative_path, data in templates.items():
         if relative_path.is_absolute() or ".." in relative_path.parts or not relative_path.parts:
-            raise ValidationError(f"unsafe Launch Kit destination path: {relative_path}")
+            raise ValidationError(f"unsafe starter-project destination path: {relative_path}")
         if not isinstance(data, bytes):
-            raise ValidationError(f"Launch Kit template must be bytes: {relative_path}")
+            raise ValidationError(f"starter-project template must be bytes: {relative_path}")
         if b"\r" in data or not data.endswith(b"\n"):
             raise ValidationError(
-                f"Launch Kit template must use UTF-8 LF text with a trailing newline: "
+                f"starter-project template must use UTF-8 LF text with a trailing newline: "
                 f"{relative_path}"
             )
         try:
             data.decode("utf-8")
         except UnicodeDecodeError as exc:
             raise ValidationError(
-                f"Launch Kit template must contain UTF-8 text: {relative_path}"
+                f"starter-project template must contain UTF-8 text: {relative_path}"
             ) from exc
 
     with TemporaryDirectory(prefix="paretopilot-launch-kit-validation-") as directory:
@@ -179,10 +181,12 @@ def _validate_templates(templates: Mapping[PurePosixPath, bytes]) -> None:
         constraints = load_constraints(root / "constraints" / "deployment.json")
         decision = recommend(benchmarks, constraints)
         if benchmarks.synthetic is not True:
-            raise ValidationError("Launch Kit benchmark fixture must remain explicitly synthetic")
+            raise ValidationError(
+                "starter-project benchmark fixture must remain explicitly synthetic"
+            )
         if decision.get("selected_id") != _EXPECTED_SELECTED_ID:
             raise ValidationError(
-                "Launch Kit fixture no longer produces the documented synthetic decision"
+                "starter-project fixture no longer produces the documented synthetic decision"
             )
 
 

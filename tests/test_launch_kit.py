@@ -195,7 +195,7 @@ class LaunchKitTests(unittest.TestCase):
             destination = Path(directory) / "kit"
             with (
                 patch.object(launch_kit, "write_text", side_effect=fail_after_one_write),
-                self.assertRaisesRegex(ValidationError, "incomplete Launch Kit remains"),
+                self.assertRaisesRegex(ValidationError, "incomplete starter project remains"),
             ):
                 launch_kit.create_launch_kit(destination)
             first_file = destination / ".github" / "workflows" / "paretopilot.yml"
@@ -219,7 +219,7 @@ class LaunchKitTests(unittest.TestCase):
             destination = Path(directory) / "kit"
             with (
                 patch.object(launch_kit, "write_text", side_effect=change_then_fail),
-                self.assertRaisesRegex(ValidationError, "incomplete Launch Kit remains"),
+                self.assertRaisesRegex(ValidationError, "incomplete starter project remains"),
             ):
                 launch_kit.create_launch_kit(destination)
             changed = destination / ".github" / "workflows" / "paretopilot.yml"

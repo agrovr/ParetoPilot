@@ -72,7 +72,7 @@ _WINDOWS_RESERVED_NAMES = {
 
 @dataclass(frozen=True)
 class ArchiveLock:
-    """One immutable official release-asset pin."""
+    """One immutable published release-asset pin."""
 
     filename: str
     release_tag: str
@@ -97,10 +97,10 @@ def verify_published_evidence(
     canonical_archive: Path | None = None,
     capacity_archive: Path | None = None,
 ) -> Mapping[str, Any]:
-    """Download or read, verify, safely extract, and replay both official archives.
+    """Download or read, verify, safely extract, and replay both published archives.
 
     Supplying both archive paths makes the command fully offline. Local archives
-    are still required to match the packaged official byte size and SHA-256.
+    are still required to match the packaged byte size and SHA-256.
     The measured inference workload is never executed.
     """
 
@@ -913,7 +913,7 @@ def _render_markdown(proof: Mapping[str, Any]) -> str:
     selections = _mapping(capacity["selected_operating_points"], "capacity selections")
 
     lines = [
-        "# ParetoPilot published evidence proof",
+        "# ParetoPilot published results verification",
         "",
         f"**{proof['verdict']}**",
         "",
@@ -923,7 +923,7 @@ def _render_markdown(proof: Mapping[str, Any]) -> str:
         "",
         "## Verified release archives",
         "",
-        "| Evidence | Release | Actions run | Official archive | Exact size | SHA-256 |",
+        "| Evidence | Release | Actions run | Published archive | Exact size | SHA-256 |",
         "| --- | --- | ---: | --- | ---: | --- |",
         (
             f"| Canonical | `{canonical_archive['release_tag']}` | "
@@ -948,7 +948,7 @@ def _render_markdown(proof: Mapping[str, Any]) -> str:
         "- Differences: 0.",
         "- Warnings: 0.",
         "",
-        "All nine authoritative outputs matched byte for byte:",
+        "All nine archived outputs matched byte for byte:",
         "",
         "| Output | Archived SHA-256 | Fresh replay SHA-256 | Result |",
         "| --- | --- | --- | --- |",
@@ -990,5 +990,11 @@ def _render_markdown(proof: Mapping[str, Any]) -> str:
     )
     for limit in proof["evidence_limits"]:
         lines.append(f"- {limit}")
-    lines.extend(["", "No archived measurement was changed by this verification.", ""])
+    lines.extend(
+        [
+            "",
+            "Verification reproduced the result without changing the archived measurements.",
+            "",
+        ]
+    )
     return "\n".join(lines)

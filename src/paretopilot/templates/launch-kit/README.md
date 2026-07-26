@@ -1,4 +1,4 @@
-# ParetoPilot Launch Kit
+# ParetoPilot starter project
 
 > This folder is a synthetic software smoke test. Its candidate numbers are examples, not
 > measured Arm64 results.
@@ -27,16 +27,15 @@ Open `paretopilot-output/optimization-receipt.md` first.
 Push this folder to a GitHub repository and run **ParetoPilot decision**. The workflow uses the
 same synthetic inputs and uploads the five decision artifacts.
 
-## Replace the example with measured Arm64 evidence
+## Replace the example data with your Arm64 measurements
 
 1. Replace every example metric and candidate setting with values from one controlled measurement.
-2. Keep `"synthetic": true` until that replacement is complete. Never relabel example numbers as
+2. Keep `"synthetic": true` until that replacement is complete. Do not mark example values as
    measurements.
 3. Add complete source, runner, runtime, model, and evaluation-suite metadata.
 4. Change `require-measured` to `"true"`.
 5. Enable `require-arm64-provenance: "true"` only after the metadata is complete.
-6. Update or remove `expected-selected-id` after reviewing the first measured result.
-7. Keep both ParetoPilot pins at a reviewed commit SHA; update them only after review.
+6. Update or remove `expected-selected-id` after checking the first measured result.
+7. Keep both ParetoPilot pins at a commit SHA and update them deliberately.
 
-The Launch Kit demonstrates the decision workflow. It does not collect measurements or replace
-ParetoPilot's published Arm64 evidence.
+This starter project exercises the decision workflow; it does not collect measurements.

@@ -1,4 +1,4 @@
-name: Deploy decision report to GitHub Pages
+name: Deploy ParetoPilot results to GitHub Pages
 
 on:
   push:
@@ -22,7 +22,7 @@ env:
 
 jobs:
   build:
-    name: Verify evidence, replay, and build report
+    name: Build published results site
     if: github.ref_name == github.event.repository.default_branch
     runs-on: ubuntu-24.04
     timeout-minutes: 15
@@ -42,7 +42,7 @@ jobs:
       - name: Configure Pages
         uses: actions/configure-pages@45bfe0192ca1faeb007ade9deae92b16b8254a0d # v6.0.0
 
-      - name: Download and verify locked release evidence
+      - name: Verify the v1.1 release
         shell: bash
         run: |
           set -euo pipefail
@@ -308,7 +308,7 @@ jobs:
                   raise SystemExit(f"dispatch marker mismatch: {candidate}")
           PY
 
-      - name: Download, replay, and verify locked capacity evidence
+      - name: Verify and replay the v1.4 capacity release
         shell: bash
         run: |
           set -euo pipefail
@@ -568,7 +568,7 @@ jobs:
               raise SystemExit("capacity selected points do not match the committed review")
           PY
 
-      - name: Rebuild, compare, and present every v1.1 output
+      - name: Build the published results page
         shell: bash
         run: |
           set -euo pipefail
@@ -788,7 +788,7 @@ jobs:
           path: _site
 
   deploy:
-    name: Deploy verified report
+    name: Deploy results site
     if: github.ref_name == github.event.repository.default_branch
     needs: build
     runs-on: ubuntu-24.04

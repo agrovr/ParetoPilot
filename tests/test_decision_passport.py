@@ -223,7 +223,10 @@ class DecisionPassportTests(unittest.TestCase):
         tradeoffs = {row["metric"] for row in alternative["tradeoffs"]}
         self.assertTrue({"model_size_mib", "peak_rss_mib", "prompt_tps"} <= improvements)
         self.assertTrue({"e2e_latency_ms_p95", "generation_tps", "quality_score"} <= tradeoffs)
-        self.assertIn("current measured context", first["method"]["current_boundary_caveat"])
+        self.assertIn(
+            "applies only to the supplied benchmark",
+            first["method"]["current_boundary_caveat"],
+        )
         self.assertFalse(first["method"]["canonical_outputs_modified"])
 
     def test_synthetic_flag_overrides_complete_arm64_metadata(self) -> None:
@@ -238,14 +241,14 @@ class DecisionPassportTests(unittest.TestCase):
             "benchmark set is explicitly synthetic",
         )
         self.assertIsNone(passport["resource_alternative"])
-        self.assertIn("synthetic fixture evidence", passport["method"]["resource_alternative"])
+        self.assertIn("synthetic example data", passport["method"]["resource_alternative"])
         self.assertNotIn(
-            "descriptive measured comparison",
+            "measured comparison",
             passport["method"]["resource_alternative"],
         )
         caveat = passport["method"]["current_boundary_caveat"]
-        self.assertIn("synthetic fixture", caveat)
-        self.assertIn("not Arm64 benchmark evidence", caveat)
+        self.assertIn("software example", caveat)
+        self.assertIn("not measured Arm64 evidence", caveat)
 
     def test_arm64_attribution_requires_every_explicit_identity(self) -> None:
         aarch64 = BenchmarkSet.from_mapping(
@@ -301,7 +304,10 @@ class DecisionPassportTests(unittest.TestCase):
         self.assertFalse(passport["provenance"]["attribution_complete"])
         self.assertIsNone(passport["provenance"]["runner"]["cpu_count"])
         self.assertIsNone(passport["provenance"]["run"]["attempt"])
-        self.assertIn("metadata completeness only", passport["provenance"]["verification_scope"])
+        self.assertIn(
+            "checks whether required source metadata is present",
+            passport["provenance"]["verification_scope"],
+        )
         self.assertEqual(
             passport["provenance"]["issues"],
             [

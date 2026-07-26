@@ -1,30 +1,29 @@
 # Reproducing ParetoPilot
 
-ParetoPilot supports three levels of reproduction:
+ParetoPilot supports three ways to check or reproduce the project:
 
-1. **Code verification** runs the software checks on any supported development host.
-2. **Decision reproduction** audits the pinned canonical archive and regenerates its core,
-   policy, load, stability, and report outputs.
-3. **Measurement reproduction** dispatches a fresh native Arm64 experiment. A new hosted runner is
-   new evidence, not an exact hardware replay.
+1. **Code checks** run the software tests on any supported development host.
+2. **Decision replay** verifies the published v1.1 archive and rebuilds its decision, policy,
+   load, stability, and report outputs.
+3. **Fresh measurement** starts a new native Arm64 experiment. A new hosted runner produces a new
+   measurement, not an exact hardware replay.
 
-The current canonical evidence is GitHub Actions
-[run `30055662526`](https://github.com/agrovr/ParetoPilot/actions/runs/30055662526), preserved in
-the [`v1.1.0` release](https://github.com/agrovr/ParetoPilot/releases/tag/v1.1.0). It was produced
-from commit
+The published v1.1 result comes from GitHub Actions
+[run `30055662526`](https://github.com/agrovr/ParetoPilot/actions/runs/30055662526) and is preserved
+in the [`v1.1.0` release](https://github.com/agrovr/ParetoPilot/releases/tag/v1.1.0). It was
+produced from commit
 [`8a9ddce0afa2272c4a4097fe87ef6f06cb7689a9`](https://github.com/agrovr/ParetoPilot/commit/8a9ddce0afa2272c4a4097fe87ef6f06cb7689a9).
 
-The earlier [v1.0 result](../results/published/29973188507/README.md) remains reproducible
-historical evidence. It came from a separate ephemeral runner and is not pooled with v1.1.
+The earlier [v1.0 result](../results/published/29973188507/README.md) remains available as a
+separate historical experiment. It came from a different temporary runner and is not pooled with
+v1.1.
 
-The supplementary capacity envelope is GitHub Actions
+The capacity study is GitHub Actions
 [run `30144901854`](https://github.com/agrovr/ParetoPilot/actions/runs/30144901854), preserved in
-the [`v1.4.0` release](https://github.com/agrovr/ParetoPilot/releases/tag/v1.4.0). It is a
-candidate-local serving study and does not replace or modify the canonical v1.1 decision.
-Use ParetoPilot
-[`0f196a4f`](https://github.com/agrovr/ParetoPilot/commit/0f196a4f3764526db48c0481b69f7f90eaffc9e4)
-or newer to replay that unchanged archive. The version 1.4.1 release is intentionally not linked
-until it is published.
+the [`v1.4.0` release](https://github.com/agrovr/ParetoPilot/releases/tag/v1.4.0). It answers a
+separate server-sizing question and leaves the v1.1 latency result unchanged.
+Use the current `main` branch to replay the published v1.1.0 and v1.4.0 archives without
+modifying them.
 
 ## Requirements
 
@@ -36,30 +35,28 @@ The Python package has no runtime dependencies. Development checks use the bound
 `dev` extra. GitHub runner availability and billing are external conditions and should be checked
 before repeated dispatches.
 
-## One-command published proof
+## Verify published archives
 
-After installing ParetoPilot, a reviewer can verify both public evidence releases without an
-Arm64 machine:
+After installing ParetoPilot, you can verify both published releases without an Arm64 machine:
 
 ```bash
 paretopilot verify-published --output-dir output/published-proof
 ```
 
-The command downloads the exact pinned v1.1 canonical and v1.4 capacity archives, enforces each
-official GitHub URL, byte size, and SHA-256 digest, safely extracts them, and runs both existing
-replay contracts. It refuses an existing output directory. A successful run prints:
+The command downloads the published v1.1 and v1.4 archives, checks each GitHub URL, byte size, and
+SHA-256 digest, safely extracts them, and runs both replay commands. It refuses an existing output
+directory. A successful run prints:
 
 ```text
 PASS: pinned canonical v1.1 and capacity v1.4 archives verified and replayed.
 ```
 
-Inspect `output/published-proof/published-proof.md` for the human-readable proof or
-`published-proof.json` for the deterministic contract. They record the two Actions run IDs,
-release links, archive hashes, all nine canonical byte matches, the reproduced `q8-generic`
-decision, both P4/C4 capacity selections, the two capacity artifact matches, the embedded
-canonical replay, and explicit evidence limits.
+Inspect `output/published-proof/published-proof.md` for the readable summary or
+`published-proof.json` for the machine-readable result. They record both Actions runs, release
+links, and archive hashes; confirm that all nine v1.1 outputs match; reproduce the `q8-generic` and
+P4/C4 selections; and list the study limits.
 
-To stay offline after downloading the official files once:
+To stay offline after downloading the release files once:
 
 ```bash
 paretopilot verify-published \
@@ -68,9 +65,9 @@ paretopilot verify-published \
   --output-dir output/published-proof
 ```
 
-Local archives must still match the packaged official size and digest pins. This command verifies
-the archived bytes and deterministic decisions; it does not rerun inference or prove current
-hardware performance. The manual steps below expose every part of the same audit.
+Local archives must still match the packaged size and digest pins. This command verifies the
+archived bytes and decisions; it does not rerun inference or measure current hardware. The manual
+steps below show the same checks individually.
 
 ## 1. Verify the code
 
@@ -93,14 +90,13 @@ python -m unittest discover -s tests
 python -m build --wheel
 ```
 
-Expect ParetoPilot `1.4.1` or newer; earlier commits do not include the one-command published
-proof. The frozen measurements remain pinned to their v1.1.0 and v1.4.0 release archives even
-when a newer verifier replays them.
+The one-command verifier is available on the current `main` branch. The measurements remain
+pinned to the v1.1.0 and v1.4.0 release archives when a newer verifier replays them.
 
 CI repeats the test and lint checks on Ubuntu x64, Windows x64, and native Ubuntu Arm64. A
 separate Ubuntu x64 job installs the built wheel into an isolated environment.
 
-## 2. Download and verify the canonical archive
+## 2. Download and verify the published v1.1 archive
 
 Download the pinned v1.1.0 release asset:
 
@@ -165,7 +161,7 @@ The committed
 release asset, outer digest, source and runner identity, important artifact hashes, and replay
 review.
 
-## 3. Replay the complete v1.1 contract
+## 3. Replay the v1.1 results
 
 Use a new destination outside the extracted evidence directory. ParetoPilot refuses to overwrite
 existing evidence or reports.
@@ -206,19 +202,19 @@ All nine comparisons must be present and match: `benchmark-set`, `recommendation
 `policy-profiles`, `load-evaluation`, both pass benchmark sets, `repeat-stability`, `report`, and
 `report-v1.1`.
 
-### Pages publication is downstream from replay
+### How the public site is built
 
-The public [evidence showcase](https://agrovr.github.io/ParetoPilot/) is not part of the nine-item
-replay contract. The Pages workflow first completes the verification above and confirms the
-reviewed `report-v1.1.html` digest. It then:
+The Pages workflow builds the public
+[results site](https://agrovr.github.io/ParetoPilot/) after the verification above succeeds. It
+then:
 
-1. copies that exact replayed file to
+1. copies the replayed `report-v1.1.html` file to
    [`evidence/report-v1.1.html`](https://agrovr.github.io/ParetoPilot/evidence/report-v1.1.html);
-2. supplies the reviewed evidence lock and exact report to `paretopilot showcase-v11`; and
-3. writes the separate judge-facing presentation to `index.html`.
+2. supplies the committed release metadata and replayed report to `paretopilot showcase-v11`; and
+3. writes the separate presentation to `index.html`.
 
-The showcase renderer refuses a canonical-report mismatch. It does not rerun inference, create
-new evidence, or change the archived recommendation.
+The site builder checks that the report matches the published file. It does not rerun inference or
+change the archived recommendation.
 
 To inspect pass reconstruction independently, use fresh output paths:
 
@@ -255,9 +251,9 @@ if ($Pass1 -ne $ExpectedPass1 -or $Pass2 -ne $ExpectedPass2) {
 The command follows only artifact paths and SHA-256 digests bound by the canonical benchmark. It
 does not derive a pass by splitting pooled metrics. Replay does not rerun inference.
 
-## Replay the supplementary v1.4 capacity evidence
+## Replay the v1.4 capacity study
 
-Download the reviewed capacity archive:
+Download the published capacity archive:
 
 ```bash
 curl -L \
@@ -309,10 +305,10 @@ load, RSS, server-log, and quality inputs; requires byte-identical `capacity-stu
 `capacity_study_reproduced: true`, `capacity_receipt_reproduced: true`, and a canonical
 `selected_id` of `q8-generic`.
 
-The compact [reviewed result](../results/published/30144901854/README.md) records the Actions
-artifact identity, release digest, exact selected operating points, recomputation audit, and study
-limits. This replay answers whether the archived decision is reproducible; dispatching the
-capacity workflow again creates a new measurement on a new ephemeral runner.
+The [published result](../results/published/30144901854/README.md) records the Actions run, release
+digest, selected operating points, replay checks, and study limits. Replaying the archive checks
+the saved decision; dispatching the capacity workflow again creates a new measurement on a new
+temporary runner.
 
 ## 4. Compare the expected decision
 
@@ -356,7 +352,7 @@ The tuned Q4 + KleidiAI candidate is the measured resource alternative: relative
 throughput. It is also 3.40% slower on p95 end-to-end latency, 9.37% lower on generation
 throughput, and one behavior case lower.
 
-## 5. Audit provenance, load, and stability
+## 5. Check run details, load, and stability
 
 The archive records:
 
@@ -369,7 +365,7 @@ The archive records:
   marker state;
 - raw bounded-load requests and SLO aggregates for concurrency 1, 2, and 4;
 - both pass-level reconstructed benchmark sets and the 24-row stability summary; and
-- the closed manifest, recommendation, reports, status, and bundle checksums.
+- the manifest, recommendation, reports, status, and bundle checksums.
 
 The source identities must include:
 
@@ -395,24 +391,25 @@ default branch, and retain `10` repetitions. The equivalent GitHub CLI command i
 gh workflow run candidate-study-arm64.yml --ref main -f repetitions=10
 ```
 
-A run is canonical only when it is manually dispatched from the default branch with exactly ten
+A run receives the `canonical` classification only when it is manually dispatched from the
+default branch with exactly ten
 repetitions and every environment, build, dispatch, benchmark, behavior, latency, memory, load,
 integrity, selection, and report gate passes. Branch runs and changed inputs remain exploratory.
-Failed workflows may upload diagnostic artifacts with `valid_evidence: false`; those must not
-replace canonical evidence.
+Failed workflows may upload artifacts with `valid_evidence: false`; those artifacts are diagnostic
+only.
 
 ## Historical v1.0 reproduction
 
 Run `29973188507` and release `v1.0.0` remain available for historical comparison:
 
-- [reviewed v1.0 summary](../results/published/29973188507/README.md)
+- [v1.0 summary](../results/published/29973188507/README.md)
 - [v1.0 release archive](https://github.com/agrovr/ParetoPilot/releases/tag/v1.0.0)
 
-That archive uses replay contract `1.0` and the earlier five-case smoke gate. Follow its reviewed
-summary for the matching archive digest and expected decision. Do not combine its samples with
+That archive uses replay contract `1.0` and the earlier five-case smoke gate. Follow its summary
+for the matching archive digest and expected decision. Do not combine its samples with
 v1.1; each release represents one separate controlled hosted-runner experiment.
 
-## Evidence limits
+## Study limits
 
 - The hosted runner is ephemeral. Separate workflow runs are not pooled.
 - The 24-case suite is a deterministic deployment gate, not a broad model-quality benchmark.
@@ -427,9 +424,9 @@ v1.1; each release represents one separate controlled hosted-runner experiment.
 
 ## Optional Performix profiling
 
-Arm Performix is outside the required pipeline. A compatible host may add separate hotspot context
-for a candidate, but profiler output does not replace measured throughput, behavior, latency,
-memory, load, or checksums. Missing Performix output does not invalidate ParetoPilot evidence.
+Arm Performix is optional. On a compatible host, it can add hotspot context for a candidate. These
+profiles are separate from the benchmark's throughput, behavior, latency, memory, and load
+measurements.
 
 For the experimental design and decision rules, see
 [`benchmark-methodology.md`](benchmark-methodology.md).

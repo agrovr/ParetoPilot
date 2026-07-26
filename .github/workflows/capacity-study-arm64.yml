@@ -1,4 +1,4 @@
-name: Supplementary Arm64 capacity study
+name: Arm64 capacity study
 
 on:
   workflow_dispatch:
@@ -44,7 +44,7 @@ env:
 
 jobs:
   capacity:
-    name: Q8 reference versus tuned Q4 capacity envelope
+    name: Q8 versus tuned Q4 capacity study
     runs-on: ubuntu-24.04-arm
     timeout-minutes: 300
 
@@ -59,7 +59,7 @@ jobs:
         with:
           python-version: "3.12"
 
-      - name: Initialize incomplete evidence
+      - name: Initialize run status
         shell: bash
         run: |
           set -euo pipefail
@@ -133,7 +133,7 @@ jobs:
             --require-evidence-host \
             --output artifacts/environment/paretopilot-doctor.json
 
-      - name: Download, verify, and replay frozen v1.1 evidence
+      - name: Verify and replay the v1.1 release
         shell: bash
         run: |
           set -euo pipefail
@@ -334,7 +334,7 @@ jobs:
           fetch_model "$Q8_FILENAME" "$Q8_SHA256" "$Q8_SIZE_BYTES"
           fetch_model "$Q4_FILENAME" "$Q4_SHA256" "$Q4_SIZE_BYTES"
 
-      - name: Build strict supplementary source manifest
+      - name: Build capacity source manifest
         shell: bash
         run: |
           set -euo pipefail
@@ -494,7 +494,7 @@ jobs:
           )
           PY
 
-      - name: Run mirrored forward/reverse server-slot by client-concurrency matrix
+      - name: Measure the slot and client matrix in mirrored order
         shell: bash
         run: |
           set -euo pipefail
@@ -824,7 +824,7 @@ jobs:
           sleep 5
           run_quality_configuration q4-kleidiai-tuned kleidiai "$Q4_FILENAME" 512 512 4 19504
 
-      - name: Assemble strict capacity evidence and receipt
+      - name: Assemble capacity results
         shell: bash
         run: |
           set -euo pipefail
@@ -861,7 +861,7 @@ jobs:
             artifacts/capacity-study.json \
             --output artifacts/capacity-receipt.md
 
-      - name: Finalize checksummed supplementary bundle
+      - name: Finalize checksummed capacity bundle
         shell: bash
         run: |
           set -euo pipefail
@@ -897,8 +897,7 @@ jobs:
               "eligible_cell_counts": eligible_cell_counts,
               "selected_operating_points": selected_operating_points,
               "reason": (
-                  "mirrored forward/reverse Arm64 capacity evidence assembled and recomputed; "
-                  "eligibility and performance-gate outcomes are reported per cell"
+                  "both mirrored passes were assembled, and each cell's checks were recorded"
               ),
           }
           Path("artifacts/status.json").write_text(
@@ -917,7 +916,7 @@ jobs:
           )
           mv "$checksum_file" artifacts/SHA256SUMS
 
-      - name: Upload validated supplementary capacity study
+      - name: Upload validated capacity study
         if: success()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
@@ -956,7 +955,7 @@ jobs:
                       "canonical_outputs_modified": False,
                       "failed_stage": failed_stage,
                       "reason": (
-                          "the supplementary capacity workflow did not complete "
+                          "the Arm64 capacity study did not complete "
                           f"during {failed_stage}"
                       ),
                   },

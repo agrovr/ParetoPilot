@@ -1,20 +1,19 @@
-# ParetoPilot v1.1 evidence extensions
+# What ParetoPilot v1.1 adds
 
-ParetoPilot v1.1 adds expanded deterministic behavior evaluation, deployment-policy scenarios,
-bounded multi-client measurements, pass-level reconstruction, repeat-stability summaries, and a
-combined evidence report. The extension is additive: it preserves the strict core benchmark and
-recommendation boundary introduced in v1.0.
+ParetoPilot v1.1 adds a 24-case behavior check, deployment priorities, a bounded multi-client
+test, a comparison of both measured passes, and a combined report. The v1.0 benchmark and
+recommendation remain available for replay.
 
-## Published status and compatibility boundary
+## Published v1.1 result
 
-Canonical [run `30055662526`](https://github.com/agrovr/ParetoPilot/actions/runs/30055662526)
-completed the full v1.1 contract on Ubuntu 24.04 Arm64 with a 4-vCPU Arm Neoverse-N2 CPU. Its
-pinned archive is release
+Published [run `30055662526`](https://github.com/agrovr/ParetoPilot/actions/runs/30055662526)
+completed the v1.1 study on Ubuntu 24.04 Arm64 with a 4-vCPU Arm Neoverse-N2 CPU. Its archive is
+release
 [`v1.1.0`](https://github.com/agrovr/ParetoPilot/releases/tag/v1.1.0), produced from commit
 [`8a9ddce0afa2272c4a4097fe87ef6f06cb7689a9`](https://github.com/agrovr/ParetoPilot/commit/8a9ddce0afa2272c4a4097fe87ef6f06cb7689a9).
 
 The earlier [`v1.0.0` release](https://github.com/agrovr/ParetoPilot/releases/tag/v1.0.0) remains
-reproducible historical evidence. V1.1 does not rewrite or pool those measurements.
+a reproducible historical result. Its measurements are not combined with v1.1.
 
 The core decision artifacts remain:
 
@@ -25,14 +24,12 @@ The core decision artifacts remain:
 - `experiment/report.html`
 - the raw candidate artifacts bound by the manifest
 
-V1.1 artifacts live beside that core. They are not inserted into a v1.0 object under undeclared
-fields. An archive is recognized as v1.1 when its checksum manifest lists an extension artifact
-or `report-v1.1.html`; once recognized, the complete v1.1 artifact contract is required rather
-than silently accepting a partial extension set.
+V1.1 adds files beside the core v1.0 set. Replay requires the complete v1.1 file set whenever the
+checksum manifest lists an extension file or `report-v1.1.html`.
 
-## Extension artifacts
+## Additional files
 
-### Checksummed behavior suite
+### Behavior check
 
 `experiment/evaluation-suite.json` is a checksummed input to experiment assembly, and
 `extensions/evaluation-suite.json` is its identical archived extension copy. The
@@ -46,17 +43,17 @@ id, prompt, accepted answer, match mode, generation length, and recorded result 
 archived suite. Candidate constraints require a 0.80 absolute quality floor and at least 95%
 retention of the measured Q8 score.
 
-The canonical run measured 21/24 for Q8 and 20/24 for every Q4 candidate. All four passed the
+The published run measured 21/24 for Q8 and 20/24 for every Q4 candidate. All four passed the
 declared gate. This is a deterministic deployment check, not a broad language-model quality
 benchmark, and a one-case net difference is not a behavioral-equivalence claim.
 
-The threshold was declared before the canonical run. Incomplete diagnostic
+The threshold was set before the published run. Incomplete diagnostic
 [run `30050573298`](https://github.com/agrovr/ParetoPilot/actions/runs/30050573298) was used only
-for pre-canonical calibration and correctly records invalid evidence.
+to set that threshold.
 
 ### Policy profiles
 
-`extensions/policy-profiles.json` contains five precomputed recommendations derived from the same
+`extensions/policy-profiles.json` contains five recommendations calculated from the same
 validated `BenchmarkSet`:
 
 | Profile | Classification | Selected candidate |
@@ -68,7 +65,7 @@ validated `BenchmarkSet`:
 | `decode-first` | Derived non-canonical | `q8-generic` |
 
 The artifact binds the benchmark, constraints, and `extensions/policy-config.json` by SHA-256.
-Report generation recomputes every recommendation rather than trusting a supplied selected id.
+Report generation recalculates every recommendation from those inputs.
 The four derived profiles are sensitivity views over the same measurements, not additional
 benchmark runs.
 
@@ -95,9 +92,8 @@ and full argument arrays, verifies the request host and explicit port against th
 and permits only declared host and port binding differences. Model, runtime, parallelism, thread,
 batch, micro-batch, context, and CPU settings must remain materially equivalent.
 
-In the canonical run, every candidate completed every request. Concurrency 1 was the highest
-SLO-passing level for all four candidates. These rows are bounded operational evidence; they are
-not converted into cost, energy, general capacity, or sustainability claims.
+In the published run, every candidate completed every request. Concurrency 1 was the highest
+SLO-passing level for all four candidates. The test covers only the listed concurrency levels.
 
 ### Raw repeat-pass reconstruction
 
@@ -105,21 +101,21 @@ not converted into cost, energy, general capacity, or sustainability claims.
 checksummed raw files under `experiment/candidates/<candidate>/`. `assemble-repeat-pass` does not
 split the final aggregate in half. For each candidate and pass, it:
 
-1. follows bounded artifact references from the canonical benchmark;
+1. follows artifact references from the published benchmark;
 2. verifies throughput settings, raw `llama-bench` JSONL, `llama-server` evaluation, and GNU
    `time -v` files against recorded SHA-256 values;
 3. recomputes prompt and generation medians from the raw pass;
 4. validates behavior cases and latency samples against the archived suite;
 5. parses peak RSS from the raw process measurement; and
 6. carries forward only candidate identity, parameters, and immutable model size from the
-   canonical benchmark.
+   published benchmark.
 
 Each resulting benchmark set is labeled `supplementary-repeat-pass` and records its source
 benchmark and source-artifact fingerprints.
 
 `extensions/repeat-stability.json` compares those validated pass sets. It binds both pass files
 and candidate configurations and reports pass values, relative spread, and observed direction
-versus the baseline. The canonical artifact has 24 rows. All six metrics were directionally
+versus the baseline. The published artifact has 24 rows. All six metrics were directionally
 consistent for each Q4 candidate; their maximum relative spreads were 1.6695% for Q4 generic,
 1.3919% for Q4 + KleidiAI, and 0.8029% for tuned Q4 + KleidiAI.
 
@@ -128,30 +124,21 @@ ParetoPilot does not make one.
 
 ### V1.1 report
 
-`report-v1.1.html` is a deterministic, self-contained view of the canonical recommendation and
-the additive policy, load, and stability evidence. The renderer validates input fingerprints,
-candidate coverage, command bindings, and internally recomputed recommendations before drawing
-the report. It does not run inference or change the selection decision.
+`report-v1.1.html` is a self-contained view of the recommendation and its policy, load, and
+stability results. The renderer checks file hashes, candidates, commands, and recalculates the
+recommendations before building the report.
 
-The report keeps the primary finding honest: Q8 was the numeric p95 end-to-end winner and the
-only candidate within the declared 1% cutoff. Tuned Q4 + KleidiAI is shown as a resource
-alternative with lower model size, RSS, and TTFT rather than being mislabeled as the canonical
-winner.
+Q8 had the lowest p95 end-to-end latency and was the only candidate inside the declared 1%
+cutoff. Tuned Q4 + KleidiAI is also shown because it used less memory and had a lower TTFT.
 
-### Pages showcase
+### Published report site
 
-The public Pages homepage is a presentation view, not a tenth authoritative replay artifact.
-Before rendering it, the deploy workflow downloads and verifies the locked release, reproduces
-all nine comparisons, and confirms the exact canonical `report-v1.1.html` hash. The showcase
-renderer also requires the reviewed evidence lock and refuses a supplied canonical report that
-does not match a fresh deterministic render from the same inputs.
+The Pages site presents the v1.1 results in a more readable layout. Before building the page, the
+workflow verifies the release, rebuilds all nine outputs, and checks `report-v1.1.html`.
 
-Pages publishes the presentation as `index.html` and preserves the byte-identical canonical
-report at `evidence/report-v1.1.html`. The showcase can improve navigation and visual
-communication, but it cannot add measurements, change the selected candidate, or substitute for
-the checksummed release.
+The original report remains available at `evidence/report-v1.1.html`.
 
-## Replay semantics
+## What replay checks
 
 `paretopilot replay` verifies `SHA256SUMS`, canonical completion status, safe relative paths, and
 the full required artifact set before writing anything. For a v1.1 archive it regenerates and
@@ -168,10 +155,9 @@ compares:
 9. the v1.1 report.
 
 A missing or different decision artifact makes `decision_reproduced: false` and invalidates the
-replay. Presentation-only report drift can be surfaced separately from measurement drift, but the
-published v1.1 release matched all nine comparisons exactly.
+replay. The published v1.1 release matched all nine outputs.
 
-The independent release replay returned:
+Release verification returned:
 
 ```json
 {
@@ -186,8 +172,8 @@ The independent release replay returned:
 }
 ```
 
-Replay never reruns inference. A fresh hosted-runner workflow is new measurement evidence, not a
-replay of the archived hardware environment.
+Replay uses the archived measurements. A fresh hosted-runner workflow creates a separate
+measurement.
 
 ## Bundle integrity
 
@@ -205,17 +191,17 @@ The archive pins `llama.cpp`
 revision `91cad51170dc346986eccefdc2dd33a9da36ead9`, and evaluation-suite SHA-256
 `e49c16fba32fd65c947264aef4141026ab68b1fd415ef09eeea6e8ade9a545c7`.
 
-## Trust rules
+## Validation rules
 
-1. Every JSON artifact has a closed schema: duplicate keys, unknown fields, non-finite values,
-   identity mismatches, incomplete records, and inconsistent aggregates fail closed.
+1. JSON files with duplicate keys, unknown fields, non-finite values, identity mismatches,
+   incomplete records, or inconsistent aggregates are rejected.
 2. Measured recommendations, policy profiles, load evidence, and stability evidence require
    SHA-256 input bindings.
-3. Canonical and derived decisions are visibly distinguished in JSON and HTML.
-4. Missing extension data is shown as not measured; it is never inferred.
+3. `canonical` and `derived-non-canonical` priorities are labeled separately in JSON and HTML.
+4. Missing measurements are labeled as not measured.
 5. A bundle-level `SHA256SUMS` covers core, raw, and extension artifacts.
 6. Report generation and replay remain offline and dependency-free after extraction.
-7. Arm Performix is optional and cannot replace benchmark, quality, load, or checksum evidence.
+7. Arm Performix is optional and is not used for the benchmark, quality, load, or checksum checks.
 
 ## V1.1 bundle layout
 

@@ -1,18 +1,16 @@
-# Supplementary Arm64 capacity result: run 30144901854
+# Arm64 capacity study: run 30144901854
 
-> **Supplementary evidence · canonical v1.1 unchanged**
+This study asks how many server slots and simultaneous clients each candidate should use after the
+v1.1 model comparison. On this native Arm64 runner, **four clients needed four server slots**.
+P4/C4—four server slots and four simultaneous clients—was the best observed passing point for both
+the Q8 reference and the Q4 resource alternative.
 
-This study asks a second deployment question after ParetoPilot's frozen model decision: how many
-server slots and simultaneous clients should each predeclared candidate use? On this native Arm64
-runner, **four clients needed four server slots**. P4/C4 was the best observed passing point for
-both the Q8 reference and the Q4 resource alternative.
+Download the complete logs, commands, raw samples, build records, environment capture, and
+generated outputs from the
+[`v1.4.0` release](https://github.com/agrovr/ParetoPilot/releases/tag/v1.4.0). This directory keeps
+the summary and its machine-readable [`evidence.json`](evidence.json).
 
-The complete logs, commands, raw samples, build records, environment capture, embedded canonical
-evidence, and regenerated outputs are bound to the versioned, SHA-256-locked
-[`v1.4.0` release](https://github.com/agrovr/ParetoPilot/releases/tag/v1.4.0). The repository keeps
-only this compact reviewed record and its machine-readable [`evidence.json`](evidence.json).
-
-## Release lock
+## Run and archive details
 
 | Field | Value |
 | --- | --- |
@@ -25,26 +23,22 @@ only this compact reviewed record and its machine-readable [`evidence.json`](evi
 | Asset size | 794,681 bytes |
 | Archive SHA-256 | `a73d801bc3997f1c0b0158e92c8305987da8638501b74c5ecd2af3aaca57aaa7` |
 | Checksummed payloads | 121 |
-| Frozen canonical evidence | Run [`30055662526`](../30055662526/README.md), release `v1.1.0` |
-
-The release filename is different from the GitHub Actions artifact name, but its bytes are exact:
-both are locked to the archive SHA-256 above.
+| Published v1.1 result | Run [`30055662526`](../30055662526/README.md), release `v1.1.0` |
 
 ## Selected operating points
 
 | Candidate | Role | Selected point | Median generation rate | Gain vs own P1/C1 | TTFT p95 | E2E p95 | Peak RSS | Quality |
 | --- | --- | --- | ---: | ---: | ---: | ---: | ---: | ---: |
-| **Q8 generic reference** | Frozen canonical model choice | **P4 / C4** | 84.94 tok/s | +142.0% | 756.6 ms | 3056.8 ms | 3448.1 MiB | 21/24 |
+| **Q8 generic reference** | Published latency choice | **P4 / C4** | 84.94 tok/s | +142.0% | 756.6 ms | 3056.8 ms | 3448.1 MiB | 21/24 |
 | **Q4 + KleidiAI, 512-token micro-batch** | Measured resource alternative | **P4 / C4** | 90.67 tok/s | +176.3% | 639.9 ms | 2852.6 ms | 2031.3 MiB | 20/24 |
 
 Each candidate had six passing cells out of nine. The selection maximized median generated tokens
-per second only among cells where both mirrored passes met the load SLO, quality, RSS, and spread
-gates. Exactly one cell per candidate was within the predeclared 1% objective tolerance.
+per second only among cells where both mirrored passes met the latency, quality, memory, and
+consistency limits. Exactly one cell per candidate was within the 1% tolerance set before testing.
 
 At the two selected P4/C4 points, Q4 measured 6.74% higher median generation throughput, 15.42%
 lower observed-p95 TTFT, 6.68% lower observed-p95 E2E latency, and 41.09% lower peak RSS than Q8.
-Those are descriptive measurements at the selected points, **not a new model recommendation**.
-Q8 remains the frozen canonical v1.1 latency decision.
+These capacity measurements do not change the published Q8 latency result.
 
 ## What was measured
 
@@ -58,16 +52,14 @@ Q8 remains the frozen canonical v1.1 latency decision.
 - The fixed 24-case quality guard passed at every slot level. Q8 scored 21/24. Q4 scored 20/24,
   which is **95.2% of the reference score**.
 
-## Independent review
+## Verification
 
 The extracted archive passed all 121 payload checksums with exact file coverage. A fresh assembly
 from the raw inputs reproduced `capacity-study.json` byte for byte, and regenerating the receipt
 reproduced `capacity-receipt.md` byte for byte. All 18 cells were separately recomputed with zero
 metric mismatches.
 
-The embedded frozen v1.1 evidence also replayed successfully: the canonical Q8 decision,
-authoritative outputs, and report were reproduced, with no differences or warnings. The capacity
-study reports `canonical_outputs_modified: false`.
+Replay also confirmed the published Q8 decision and its report, with no differences or warnings.
 
 ## Verify
 
@@ -87,15 +79,13 @@ reassembly and byte-comparison commands:
 less evidence/capacity-receipt.md
 ```
 
-## Boundaries
+## Study limits
 
-This is a bounded fixed-concurrency study of one model family and workload on one ephemeral native
-Arm64 runner. It is not an open-loop production-capacity benchmark, a cost or energy claim, or a
-replacement for the frozen canonical v1.1 recommendation.
+This fixed-concurrency study covers one model family and workload on one temporary native Arm64
+runner. It does not measure open-loop traffic, production capacity, cost, or energy.
 
-The eight measured requests per cell and pass are a transparent small sample. Within each pass,
-p95 is the maximum observed request; the displayed cell value is the median of the two pass-level
-p95 values. This is not a statistical-significance claim. Q4 P4/C2 passed, but its 14.78%
-generation-rate spread was close to the 15% predeclared limit. The Q4 quality result was narrowly
-above the 95% retention floor. Finally, the KleidiAI log marker proves that `llama.cpp` reported a
-`CPU_KLEIDIAI` model buffer; it is not kernel-level acceleration proof.
+Each cell has eight measured requests in each pass. Within a pass, p95 is the maximum observed
+request; the displayed cell value is the median of the two pass-level p95 values. Q4 P4/C2 passed,
+but its 14.78% generation-rate spread was close to the 15% limit. The Q4 quality result was just
+above the 95% retention floor. The KleidiAI log marker shows that `llama.cpp` reported a
+`CPU_KLEIDIAI` model buffer; it is not a kernel-level trace.

@@ -521,7 +521,7 @@ class ReportV11Tests(unittest.TestCase):
         report = rendered_v11(data=canonical_benchmarks(classification="exploratory"))
 
         self.assertIn(
-            "Exploratory evidence — not canonical submission evidence.",
+            "Exploratory result — not published benchmark evidence.",
             report,
         )
         self.assertIn("Primary predeclared policy", report)
