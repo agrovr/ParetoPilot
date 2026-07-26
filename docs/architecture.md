@@ -101,6 +101,12 @@ complete checksum coverage, rebuilds the capacity study and Markdown receipt fro
 sources, requires exact output matches, and then replays the embedded frozen canonical archive.
 Pages consumes the compact reviewed lock only after completing that replay.
 
+`verify-published` is the cross-platform proof funnel over both release lanes. Its packaged lock
+pins the official URL, run ID, exact byte size, and SHA-256 for each archive. The command performs
+bounded downloads or accepts the same exact files locally, safely extracts them, delegates to the
+existing canonical and capacity replay engines, and emits one deterministic JSON/Markdown proof.
+It does not add measurements or weaken either replay contract.
+
 ### Policy sensitivity
 
 One canonical and four non-canonical profiles are evaluated from the same validated benchmark
@@ -169,6 +175,7 @@ light/dark preference changes semantic color tokens only; it never alters the bo
 | [`src/paretopilot/capacity_eval.py`](../src/paretopilot/capacity_eval.py) | Strict supplementary capacity assembly, gate recomputation, and operating-point selection |
 | [`src/paretopilot/capacity_receipt.py`](../src/paretopilot/capacity_receipt.py) | Deterministic human-readable capacity envelope and rejected-gate receipt |
 | [`src/paretopilot/capacity_replay.py`](../src/paretopilot/capacity_replay.py) | Checksummed capacity reconstruction plus embedded canonical replay |
+| [`src/paretopilot/published_proof.py`](../src/paretopilot/published_proof.py) | Pinned, safely extracted one-command verification of both public evidence releases |
 | [`src/paretopilot/report.py`](../src/paretopilot/report.py) | Deterministic core HTML decision report |
 | [`src/paretopilot/report_v11.py`](../src/paretopilot/report_v11.py) | Deterministic additive evidence report |
 | [`src/paretopilot/showcase.py`](../src/paretopilot/showcase.py) | Judge-facing presentation generated from verified v1.1 inputs without changing the canonical report |

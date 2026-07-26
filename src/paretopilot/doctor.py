@@ -23,6 +23,7 @@ class EnvironmentReport:
     is_arm64: bool
     evidence_eligible: bool
     warnings: tuple[str, ...]
+    next_steps: tuple[str, ...] = ()
     architecture_eligible: bool = field(init=False)
 
     def __post_init__(self) -> None:
@@ -46,15 +47,26 @@ def inspect_environment() -> EnvironmentReport:
     evidence_eligible = architecture_eligible and operating_system.casefold() == "linux"
 
     warnings: tuple[str, ...] = ()
+    next_steps: tuple[str, ...] = ()
     if not architecture_eligible:
         warnings = (
             "Non-Arm64 architecture detected; this environment is smoke-test-only "
             "and is not eligible for benchmark evidence.",
         )
+        next_steps = (
+            "Run `paretopilot init DIRECTORY` for a safe synthetic software demo.",
+            "Run `paretopilot verify-published --output-dir DIRECTORY` to verify the "
+            "locked Arm64 evidence on this host.",
+        )
     elif not evidence_eligible:
         warnings = (
             f"Arm64 architecture detected on {operating_system}, but benchmark evidence "
             "requires native Arm64 Linux; this environment is compatibility-test-only.",
+        )
+        next_steps = (
+            "Run `paretopilot init DIRECTORY` for a safe synthetic software demo.",
+            "Run `paretopilot verify-published --output-dir DIRECTORY` to verify the "
+            "locked Arm64 evidence on this host.",
         )
 
     return EnvironmentReport(
@@ -67,6 +79,7 @@ def inspect_environment() -> EnvironmentReport:
         is_arm64=is_arm64,
         evidence_eligible=evidence_eligible,
         warnings=warnings,
+        next_steps=next_steps,
     )
 
 

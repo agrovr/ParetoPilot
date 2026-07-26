@@ -1,0 +1,27 @@
+{
+  "archives": {
+    "canonical": {
+      "filename": "paretopilot-v1.1.0-arm64-evidence-30055662526.zip",
+      "release_tag": "v1.1.0",
+      "run_id": "30055662526",
+      "sha256": "b5586878ccd214667911390f417db0417111ac2c31d163a2f5f55c4469aefeb2",
+      "size_bytes": 402899,
+      "url": "https://github.com/agrovr/ParetoPilot/releases/download/v1.1.0/paretopilot-v1.1.0-arm64-evidence-30055662526.zip"
+    },
+    "capacity": {
+      "filename": "paretopilot-v1.4.0-arm64-capacity-30144901854.zip",
+      "release_tag": "v1.4.0",
+      "run_id": "30144901854",
+      "sha256": "a73d801bc3997f1c0b0158e92c8305987da8638501b74c5ecd2af3aaca57aaa7",
+      "size_bytes": 794681,
+      "url": "https://github.com/agrovr/ParetoPilot/releases/download/v1.4.0/paretopilot-v1.4.0-arm64-capacity-30144901854.zip"
+    }
+  },
+  "evidence_limits": [
+    "This command verifies archived bytes, checksums, and deterministic replay. It does not rerun inference or prove current hardware performance.",
+    "The canonical v1.1 measurements came from one GitHub-hosted Ubuntu 24.04 Arm64 runner with a Neoverse-N2 CPU.",
+    "The v1.4 capacity result is a bounded, closed-loop fixed-concurrency study on one runner. It is not an open-loop production-capacity, cost, energy, or MLPerf claim.",
+    "The KleidiAI log marker shows that llama.cpp reported a CPU_KLEIDIAI model buffer. It is not kernel-level acceleration proof."
+  ],
+  "schema_version": "1.0"
+}
