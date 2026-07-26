@@ -41,6 +41,7 @@ where = ["src"]
 
 [tool.setuptools.package-data]
 paretopilot = [
+  "data/*.json",
   "templates/launch-kit/*.json",
   "templates/launch-kit/*.md",
   "templates/launch-kit/*.txt",

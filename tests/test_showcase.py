@@ -467,6 +467,18 @@ class ShowcaseV11Tests(unittest.TestCase):
 
         self.assertEqual(first.encode(), second.encode())
         self.assertIn("<title>ParetoPilot | Arm64 measured flight log</title>", first)
+        self.assertIn('<link rel="icon" href="data:image/svg+xml,', first)
+        self.assertNotIn('<link rel="icon" href="data:,">', first)
+        self.assertIn(
+            '<meta property="og:title" content="ParetoPilot | Arm64 measured flight log">',
+            first,
+        )
+        self.assertIn(
+            '<meta name="twitter:description" '
+            'content="Byte-verified Arm64 deployment decision from ParetoPilot '
+            'canonical run data.">',
+            first,
+        )
         self.assertIn('class="showcase is-verified"', first)
         self.assertIn(
             "Choose the Arm64 deployment that "
@@ -674,6 +686,30 @@ class ShowcaseV11Tests(unittest.TestCase):
         for stage in ladder:
             self.assertIn(f"<h3>{stage['label']}</h3>", report)
             self.assertIn(f'<code class="stage-id">{stage["candidate_id"]}</code>', report)
+        self.assertEqual(report.count('class="stage-technical-change"'), 4)
+        self.assertIn("Declared reference setup", report)
+        self.assertIn(
+            "<span>Quantization</span> <code>Q8_0</code>",
+            report,
+        )
+        self.assertIn(
+            "<span>Quantization</span> <code>Q8_0</code> "
+            '<span class="technical-change-arrow" aria-label="to">→</span> '
+            "<code>Q4_0</code>",
+            report,
+        )
+        self.assertIn(
+            "<span>KleidiAI</span> <code>off</code> "
+            '<span class="technical-change-arrow" aria-label="to">→</span> '
+            "<code>on</code>",
+            report,
+        )
+        self.assertIn(
+            "<span>Micro-batch</span> <code>128</code> "
+            '<span class="technical-change-arrow" aria-label="to">→</span> '
+            "<code>512</code>",
+            report,
+        )
 
         arm_stage = next(stage for stage in ladder if stage["attribution_stage"] == "arm-kernel")
         objective_metric = str(passport["objective"]["metric"])
@@ -717,6 +753,10 @@ class ShowcaseV11Tests(unittest.TestCase):
             '<p class="section-kicker">S1 · Supplementary capacity</p>',
             capacity,
         )
+        self.assertIn(
+            "Measured Arm64 evidence · Canonical v1.1 · Capacity v1.4",
+            report,
+        )
         selections = study["selections"]
         assert isinstance(selections, list)
         selected_coordinates = {
@@ -757,6 +797,18 @@ class ShowcaseV11Tests(unittest.TestCase):
         )
         self.assertEqual(capacity.count("<table"), 2)
         self.assertEqual(capacity.count("<caption>"), 2)
+        self.assertEqual(
+            capacity.count(
+                'class="capacity-table-wrap" role="region" tabindex="0" aria-label="Scrollable '
+            ),
+            2,
+        )
+        self.assertEqual(
+            capacity.count(
+                '<p class="capacity-scroll-hint">Swipe to inspect every client level →</p>'
+            ),
+            2,
+        )
         self.assertEqual(capacity.count('<th scope="row">'), 6)
         self.assertIn("Measured requests</dt><dd>288</dd>", capacity)
         self.assertIn("Exact-reversal passes</dt><dd>2</dd>", capacity)
@@ -788,6 +840,11 @@ class ShowcaseV11Tests(unittest.TestCase):
             report,
         )
         self.assertNotIn("winner", capacity.lower())
+        mobile_css = css_rule_body(report, "@media (max-width: 47.99rem)")
+        self.assertIn(
+            ".showcase .capacity-matrix { min-width: 27rem; }",
+            mobile_css,
+        )
 
     def test_capacity_failure_labels_explain_every_declared_gate(self) -> None:
         cases = (
@@ -849,6 +906,11 @@ class ShowcaseV11Tests(unittest.TestCase):
             study = CapacityFixture(Path(directory)).assemble()
             result = _capacity_result_from_study(study)
             report = rendered_capacity_showcase(study)
+        provenance = study["provenance"]
+        assert isinstance(provenance, dict)
+        capacity_source = provenance["source"]
+        assert isinstance(capacity_source, dict)
+        capacity_run_id = str(capacity_source["run_id"])
 
         selected_points = result["selected_operating_points"]
         assert isinstance(selected_points, dict)
@@ -917,7 +979,11 @@ class ShowcaseV11Tests(unittest.TestCase):
             brief[verdict_start:instrument_start],
         )
         self.assertIn(
-            f"{result['measured_request_count']} requests · zero recorded failures",
+            (
+                f'<a href="https://github.com/agrovr/ParetoPilot/actions/runs/'
+                f'{capacity_run_id}">Capacity run {capacity_run_id}</a> · v1.4.0 · '
+                f"{result['measured_request_count']} requests · zero recorded failures"
+            ),
             brief,
         )
         self.assertIn(
@@ -1119,7 +1185,7 @@ class ShowcaseV11Tests(unittest.TestCase):
         passport["ladder"] = passport["ladder"][:3]
         passport["ladder"][1]["objective_value"] = None
 
-        markup = _optimization_ladder_markup(passport)
+        markup = _optimization_ladder_markup(passport, synthetic)
 
         self.assertIn("00 · Synthetic fixture path", markup)
         self.assertIn("Three stages. One honest runway.", markup)
@@ -1159,6 +1225,208 @@ class ShowcaseV11Tests(unittest.TestCase):
             "measured objective values",
         ):
             self.assertNotIn(measured_claim, report)
+
+    def test_optimization_ladder_reads_quantization_from_the_model_record(self) -> None:
+        measured = attributed_benchmarks()
+        candidates = []
+        for candidate in measured.candidates:
+            parameters = deepcopy(dict(candidate.parameters))
+            configuration = deepcopy(dict(parameters["configuration"]))
+            quantization = configuration.pop("quantization")
+            parameters["configuration"] = configuration
+            parameters["model"] = {"quantization": quantization}
+            candidates.append(
+                {
+                    "id": candidate.candidate_id,
+                    "label": candidate.label,
+                    "parameters": parameters,
+                    "metrics": dict(candidate.metrics),
+                }
+            )
+        nested_model_benchmarks = BenchmarkSet.from_mapping(
+            {
+                "schema_version": measured.schema_version,
+                "baseline_id": measured.baseline_id,
+                "synthetic": measured.synthetic,
+                "metadata": dict(measured.metadata),
+                "candidates": candidates,
+            }
+        )
+        passport = build_decision_passport(
+            nested_model_benchmarks,
+            canonical_constraints(),
+        )
+
+        markup = _optimization_ladder_markup(passport, nested_model_benchmarks)
+
+        self.assertIn(
+            "<span>Quantization</span> <code>Q8_0</code> "
+            '<span class="technical-change-arrow" aria-label="to">→</span> '
+            "<code>Q4_0</code>",
+            markup,
+        )
+
+    def test_optimization_ladder_normalizes_setting_types_before_comparison(self) -> None:
+        measured = attributed_benchmarks()
+        candidates = []
+        for candidate in measured.candidates:
+            parameters = deepcopy(dict(candidate.parameters))
+            if candidate.candidate_id == "q4-kleidiai":
+                parameters["configuration"]["ubatch_size"] = 128
+            elif candidate.candidate_id == "q4-kleidiai-tuned":
+                parameters["configuration"]["ubatch_size"] = "128"
+                argv = parameters["deployment_argv"]
+                argv[argv.index("--ubatch-size") + 1] = "128"
+            candidates.append(
+                {
+                    "id": candidate.candidate_id,
+                    "label": candidate.label,
+                    "parameters": parameters,
+                    "metrics": dict(candidate.metrics),
+                }
+            )
+        equivalent_settings = BenchmarkSet.from_mapping(
+            {
+                "schema_version": measured.schema_version,
+                "baseline_id": measured.baseline_id,
+                "synthetic": measured.synthetic,
+                "metadata": dict(measured.metadata),
+                "candidates": candidates,
+            }
+        )
+        passport = build_decision_passport(
+            equivalent_settings,
+            canonical_constraints(),
+        )
+
+        markup = _optimization_ladder_markup(passport, equivalent_settings)
+
+        self.assertNotIn(
+            "<span>Micro-batch</span> <code>128</code> "
+            '<span class="technical-change-arrow" aria-label="to">→</span> '
+            "<code>128</code>",
+            markup,
+        )
+        self.assertIn(
+            "Source evidence does not declare a compared setting change for this stage.",
+            markup,
+        )
+
+    def test_optimization_ladder_rejects_conflicting_setting_declarations(self) -> None:
+        measured = attributed_benchmarks()
+        candidates = []
+        for candidate in measured.candidates:
+            parameters = deepcopy(dict(candidate.parameters))
+            if candidate.candidate_id == "q8-generic":
+                parameters["model"] = {"quantization": "Q4_0"}
+            candidates.append(
+                {
+                    "id": candidate.candidate_id,
+                    "label": candidate.label,
+                    "parameters": parameters,
+                    "metrics": dict(candidate.metrics),
+                }
+            )
+        conflicting_settings = BenchmarkSet.from_mapping(
+            {
+                "schema_version": measured.schema_version,
+                "baseline_id": measured.baseline_id,
+                "synthetic": measured.synthetic,
+                "metadata": dict(measured.metadata),
+                "candidates": candidates,
+            }
+        )
+        passport = build_decision_passport(
+            conflicting_settings,
+            canonical_constraints(),
+        )
+
+        with self.assertRaisesRegex(
+            ValidationError,
+            "q8-generic.*conflicting Quantization",
+        ):
+            _optimization_ladder_markup(passport, conflicting_settings)
+
+    def test_recognized_ladder_stage_does_not_borrow_an_unrelated_change(self) -> None:
+        measured = attributed_benchmarks()
+        candidates = []
+        for candidate in measured.candidates:
+            parameters = deepcopy(dict(candidate.parameters))
+            if candidate.candidate_id == "q4-kleidiai":
+                parameters["configuration"]["kleidiai"] = False
+                parameters["configuration"]["ubatch_size"] = 256
+                argv = parameters["deployment_argv"]
+                argv[argv.index("--ubatch-size") + 1] = "256"
+            candidates.append(
+                {
+                    "id": candidate.candidate_id,
+                    "label": candidate.label,
+                    "parameters": parameters,
+                    "metrics": dict(candidate.metrics),
+                }
+            )
+        unrelated_change = BenchmarkSet.from_mapping(
+            {
+                "schema_version": measured.schema_version,
+                "baseline_id": measured.baseline_id,
+                "synthetic": measured.synthetic,
+                "metadata": dict(measured.metadata),
+                "candidates": candidates,
+            }
+        )
+        passport = build_decision_passport(
+            unrelated_change,
+            canonical_constraints(),
+        )
+
+        markup = _optimization_ladder_markup(passport, unrelated_change)
+        arm_stage_start = markup.index('<code class="stage-id">q4-kleidiai</code>')
+        next_stage_start = markup.index(
+            '<code class="stage-id">q4-kleidiai-tuned</code>',
+            arm_stage_start,
+        )
+        arm_stage_markup = markup[arm_stage_start:next_stage_start]
+
+        self.assertIn(
+            "Source evidence does not declare a compared setting change for this stage.",
+            arm_stage_markup,
+        )
+        self.assertNotIn("Micro-batch", arm_stage_markup)
+
+    def test_optimization_ladder_bounds_numeric_setting_text(self) -> None:
+        measured = attributed_benchmarks()
+        candidates = []
+        for candidate in measured.candidates:
+            parameters = deepcopy(dict(candidate.parameters))
+            if candidate.candidate_id == "q8-generic":
+                parameters["configuration"]["ubatch_size"] = "9" * 5000
+            candidates.append(
+                {
+                    "id": candidate.candidate_id,
+                    "label": candidate.label,
+                    "parameters": parameters,
+                    "metrics": dict(candidate.metrics),
+                }
+            )
+        oversized_setting = BenchmarkSet.from_mapping(
+            {
+                "schema_version": measured.schema_version,
+                "baseline_id": measured.baseline_id,
+                "synthetic": measured.synthetic,
+                "metadata": dict(measured.metadata),
+                "candidates": candidates,
+            }
+        )
+        passport = build_decision_passport(
+            oversized_setting,
+            canonical_constraints(),
+        )
+
+        with self.assertRaisesRegex(
+            ValidationError,
+            "q8-generic.*Micro-batch.*positive integer",
+        ):
+            _optimization_ladder_markup(passport, oversized_setting)
 
     def test_optimization_ladder_has_horizontal_mobile_and_print_compositions(self) -> None:
         report = rendered_showcase(benchmarks=attributed_benchmarks())
@@ -1412,6 +1680,10 @@ class ShowcaseV11Tests(unittest.TestCase):
             '.showcase .profile-tabs[data-overflow="scroll"] { overflow-x: auto; }',
             report,
         )
+        self.assertIn(
+            '<p class="policy-overflow-hint">Swipe to inspect every deployment priority →</p>',
+            report,
+        )
         scrollbar_css = css_rule_body(report, ".showcase .profile-tabs::-webkit-scrollbar")
         self.assertIn("width: 0;", scrollbar_css)
         self.assertIn("height: 0;", scrollbar_css)
@@ -1440,6 +1712,10 @@ class ShowcaseV11Tests(unittest.TestCase):
         )
         narrow_css = css_rule_body(report, "@media (max-width: 47.99rem)")
         self.assertNotIn(".profile-tabs", narrow_css)
+        self.assertIn(
+            ".showcase .policy-overflow-hint { display: block; }",
+            narrow_css,
+        )
         self.assertNotIn("@media (min-width: 56rem)", report)
 
     def test_charts_use_stable_series_tags_and_responsive_html_legends(self) -> None:

@@ -28,6 +28,7 @@ class EnvironmentDoctorTests(unittest.TestCase):
         self.assertTrue(report.architecture_eligible)
         self.assertTrue(report.evidence_eligible)
         self.assertEqual(report.warnings, ())
+        self.assertEqual(report.next_steps, ())
 
     def test_arm64_alias_is_accepted(self) -> None:
         with (
@@ -55,6 +56,9 @@ class EnvironmentDoctorTests(unittest.TestCase):
                 self.assertEqual(len(report.warnings), 1)
                 self.assertIn("requires native Arm64 Linux", report.warnings[0])
                 self.assertIn("compatibility-test-only", report.warnings[0])
+                self.assertEqual(len(report.next_steps), 2)
+                self.assertIn("paretopilot init DIRECTORY", report.next_steps[0])
+                self.assertIn("paretopilot verify-published", report.next_steps[1])
 
     def test_x86_host_is_explicitly_smoke_only(self) -> None:
         with (
@@ -73,6 +77,9 @@ class EnvironmentDoctorTests(unittest.TestCase):
         self.assertEqual(len(report.warnings), 1)
         self.assertIn("smoke-test-only", report.warnings[0])
         self.assertIn("not eligible for benchmark evidence", report.warnings[0])
+        self.assertEqual(len(report.next_steps), 2)
+        self.assertIn("safe synthetic software demo", report.next_steps[0])
+        self.assertIn("locked Arm64 evidence", report.next_steps[1])
 
 
 if __name__ == "__main__":

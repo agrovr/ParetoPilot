@@ -11,6 +11,7 @@ recursive-include docs *.md *.svg
 recursive-include evals *.json
 recursive-include examples *.json
 recursive-include results/published *.json *.md
+recursive-include src/paretopilot/data *.json
 recursive-include src/paretopilot/templates *.json *.md *.txt *.yml
 recursive-include tests *.json *.jsonl *.md *.py SHA256SUMS
 

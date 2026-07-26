@@ -1097,6 +1097,235 @@ def _stage_label(stage: Mapping[str, Any], *, synthetic: bool) -> str:
     return f"{stage_kind} stage {stage.get('stage')}"
 
 
+_TECHNICAL_SETTING_LABELS = {
+    "quantization": "Quantization",
+    "kleidiai": "KleidiAI",
+    "ubatch_size": "Micro-batch",
+    "batch_size": "Batch size",
+    "threads": "Threads",
+    "context_size": "Context",
+    "parallel": "Server slots",
+}
+_TECHNICAL_SETTING_FLAGS = {
+    "--ubatch-size": "ubatch_size",
+    "--batch-size": "batch_size",
+    "--threads": "threads",
+    "--ctx-size": "context_size",
+    "--parallel": "parallel",
+}
+_NUMERIC_TECHNICAL_SETTINGS = frozenset(
+    {"ubatch_size", "batch_size", "threads", "context_size", "parallel"}
+)
+_MAX_TECHNICAL_SETTING_INTEGER = 2_147_483_647
+_STAGE_TECHNICAL_SETTINGS = {
+    "quantization": ("quantization",),
+    "arm-kernel": ("kleidiai",),
+    "runtime-tuning": ("ubatch_size", "batch_size", "threads", "context_size", "parallel"),
+}
+
+
+def _normalize_technical_setting(
+    candidate: Candidate,
+    name: str,
+    value: object,
+    *,
+    source: str,
+) -> str:
+    """Normalize one declared setting before comparison or presentation."""
+
+    label = _TECHNICAL_SETTING_LABELS[name]
+    context = f"candidate {candidate.candidate_id!r} {label} from {source}"
+
+    if name == "kleidiai":
+        if isinstance(value, bool):
+            return "on" if value else "off"
+        if isinstance(value, int) and not isinstance(value, bool) and value in {0, 1}:
+            return "on" if value == 1 else "off"
+        if isinstance(value, str):
+            normalized = value.strip().casefold()
+            aliases = {
+                "0": "off",
+                "1": "on",
+                "false": "off",
+                "off": "off",
+                "on": "on",
+                "true": "on",
+            }
+            if normalized in aliases:
+                return aliases[normalized]
+        raise ValidationError(f"{context} must be a boolean or an on/off value")
+
+    if name in _NUMERIC_TECHNICAL_SETTINGS:
+        if isinstance(value, bool):
+            raise ValidationError(f"{context} must be a positive integer")
+        if isinstance(value, int):
+            normalized_number = value
+        elif isinstance(value, float) and math.isfinite(value) and value.is_integer():
+            normalized_number = int(value)
+        elif isinstance(value, str):
+            normalized_text = value.strip()
+            digits = normalized_text.removeprefix("+")
+            if re.fullmatch(r"\d+", digits) is None or len(digits) > 10:
+                raise ValidationError(f"{context} must be a positive integer")
+            try:
+                normalized_number = int(digits)
+            except ValueError as exc:
+                raise ValidationError(f"{context} must be a positive integer") from exc
+        else:
+            raise ValidationError(f"{context} must be a positive integer")
+        if not 0 < normalized_number <= _MAX_TECHNICAL_SETTING_INTEGER:
+            raise ValidationError(
+                f"{context} must be a positive integer no larger than "
+                f"{_MAX_TECHNICAL_SETTING_INTEGER}"
+            )
+        return str(normalized_number)
+
+    if isinstance(value, bool) or not isinstance(value, (str, int, float)):
+        raise ValidationError(f"{context} must be a non-empty scalar value")
+    if isinstance(value, float) and not math.isfinite(value):
+        raise ValidationError(f"{context} must be finite")
+    normalized = str(value).strip()
+    if not normalized:
+        raise ValidationError(f"{context} must be a non-empty scalar value")
+    return normalized
+
+
+def _candidate_technical_settings(candidate: Candidate) -> Mapping[str, str]:
+    """Read a normalized, conflict-free setting snapshot from supplied candidate data."""
+
+    parameters = candidate.parameters
+    declarations: dict[str, list[tuple[str, str]]] = {}
+
+    def declare(name: str, value: object, source: str) -> None:
+        normalized = _normalize_technical_setting(
+            candidate,
+            name,
+            value,
+            source=source,
+        )
+        declarations.setdefault(name, []).append((source, normalized))
+
+    for name in _TECHNICAL_SETTING_LABELS:
+        if name in parameters:
+            declare(name, parameters[name], f"parameters.{name}")
+
+    raw_model = parameters.get("model")
+    if isinstance(raw_model, Mapping):
+        if "quantization" in raw_model:
+            declare(
+                "quantization",
+                raw_model["quantization"],
+                "parameters.model.quantization",
+            )
+
+    raw_configuration = parameters.get("configuration")
+    if isinstance(raw_configuration, Mapping):
+        for name in _TECHNICAL_SETTING_LABELS:
+            if name in raw_configuration:
+                declare(
+                    name,
+                    raw_configuration[name],
+                    f"parameters.configuration.{name}",
+                )
+
+    raw_argv = parameters.get("deployment_argv")
+    if isinstance(raw_argv, Sequence) and not isinstance(raw_argv, (str, bytes)):
+        argv = [str(value) for value in raw_argv]
+        for flag, name in _TECHNICAL_SETTING_FLAGS.items():
+            positions = [index for index, value in enumerate(argv) if value == flag]
+            if len(positions) > 1:
+                raise ValidationError(
+                    f"candidate {candidate.candidate_id!r} deployment_argv must contain "
+                    f"at most one {flag} value for the exact technical-change ledger"
+                )
+            if positions:
+                position = positions[0]
+                if position + 1 >= len(argv):
+                    raise ValidationError(
+                        f"candidate {candidate.candidate_id!r} deployment_argv {flag} "
+                        "is missing its value"
+                    )
+                declare(
+                    name,
+                    argv[position + 1],
+                    f"parameters.deployment_argv {flag}",
+                )
+    elif "deployment_argv" in parameters:
+        raise ValidationError(
+            f"candidate {candidate.candidate_id!r} deployment_argv must be an array "
+            "for the exact technical-change ledger"
+        )
+
+    settings: dict[str, str] = {}
+    for name, values in declarations.items():
+        normalized_values = {value for _, value in values}
+        if len(normalized_values) > 1:
+            label = _TECHNICAL_SETTING_LABELS[name]
+            evidence = ", ".join(f"{source}={value!r}" for source, value in values)
+            raise ValidationError(
+                f"candidate {candidate.candidate_id!r} declares conflicting {label} "
+                f"values: {evidence}"
+            )
+        settings[name] = values[0][1]
+    return settings
+
+
+def _technical_setting_value(value: object) -> str:
+    if isinstance(value, bool):
+        return "on" if value else "off"
+    return str(value)
+
+
+def _technical_change_markup(
+    candidate: Candidate,
+    previous: Candidate | None,
+    stage: Mapping[str, Any],
+) -> str:
+    current_settings = _candidate_technical_settings(candidate)
+    previous_settings = _candidate_technical_settings(previous) if previous is not None else {}
+    stage_kind = str(stage.get("attribution_stage"))
+
+    if previous is None:
+        names = tuple(
+            name for name in ("quantization", "kleidiai", "ubatch_size") if name in current_settings
+        )
+        heading = "Declared reference setup"
+    else:
+        preferred = _STAGE_TECHNICAL_SETTINGS.get(stage_kind)
+        compared_names = preferred if preferred is not None else tuple(_TECHNICAL_SETTING_LABELS)
+        names = tuple(
+            name
+            for name in compared_names
+            if name in current_settings
+            and name in previous_settings
+            and current_settings[name] != previous_settings[name]
+        )
+        heading = "Declared technical change"
+
+    if names:
+        phrases = []
+        for name in names[:2]:
+            label = _TECHNICAL_SETTING_LABELS[name]
+            current = _technical_setting_value(current_settings[name])
+            if previous is None:
+                phrase = f"<span>{_escape(label)}</span> <code>{_escape(current)}</code>"
+            else:
+                before = _technical_setting_value(previous_settings[name])
+                phrase = (
+                    f"<span>{_escape(label)}</span> <code>{_escape(before)}</code> "
+                    f'<span class="technical-change-arrow" aria-label="to">→</span> '
+                    f"<code>{_escape(current)}</code>"
+                )
+            phrases.append(f"<li>{phrase}</li>")
+        value_markup = f"<ul>{''.join(phrases)}</ul>"
+    else:
+        value_markup = (
+            "<p>Source evidence does not declare a compared setting change for this stage.</p>"
+        )
+
+    return f'<div class="stage-technical-change"><p>{_escape(heading)}</p>{value_markup}</div>'
+
+
 def _change_phrase(metric: str, change: Mapping[str, Any]) -> str:
     raw_percent = change.get("percent")
     if isinstance(raw_percent, (int, float)) and not isinstance(raw_percent, bool):
@@ -1162,7 +1391,10 @@ def _representative_changes(
     return tuple(ordered[:3])
 
 
-def _optimization_ladder_markup(passport: Mapping[str, Any]) -> str:
+def _optimization_ladder_markup(
+    passport: Mapping[str, Any],
+    benchmarks: BenchmarkSet,
+) -> str:
     objective = _mapping(passport.get("objective"), "decision passport objective")
     selected = _mapping(
         passport.get("selected_decision"),
@@ -1235,9 +1467,16 @@ def _optimization_ladder_markup(passport: Mapping[str, Any]) -> str:
         )
 
     stage_markup: list[str] = []
+    previous_candidate: Candidate | None = None
     for raw_stage in raw_ladder:
         stage = _mapping(raw_stage, "decision passport ladder stage")
         candidate_id = str(stage.get("candidate_id"))
+        try:
+            candidate = benchmarks.by_id(candidate_id)
+        except KeyError as exc:
+            raise ValidationError(
+                f"decision passport ladder candidate {candidate_id!r} is missing from benchmarks"
+            ) from exc
         stage_number = int(stage.get("stage"))
         stage_classes = ["optimization-stage"]
         if stage.get("selected") is True:
@@ -1295,6 +1534,7 @@ def _optimization_ladder_markup(passport: Mapping[str, Any]) -> str:
             f'<p class="stage-role">{_escape(_stage_label(stage, synthetic=synthetic_evidence))}</p>'
             f"<h3>{_escape(stage.get('label'))}</h3>"
             f'<code class="stage-id">{_escape(candidate_id)}</code>'
+            f"{_technical_change_markup(candidate, previous_candidate, stage)}"
             f'<span class="stage-decision-label">{_escape(decision_label)}</span>'
             '<p class="stage-objective">'
             f"<span>{_escape(_metric_label(metric))}</span>"
@@ -1302,6 +1542,7 @@ def _optimization_ladder_markup(passport: Mapping[str, Any]) -> str:
             "</strong></p>"
             f"{changes_markup}</div></li>"
         )
+        previous_candidate = candidate
 
     method = _mapping(passport.get("method"), "decision passport method")
     boundary_caveat = str(method.get("current_boundary_caveat"))
@@ -1313,9 +1554,9 @@ def _optimization_ladder_markup(passport: Mapping[str, Any]) -> str:
         f'<div class="section-title"><p class="section-kicker">00 · {_escape(path_label)}</p>'
         f'<h2 id="optimization-ladder-heading">{_escape(stage_heading)}</h2>'
         '</div><div class="ladder-intro-copy">'
-        "<p>Each stop comes from the deterministic decision passport. Its highlighted changes "
-        f"compare that {candidate_kind} candidate with the previous stage; the objective is "
-        "always shown."
+        "<p>Each stop comes from the deterministic decision passport. Source-declared settings "
+        f"show the technical change; highlighted outcomes compare that {candidate_kind} "
+        "candidate with the previous stage. The objective is always shown."
         '</p><p class="ladder-evidence-grade"><span>Evidence grade</span>'
         f"<strong>{_escape(evidence_grade)}</strong></p></div></header>"
         '<div class="ladder-runway" role="group" aria-label="Honest runway to the current cutoff">'
@@ -1708,6 +1949,14 @@ def _capacity_proof_context(
     )
     if archive_url != expected_archive_url:
         raise ValidationError("capacity release asset URL does not match its repository lock")
+    run_id = lock_source.get("run_id")
+    if not isinstance(run_id, str) or re.fullmatch(r"[1-9][0-9]*", run_id) is None:
+        raise ValidationError("capacity source run_id must contain only decimal digits")
+    run_id_text = run_id
+    run_url = _validated_href(
+        f"https://github.com/{repository}/actions/runs/{run_id_text}",
+        label="capacity Actions run URL",
+    )
 
     return {
         "archive_sha256": archive_digest,
@@ -1716,6 +1965,8 @@ def _capacity_proof_context(
         "checksum_manifest_sha256": checksum_digest,
         "failed_request_count": str(recomputation["failed_request_count"]),
         "release_tag": release_tag,
+        "run_id": run_id_text,
+        "run_url": run_url,
         "study_sha256": study_digest,
     }
 
@@ -1831,6 +2082,9 @@ def _capacity_flight_brief_markup(
     throughput_relative = 100.0 + throughput_delta
     rss_relative = 100.0 + rss_delta
     quality_relative = quality_retention * 100.0
+    capacity_run_id = str(proof.get("run_id"))
+    capacity_run_url = str(proof.get("run_url"))
+    capacity_release_tag = str(proof.get("release_tag"))
     throughput_headline = (
         f"{'+' if throughput_delta > 0 else ''}{_format_number(throughput_delta, digits=2)}%"
     )
@@ -1884,7 +2138,9 @@ def _capacity_flight_brief_markup(
         "<figcaption><div><span>Q8 reference → tuned Q4</span>"
         '<strong id="flight-brief-instrument-heading">Measured tradeoff at '
         f"P{parallel} / C{concurrency}</strong></div>"
-        f"<p>{measured_requests} requests · zero recorded failures</p></figcaption>"
+        f'<p><a href="{_escape(capacity_run_url)}">Capacity run '
+        f"{_escape(capacity_run_id)}</a> · {_escape(capacity_release_tag)} · "
+        f"{measured_requests} requests · zero recorded failures</p></figcaption>"
         f'<div class="flight-brief-metrics">{metric_markup}</div>'
         "</figure>"
         '<nav class="flight-brief-actions" aria-label="Judge quick actions">'
@@ -2149,7 +2405,9 @@ def _capacity_envelope_markup(
             f"<dd>{int(quality.get('passed'))}/{int(quality.get('total'))}</dd></div>"
             f"<div><dt>Eligible</dt><dd>{int(selection.get('eligible_cell_count'))}/9</dd></div>"
             "</dl></header>"
-            '<div class="capacity-table-wrap">'
+            '<div class="capacity-table-wrap" role="region" tabindex="0" '
+            f'aria-label="Scrollable {_escape(candidate.get("label"))} serving-capacity matrix">'
+            '<p class="capacity-scroll-hint">Swipe to inspect every client level →</p>'
             f'<table class="capacity-matrix"><caption>{_escape(candidate.get("label"))} '
             "serving-capacity matrix</caption>"
             '<thead><tr><th scope="col">P × C</th>'
@@ -3019,6 +3277,10 @@ html[data-theme="dark"] .showcase {
   font-size: .64rem;
   text-align: right;
 }
+.showcase .flight-brief-instrument figcaption p a {
+  color: var(--flight-link-inverse);
+  font-weight: 760;
+}
 .showcase .flight-brief-metrics {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
@@ -3579,6 +3841,52 @@ html[data-theme="dark"] .showcase {
   font-size: .72rem;
   overflow-wrap: anywhere;
 }
+.showcase .stage-technical-change {
+  margin-top: .75rem;
+  padding-block: .65rem;
+  border-block: 1px solid var(--flight-panel-line);
+}
+.showcase .stage-technical-change > p {
+  margin: 0;
+  color: var(--flight-on-dark-muted);
+  font-size: .68rem;
+  font-weight: 780;
+  letter-spacing: .035em;
+  text-transform: uppercase;
+}
+.showcase .stage-technical-change ul {
+  display: grid;
+  gap: .3rem;
+  margin: .35rem 0 0;
+  padding: 0;
+  list-style: none;
+}
+.showcase .stage-technical-change li {
+  color: var(--flight-white);
+  font-size: .8rem;
+  font-weight: 720;
+  line-height: 1.35;
+}
+.showcase .stage-technical-change li > span:first-child {
+  color: var(--flight-hero-accent);
+}
+.showcase .stage-technical-change code {
+  color: var(--flight-white);
+  font-size: .78rem;
+  overflow-wrap: anywhere;
+}
+.showcase .stage-technical-change .technical-change-arrow {
+  color: var(--flight-on-dark-muted);
+}
+.showcase .stage-technical-change > p + p {
+  margin-top: .35rem;
+  color: var(--flight-white);
+  font-size: .78rem;
+  font-weight: 650;
+  letter-spacing: 0;
+  line-height: 1.4;
+  text-transform: none;
+}
 .showcase .stage-decision-label {
   display: inline-block;
   margin-top: .75rem;
@@ -3774,6 +4082,14 @@ html[data-theme="dark"] .showcase {
   width: 100%;
   padding: .75rem;
 }
+.showcase .capacity-scroll-hint {
+  display: none;
+  margin: 0 0 .45rem;
+  color: var(--capacity-accent);
+  font-family: "SFMono-Regular", Consolas, "Liberation Mono", monospace;
+  font-size: .7rem;
+  font-weight: 780;
+}
 .showcase .capacity-matrix {
   width: 100%;
   table-layout: fixed;
@@ -3800,13 +4116,13 @@ html[data-theme="dark"] .showcase {
   padding: .35rem .2rem;
   background: transparent;
   color: var(--flight-text-subtle);
-  font-size: .72rem;
+  font-size: .75rem;
   text-align: center;
 }
 .showcase .capacity-matrix thead th:first-child { width: 2.65rem; }
 .showcase .capacity-matrix thead th span {
   display: block;
-  font-size: .56rem;
+  font-size: .7rem;
   font-weight: 650;
 }
 .showcase .capacity-matrix tbody th {
@@ -3814,7 +4130,7 @@ html[data-theme="dark"] .showcase {
   background: transparent;
   color: var(--flight-text-subtle);
   font-family: "SFMono-Regular", Consolas, "Liberation Mono", monospace;
-  font-size: .72rem;
+  font-size: .75rem;
   text-align: center;
   vertical-align: middle;
 }
@@ -3855,7 +4171,7 @@ html[data-theme="dark"] .showcase {
 .showcase .capacity-reference,
 .showcase .capacity-failure {
   font-family: "SFMono-Regular", Consolas, "Liberation Mono", monospace;
-  font-size: clamp(.55rem, 1.45vw, .68rem);
+  font-size: clamp(.7rem, 1.45vw, .76rem);
   font-weight: 850;
   letter-spacing: .02em;
   text-transform: uppercase;
@@ -3866,7 +4182,7 @@ html[data-theme="dark"] .showcase {
 .showcase .is-selected .capacity-state { color: var(--capacity-accent); }
 .showcase .capacity-reference {
   color: var(--flight-cobalt);
-  font-size: .56rem;
+  font-size: .7rem;
 }
 .showcase .capacity-rate {
   display: flex;
@@ -3882,13 +4198,13 @@ html[data-theme="dark"] .showcase {
 }
 .showcase .capacity-rate span {
   color: var(--flight-text-muted);
-  font-size: clamp(.54rem, 1.35vw, .66rem);
+  font-size: clamp(.7rem, 1.35vw, .74rem);
   font-weight: 700;
 }
 .showcase .capacity-cell-metrics {
   margin: 0;
   color: var(--flight-text-muted);
-  font-size: clamp(.56rem, 1.35vw, .68rem);
+  font-size: clamp(.7rem, 1.35vw, .74rem);
 }
 .showcase .capacity-cell-metrics > div {
   display: flex;
@@ -4321,6 +4637,14 @@ html[data-theme="dark"] .showcase {
   outline-color: var(--flight-focus-inverse);
 }
 .showcase .profile-tabs[data-overflow="scroll"] { overflow-x: auto; }
+.showcase .policy-overflow-hint {
+  display: none;
+  margin: .45rem 0 0;
+  color: var(--flight-text-subtle);
+  font-family: "SFMono-Regular", Consolas, "Liberation Mono", monospace;
+  font-size: .7rem;
+  font-weight: 760;
+}
 .showcase .profile-panel {
   padding-top: 2rem;
   border-bottom: 2px solid var(--flight-ink);
@@ -4829,7 +5153,14 @@ html[data-theme="dark"] .showcase {
     contain: inline-size;
     overscroll-behavior-inline: contain;
   }
-  .showcase .capacity-matrix { min-width: 17.5rem; }
+  .showcase .capacity-scroll-hint {
+    position: sticky;
+    left: 0;
+    display: block;
+    width: fit-content;
+  }
+  .showcase .capacity-matrix { min-width: 27rem; }
+  .showcase .policy-overflow-hint { display: block; }
   .showcase .optimization-stages {
     grid-template-columns: 1fr;
   }
@@ -5205,7 +5536,7 @@ def render_showcase_v11(
         stability_sha256=stability_sha256,
     )
     passport = _decision_passport(benchmarks, recommendation)
-    optimization_ladder = _optimization_ladder_markup(passport)
+    optimization_ladder = _optimization_ladder_markup(passport, benchmarks)
     capacity_envelope = ""
     capacity_brief = ""
     if capacity_study is not None and capacity_evidence_lock is not None:
@@ -5246,6 +5577,22 @@ def render_showcase_v11(
     tolerance = _tolerance_visual(benchmarks, recommendation)
 
     document = canonical
+    if 'class="profile-tabs"' in document:
+        document, profile_hint_count = re.subn(
+            (
+                r'(<div class="profile-tabs" role="tablist" '
+                r'aria-label="Deployment policies">.*?</div>)'
+            ),
+            (
+                r'\1<p class="policy-overflow-hint">'
+                r"Swipe to inspect every deployment priority →</p>"
+            ),
+            document,
+            count=1,
+            flags=re.DOTALL,
+        )
+        if profile_hint_count != 1:
+            raise ValidationError("deployment policy tabs are missing")
     if not proof:
         document, source_badge_count = re.subn(
             r'(<span class="source-type">).*?(</span>)',
@@ -5255,6 +5602,15 @@ def render_showcase_v11(
         )
         if source_badge_count != 1:
             raise ValidationError("canonical source badge is missing")
+    if capacity_envelope:
+        document, capacity_badge_count = re.subn(
+            r'(<span class="source-type">).*?(</span>)',
+            r"\1Measured Arm64 evidence · Canonical v1.1 · Capacity v1.4\2",
+            document,
+            count=1,
+        )
+        if capacity_badge_count != 1:
+            raise ValidationError("capacity source badge is missing")
     theme_toggle = (
         '<button type="button" class="theme-toggle" data-theme-toggle '
         'aria-pressed="false" hidden>'
@@ -5276,11 +5632,12 @@ def render_showcase_v11(
     )
     if brand_control_count != 1:
         raise ValidationError("canonical brand line is missing")
-    document_title = (
-        "<title>ParetoPilot | synthetic decision preview</title>"
+    page_title = (
+        "ParetoPilot | synthetic decision preview"
         if benchmarks.synthetic
-        else "<title>ParetoPilot | Arm64 measured flight log</title>"
+        else "ParetoPilot | Arm64 measured flight log"
     )
+    document_title = f"<title>{page_title}</title>"
     document = _replace_once(
         document,
         "<title>ParetoPilot v1.1 deployment decision report</title>",
@@ -5294,11 +5651,30 @@ def render_showcase_v11(
     )
     document = _replace_once(
         document,
+        '<link rel="icon" href="data:,">\n',
+        (
+            '<link rel="icon" href="data:image/svg+xml,%3Csvg '
+            "xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E"
+            "%3Crect width='64' height='64' rx='12' fill='%2313233d'/%3E"
+            "%3Cpath d='M13 46h12V34h12V24h14' fill='none' "
+            "stroke='%238bded7' stroke-width='7'/%3E%3C/svg%3E\">\n"
+        ),
+        "showcase favicon",
+    )
+    document = _replace_once(
+        document,
         '<meta name="color-scheme" content="light">\n',
         (
             '<meta name="color-scheme" content="light dark">\n'
             '<meta name="theme-color" content="#13233d">\n'
             f'<meta name="description" content="{_escape(meta_description)}">\n'
+            '<meta property="og:type" content="website">\n'
+            '<meta property="og:site_name" content="ParetoPilot">\n'
+            f'<meta property="og:title" content="{_escape(page_title)}">\n'
+            f'<meta property="og:description" content="{_escape(meta_description)}">\n'
+            '<meta name="twitter:card" content="summary">\n'
+            f'<meta name="twitter:title" content="{_escape(page_title)}">\n'
+            f'<meta name="twitter:description" content="{_escape(meta_description)}">\n'
             f"{_SHOWCASE_THEME_BOOTSTRAP}"
         ),
         "head metadata",

@@ -21,21 +21,70 @@ Receipt, capacity receipt, and presentation layer cannot rewrite either measured
 
 ## 60-second judge path
 
-1. **See exactly what changed.** Open the
+1. **See the decision first.** Open the
    [live evidence showcase](https://agrovr.github.io/ParetoPilot/) and follow the first-screen
-   optimization link. The ladder isolates the Q8 generic baseline, Q4 quantization, the
-   KleidiAI-enabled build, and the 512-token micro-batch change before showing the measured
-   tradeoffs and the honest Q8 latency decision.
-2. **Open the measured envelope.** Jump to the
+   optimization link. Q8 retained the canonical latency decision. In that same measured run,
+   tuned Q4 used a 43.72% smaller model, 42.79% less peak RSS, and 28.10% more prompt throughput,
+   but p95 end-to-end latency was 3.40% slower and generation throughput was 9.37% lower. The
+   four-stage ladder shows exactly where each change and tradeoff entered.
+2. **Trust the published result.** The showcase links the exact canonical report, Actions runs,
+   release archives, and hashes. To replay both public releases after the one-time
+   [Quick start](#quick-start), run:
+
+   ```bash
+   paretopilot verify-published --output-dir ../paretopilot-published-proof
+   ```
+
+   The command pins, safely extracts, and replays the exact public v1.1 and v1.4 release
+   archives. Expect `PASS`, then open
+   `../paretopilot-published-proof/published-proof.md`. No inference benchmark is rerun.
+3. **Open the measured envelope.** Jump to the
    [supplementary Arm64 capacity board](https://agrovr.github.io/ParetoPilot/#capacity-envelope).
-   It shows all 18 tested P/C cells, the selected P4/C4 points, and why cells passed or were
-   blocked. This sizes each candidate and does not replace the frozen Q8 model decision.
-3. **Try the reusable gate safely.** Use the
+   At separately selected P4/C4 points, tuned Q4 measured 6.74% more generation throughput and
+   41.09% less peak RSS than Q8. The board shows all 18 tested P/C cells and every blocked gate.
+   This separate study sizes each candidate; it does not replace the frozen Q8 model decision.
+4. **Try the reusable gate safely.** Use the
    [Launch Kit](#launch-your-own-decision) to generate a complete synthetic starter without
    overwriting an existing folder. Then open the
    [latest green main-branch CI run](https://github.com/agrovr/ParetoPilot/actions/workflows/ci.yml?query=branch%3Amain)
    and inspect `action-smoke`, which exercises the five-artifact composite Action contract and its
    fail-closed measured-evidence guard.
+
+## Verify the published Arm64 evidence
+
+This is the shortest measured-proof path on Linux, macOS, or Windows:
+
+```bash
+paretopilot verify-published --output-dir ../paretopilot-published-proof
+```
+
+By default, ParetoPilot downloads only the two pinned GitHub release archives. It enforces their
+exact URLs, byte sizes, and SHA-256 digests; rejects unsafe ZIP contents; reuses the existing
+canonical and capacity replay engines; and refuses an existing output destination. A passing run
+prints:
+
+```text
+PASS: pinned canonical v1.1 and capacity v1.4 archives verified and replayed.
+```
+
+The new directory contains:
+
+- `published-proof.md` — a beginner-readable audit with official links, run IDs, hashes,
+  byte-for-byte comparisons, selected IDs, P4/C4 operating points, and evidence limits;
+- `published-proof.json` — the same result as a deterministic machine-readable contract.
+
+For an offline review, download the two official assets once and supply both exact files:
+
+```bash
+paretopilot verify-published \
+  --canonical-archive paretopilot-v1.1.0-arm64-evidence-30055662526.zip \
+  --capacity-archive paretopilot-v1.4.0-arm64-capacity-30144901854.zip \
+  --output-dir ../paretopilot-published-proof
+```
+
+This verifies archived measurements and decisions; it does not rerun inference or claim current
+hardware performance. The [full reproduction guide](docs/reproducibility.md) documents the
+manual audit and fresh native Arm64 measurement paths.
 
 ## Launch your own decision
 

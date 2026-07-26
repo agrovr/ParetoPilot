@@ -65,6 +65,7 @@ jobs:
           "$RUNNER_TEMP/paretopilot-wheel-smoke/bin/paretopilot" assemble-capacity --help
           "$RUNNER_TEMP/paretopilot-wheel-smoke/bin/paretopilot" bind-capacity-quality --help
           "$RUNNER_TEMP/paretopilot-wheel-smoke/bin/paretopilot" capacity-receipt --help
+          "$RUNNER_TEMP/paretopilot-wheel-smoke/bin/paretopilot" verify-published --help
           "$RUNNER_TEMP/paretopilot-wheel-smoke/bin/paretopilot" validate \
             examples/synthetic-results.json
           "$RUNNER_TEMP/paretopilot-wheel-smoke/bin/paretopilot" recommend \
@@ -86,6 +87,34 @@ jobs:
             --output-dir "$RUNNER_TEMP/paretopilot-launch-kit-output" \
             --allow-synthetic \
             --expect-selected-id q4-kleidiai
+          "$RUNNER_TEMP/paretopilot-wheel-smoke/bin/paretopilot" verify-published \
+            --output-dir "$RUNNER_TEMP/paretopilot-published-proof"
+          test -f "$RUNNER_TEMP/paretopilot-published-proof/published-proof.json"
+          test -f "$RUNNER_TEMP/paretopilot-published-proof/published-proof.md"
+          "$RUNNER_TEMP/paretopilot-wheel-smoke/bin/python" - <<'PY'
+          import json
+          import os
+          from pathlib import Path
+
+          proof = json.loads(
+              (
+                  Path(os.environ["RUNNER_TEMP"])
+                  / "paretopilot-published-proof"
+                  / "published-proof.json"
+              ).read_text(encoding="utf-8")
+          )
+          assert proof["valid"] is True
+          assert proof["measurements_rerun"] is False
+          assert proof["canonical"]["selected_id"] == "q8-generic"
+          assert proof["canonical"]["authoritative_comparison_count"] == 9
+          assert proof["canonical"]["differences"] == []
+          assert proof["canonical"]["warnings"] == []
+          assert {
+              item["operating_point"]
+              for item in proof["capacity"]["selected_operating_points"].values()
+          } == {"P4/C4"}
+          assert proof["capacity"]["embedded_canonical_replay"]["verified"] is True
+          PY
 
   action-smoke:
     runs-on: ubuntu-latest

@@ -41,6 +41,7 @@ from paretopilot.load_eval import (
 from paretopilot.optimization_receipt import render_optimization_receipt
 from paretopilot.pass_eval import assemble_repeat_pass
 from paretopilot.profiles import evaluate_policy_profiles, load_policy_set
+from paretopilot.published_proof import verify_published_evidence
 from paretopilot.replay import replay_evidence
 from paretopilot.report import render_report
 from paretopilot.report_v11 import render_report_v11
@@ -477,6 +478,37 @@ def _parser() -> argparse.ArgumentParser:
     )
     replay_capacity_parser.add_argument("bundle", type=Path)
     replay_capacity_parser.add_argument("--output-dir", required=True, type=Path)
+
+    verify_published_parser = subparsers.add_parser(
+        "verify-published",
+        help="verify and replay the pinned canonical and capacity release archives",
+        description=(
+            "Verify both pinned public Arm64 evidence releases on any supported host. "
+            "By default, ParetoPilot downloads both exact archives, checks their size and "
+            "SHA-256 pins, safely extracts them, and replays the archived decisions."
+        ),
+        epilog=(
+            "This does not require an Arm64 machine and does not rerun inference. "
+            "Supply both archive options for a fully offline check. The output directory "
+            "must not already exist."
+        ),
+    )
+    verify_published_parser.add_argument(
+        "--canonical-archive",
+        type=Path,
+        help="exact pinned v1.1 archive to use instead of downloading it",
+    )
+    verify_published_parser.add_argument(
+        "--capacity-archive",
+        type=Path,
+        help="exact pinned v1.4 archive to use instead of downloading it",
+    )
+    verify_published_parser.add_argument(
+        "--output-dir",
+        required=True,
+        type=Path,
+        help="new directory for the human-readable Markdown and machine-readable JSON proofs",
+    )
 
     experiment_parser = subparsers.add_parser(
         "assemble-experiment",
@@ -1084,6 +1116,15 @@ def main(argv: Sequence[str] | None = None) -> int:
                 "details": str(args.output_dir.resolve() / "capacity-replay.json"),
             }
             exit_code = 0
+        elif args.command == "verify-published":
+            proof = verify_published_evidence(
+                args.output_dir,
+                canonical_archive=args.canonical_archive,
+                capacity_archive=args.capacity_archive,
+            )
+            print(proof["verdict"])
+            print(f"Proof: {args.output_dir.resolve() / 'published-proof.md'}")
+            return 0
         elif args.command == "assemble-experiment":
             payload = assemble_experiment(args.manifest)
             write_json(args.output, payload)

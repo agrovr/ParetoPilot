@@ -36,12 +36,48 @@ The Python package has no runtime dependencies. Development checks use the bound
 `dev` extra. GitHub runner availability and billing are external conditions and should be checked
 before repeated dispatches.
 
+## One-command published proof
+
+After installing ParetoPilot, a reviewer can verify both public evidence releases without an
+Arm64 machine:
+
+```bash
+paretopilot verify-published --output-dir output/published-proof
+```
+
+The command downloads the exact pinned v1.1 canonical and v1.4 capacity archives, enforces each
+official GitHub URL, byte size, and SHA-256 digest, safely extracts them, and runs both existing
+replay contracts. It refuses an existing output directory. A successful run prints:
+
+```text
+PASS: pinned canonical v1.1 and capacity v1.4 archives verified and replayed.
+```
+
+Inspect `output/published-proof/published-proof.md` for the human-readable proof or
+`published-proof.json` for the deterministic contract. They record the two Actions run IDs,
+release links, archive hashes, all nine canonical byte matches, the reproduced `q8-generic`
+decision, both P4/C4 capacity selections, the two capacity artifact matches, the embedded
+canonical replay, and explicit evidence limits.
+
+To stay offline after downloading the official files once:
+
+```bash
+paretopilot verify-published \
+  --canonical-archive paretopilot-v1.1.0-arm64-evidence-30055662526.zip \
+  --capacity-archive paretopilot-v1.4.0-arm64-capacity-30144901854.zip \
+  --output-dir output/published-proof
+```
+
+Local archives must still match the packaged official size and digest pins. This command verifies
+the archived bytes and deterministic decisions; it does not rerun inference or prove current
+hardware performance. The manual steps below expose every part of the same audit.
+
 ## 1. Verify the code
 
 ```bash
 git clone https://github.com/agrovr/ParetoPilot.git
 cd ParetoPilot
-git checkout 0f196a4f3764526db48c0481b69f7f90eaffc9e4
+git switch main
 python -m venv .venv
 ```
 
@@ -56,6 +92,10 @@ ruff format --check .
 python -m unittest discover -s tests
 python -m build --wheel
 ```
+
+Expect ParetoPilot `1.4.1` or newer; earlier commits do not include the one-command published
+proof. The frozen measurements remain pinned to their v1.1.0 and v1.4.0 release archives even
+when a newer verifier replays them.
 
 CI repeats the test and lint checks on Ubuntu x64, Windows x64, and native Ubuntu Arm64. A
 separate Ubuntu x64 job installs the built wheel into an isolated environment.
