@@ -173,6 +173,29 @@ class CliTests(unittest.TestCase):
         self.assertEqual(raised.exception.code, 0)
         self.assertRegex(output.getvalue(), r"paretopilot \d+\.\d+\.\d+")
 
+    def test_public_help_explains_decision_and_published_artifacts(self) -> None:
+        expected_phrases = {
+            "passport": ("machine-readable decision details", "source-declared Arm64 metadata"),
+            "optimization-receipt": (
+                "Markdown decision summary",
+                "source-declared Arm64 metadata",
+            ),
+            "verify-published": (
+                "published v1.1 model and latency study",
+                "separate v1.4 capacity study",
+            ),
+        }
+
+        for command, phrases in expected_phrases.items():
+            with self.subTest(command=command):
+                output = io.StringIO()
+                with patch("sys.stdout", output), self.assertRaises(SystemExit) as raised:
+                    cli.main([command, "--help"])
+                self.assertEqual(raised.exception.code, 0)
+                normalized = " ".join(output.getvalue().split())
+                for phrase in phrases:
+                    self.assertIn(phrase, normalized)
+
     def test_commit_match_accepts_normal_sha_prefixes_only(self) -> None:
         self.assertTrue(cli._commits_match("67b9b0e7", cli.PINNED_LLAMA_CPP_COMMIT))
         self.assertFalse(cli._commits_match("6", cli.PINNED_LLAMA_CPP_COMMIT))
@@ -363,7 +386,7 @@ class CliTests(unittest.TestCase):
                 payload["optimization_receipt_sha256"],
                 cli.sha256_file(output_path),
             )
-            self.assertIn("# ParetoPilot Optimization Receipt", receipt)
+            self.assertIn("# ParetoPilot decision summary", receipt)
             self.assertIn("Synthetic", receipt)
             self.assertTrue(receipt.endswith("\n"))
 
@@ -1449,11 +1472,11 @@ class CliTests(unittest.TestCase):
                 self.assertEqual(payload["report"], str(output))
 
             self.assertIn('class="showcase is-verified"', first_html)
-            self.assertIn("<title>ParetoPilot | Arm64 measured flight log</title>", first_html)
+            self.assertIn("<title>ParetoPilot | Arm64 inference results</title>", first_html)
             self.assertIn('href="proof/report-v1.1.html"', first_html)
             self.assertIn("150 files verified", first_html)
-            self.assertIn("Locked canonical", first_html)
-            self.assertIn("Open exact canonical report", first_html)
+            self.assertIn("Published and reproduced", first_html)
+            self.assertIn("View archived v1.1 report", first_html)
             self.assertNotEqual(first_html.encode(), canonical_before)
             self.assertNotIn(b'class="showcase', canonical_before)
             self.assertIn(
@@ -1482,7 +1505,7 @@ class CliTests(unittest.TestCase):
             unlocked_html = unlocked_output.read_text(encoding="utf-8")
             self.assertIn('class="showcase is-preview"', unlocked_html)
             self.assertIn("Unverified preview", unlocked_html)
-            self.assertNotIn("Open exact canonical report", unlocked_html)
+            self.assertNotIn("View archived v1.1 report", unlocked_html)
 
     def test_showcase_v11_cli_forwards_locked_capacity_evidence(self) -> None:
         with TemporaryDirectory() as directory:

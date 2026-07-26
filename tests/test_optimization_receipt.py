@@ -204,18 +204,18 @@ class OptimizationReceiptTests(unittest.TestCase):
         self.assertTrue(first.endswith("\n"))
         self.assertFalse(first.endswith("\n\n"))
         self.assertNotIn("\r", first)
-        self.assertIn("# ParetoPilot Optimization Receipt", first)
+        self.assertIn("# ParetoPilot decision summary", first)
         self.assertIn("## Decision", first)
         self.assertIn("Q8 generic reference (q8\\-generic)", first)
-        self.assertIn("## Objective boundary", first)
+        self.assertIn("## How the cutoff was applied", first)
         self.assertIn("| Objective | End-to-end latency p95 (ms) |", first)
         self.assertIn("| Shortlist boundary | 105 (at\\-or\\-below) |", first)
-        self.assertIn("| Selected runway to boundary | 5 (4.76% of boundary) |", first)
+        self.assertIn("| Margin to shortlist boundary | 5 (4.76% of boundary) |", first)
         self.assertIn(
             "Displayed measurements are rounded for readability; exact values remain",
             first,
         )
-        self.assertIn("## Four-stage optimization path", first)
+        self.assertIn("## Configuration comparison", first)
         for heading in (
             "### Stage 1 — Reference",
             "### Stage 2 — Quantization",
@@ -229,17 +229,23 @@ class OptimizationReceiptTests(unittest.TestCase):
             first,
         )
         self.assertIn("## Resource alternative", first)
-        self.assertIn("Secondary comparison, not the recommendation", first)
-        self.assertIn("Baseline for every delta: Q8 generic reference (q8\\-generic).", first)
+        self.assertIn("Lower-resource alternative", first)
+        self.assertIn("Compared with: Q8 generic reference (q8\\-generic).", first)
         self.assertIn(
             "| Peak RSS (MiB) | Minimize | 1,000 | 480 | -520 | -52% | Improved |",
             first,
         )
         self.assertNotIn("4.7619047619", first)
         self.assertNotIn("e2e\\_latency\\_ms\\_p95", first)
-        self.assertIn("## Provenance, fingerprints, and scope", first)
+        self.assertIn("## Source and verification details", first)
         self.assertIn("| Evaluation suite SHA-256 | e49c16f", first)
         self.assertIn("**Verification scope:**", first)
+        self.assertIn("**Measured Arm64 result.**", first)
+        self.assertIn("See the limits below", first)
+        self.assertIn("**Limits:**", first)
+        self.assertNotIn("Published canonical outputs changed", first)
+        self.assertNotIn("scope below remains authoritative", first)
+        self.assertNotIn("**Boundary caveat:**", first)
         self.assertNotIn("Generated at", first)
         self.assertNotIn("Timestamp", first)
 
@@ -291,22 +297,22 @@ class OptimizationReceiptTests(unittest.TestCase):
         self.assertIn("| Evaluation suite SHA-256 | Not measured |", rendered)
         self.assertIn("| Objective (End-to-end latency p95 (ms)) | Not measured |", rendered)
         self.assertGreaterEqual(rendered.count("Not measured"), 6)
-        self.assertNotIn("None", rendered.split("## Provenance, fingerprints, and scope", 1)[1])
+        self.assertNotIn("None", rendered.split("## Source and verification details", 1)[1])
 
     def test_synthetic_receipt_uses_fixture_safe_language(self) -> None:
         passport = _passport(synthetic=True)
 
         rendered = render_optimization_receipt(passport)
 
-        self.assertIn("**Synthetic fixture only.**", rendered)
-        self.assertIn("Displayed fixture values are rounded for readability", rendered)
-        self.assertIn("fixture values, not measured Arm64 or deployment evidence", rendered)
-        self.assertIn("ordered fixture-value path", rendered)
+        self.assertIn("**Synthetic example.**", rendered)
+        self.assertIn("Displayed example values are rounded for readability", rendered)
+        self.assertIn("example data, not measured Arm64 or deployment results", rendered)
+        self.assertIn("Each stage changes one configuration setting.", rendered)
         self.assertIn(
-            "Synthetic fixture values are not deployment benchmark evidence",
+            "The synthetic example is not a measured deployment benchmark",
             rendered,
         )
-        self.assertNotIn("Secondary comparison, not the recommendation", rendered)
+        self.assertNotIn("Lower-resource alternative", rendered)
         self.assertNotIn("**Arm64-attributed source evidence.**", rendered)
 
     def test_generic_synthetic_passport_keeps_unrecognized_stages_plain(self) -> None:
@@ -323,14 +329,14 @@ class OptimizationReceiptTests(unittest.TestCase):
 
         rendered = render_optimization_receipt(passport)
 
-        self.assertIn("## Optimization path", rendered)
-        self.assertNotIn("## Four-stage optimization path", rendered)
+        self.assertIn("## Compared configurations", rendered)
+        self.assertNotIn("## Configuration comparison", rendered)
         self.assertIn("### Stage 1\n", rendered)
         self.assertIn("### Stage 2\n", rendered)
         self.assertNotIn("### Stage 1 —", rendered)
-        self.assertEqual(rendered.count("| Attribution stage | Not measured |"), 2)
+        self.assertEqual(rendered.count("| What changed | Not measured |"), 2)
         self.assertEqual(rendered.count("Adjacent delta from "), 1)
-        self.assertIn("**Synthetic fixture only.**", rendered)
+        self.assertIn("**Synthetic example.**", rendered)
         self.assertIn("| Objective | latency\\_ms |", rendered)
         self.assertNotIn("Latency (ms)", rendered)
         self.assertNotIn("Reference", rendered)

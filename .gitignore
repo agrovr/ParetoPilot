@@ -15,7 +15,6 @@ paretopilot-output/
 _site/
 .candidate-build/
 .candidate-models/
-submission-private/
 .idea/
 .vscode/
 .DS_Store

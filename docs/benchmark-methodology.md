@@ -1,12 +1,12 @@
 # Benchmark methodology
 
-This document defines the controlled four-candidate protocol used for ParetoPilot's current
-canonical v1.1 Arm64 study. The decision policy and all source, model, evaluation, load, and
-runtime pins were declared before the canonical measurement.
+This document describes the controlled four-candidate method used for ParetoPilot's published
+v1.1 Arm64 study. The decision rules and all source, model, evaluation, load, and runtime versions
+were set before measurement.
 
 Run [`30055662526`](https://github.com/agrovr/ParetoPilot/actions/runs/30055662526) is preserved
 in release [`v1.1.0`](https://github.com/agrovr/ParetoPilot/releases/tag/v1.1.0). The earlier
-[v1.0 study](../results/published/29973188507/README.md) remains historical evidence from a
+[v1.0 study](../results/published/29973188507/README.md) remains a historical result from a
 separate runner and is not pooled with v1.1.
 
 ## Decision question
@@ -19,8 +19,8 @@ end-to-end latency, subject to:
 - a 15,000 ms p95 end-to-end latency ceiling; and
 - a 4,096 MiB peak-RSS ceiling?
 
-The reference is allowed to win. A predeclared 1% objective tolerance keeps the simpler candidate
-when a smaller measured latency difference is not large enough to justify added complexity.
+The reference is allowed to win. A 1% tolerance set before measurement keeps the simpler candidate
+when a latency difference is too small to justify added complexity.
 
 ## Candidates
 
@@ -71,10 +71,10 @@ experiment.
 - Model size comes from the pinned, hash-verified GGUF file.
 - A separate bounded load stage runs the same declared 1/2/4-client plan for every candidate.
 
-Throughput, behavior, latency, memory, and model size each come from their declared producer; one
-metric is never inferred from another.
+Throughput, behavior, latency, memory, and model size each come from their own measurement source.
+One metric is never inferred from another.
 
-## Expanded behavior gate
+## Behavior checks
 
 The checksummed `paretopilot-qwen-behavior-v2` suite contains 24 deterministic cases:
 
@@ -84,16 +84,16 @@ The checksummed `paretopilot-qwen-behavior-v2` suite contains 24 deterministic c
   keys and non-standard constants, and compares a canonical structural representation.
 
 Every candidate must satisfy the declared 0.80 absolute quality floor and retain at least 95% of
-the measured baseline score. These are narrow reproducibility gates, not estimates of general
-model quality.
+the measured baseline score. These checks cover only this 24-case suite; they are not estimates
+of general model quality.
 
-The thresholds were declared after incomplete diagnostic
+The thresholds were set after incomplete diagnostic
 [run `30050573298`](https://github.com/agrovr/ParetoPilot/actions/runs/30050573298) and before the
-canonical v1.1 measurement. That diagnostic correctly recorded invalid evidence and was used only
-to calibrate the pre-canonical rule. A 24-case binary suite has 1/24, or 4.17 percentage-point,
-resolution, so the declared gate permits one net case below a 21/24 reference and rejects 19/24.
+published v1.1 run. That diagnostic was used only to set the threshold. A 24-case binary suite has
+1/24, or 4.17 percentage-point, resolution, so the check permits one net case below a 21/24
+reference and rejects 19/24.
 
-The canonical run then measured:
+The published run then measured:
 
 | Candidate | Passing cases | Score | Gate |
 | --- | ---: | ---: | --- |
@@ -130,21 +130,20 @@ status. The load artifact binds:
 Only host and port may differ between load and canonical commands. Runtime, model, parallelism,
 thread counts, batch, micro-batch, context, and CPU settings stay equivalent.
 
-All four candidates completed 100% of the canonical requests. Concurrency 1 was the highest level
-that met both latency SLOs for every candidate. This bounded sweep is supplementary operational
-evidence; it does not change the canonical single-client recommendation or establish capacity
-beyond the tested levels.
+All four candidates completed every request. Concurrency 1 was the highest level that met both
+latency SLOs for every candidate. This additional load check does not change the published
+single-client result or describe capacity beyond the tested levels.
 
 ## Repeat-pass reconstruction and stability
 
 The two pass benchmark sets are rebuilt separately from the checksummed raw files referenced by
-the canonical benchmark. For every candidate, each pass verifies and parses its throughput
+the published benchmark. For every candidate, each pass verifies and parses its throughput
 settings, `llama-bench` JSONL, server evaluation, and GNU `time -v` output. It recomputes pass
 medians, validates behavior cases and raw latency samples against the archived suite, and parses
 peak RSS.
 
 The stability summary compares prompt throughput, generation throughput, behavior score, TTFT,
-end-to-end latency, and peak RSS. The canonical summary has 24 rows: six metrics for each of four
+end-to-end latency, and peak RSS. The published summary has 24 rows: six metrics for each of four
 candidates. All six metrics were directionally consistent across both passes for each of the
 three Q4 candidates. The largest relative spread was:
 
@@ -157,11 +156,11 @@ three Q4 candidates. The largest relative spread was:
 Labels such as `consistent`, `mixed`, and `no change` describe the two observed passes only. No
 p-value, confidence interval, or statistical-significance claim is made.
 
-## Policy scenarios
+## Deployment priorities
 
-The canonical latency policy reuses the declared constraints and preference order and must match
-the core recommendation. Four `derived-non-canonical` policies change only the objective. They
-are sensitivity views over the same measurements, not extra benchmark trials.
+The published latency priority reuses the declared constraints and preference order. Four
+`derived-non-canonical` priorities change only the objective. They use the same measurements, not
+extra benchmark trials.
 
 | Profile | Objective | Selected candidate |
 | --- | --- | --- |
@@ -171,7 +170,7 @@ are sensitivity views over the same measurements, not extra benchmark trials.
 | `prompt-ingest-first` | Maximum prompt throughput | `q4-kleidiai-tuned` |
 | `decode-first` | Maximum generation throughput | `q8-generic` |
 
-## Canonical selection
+## Published result
 
 ParetoPilot first rejects candidates that fail the quality, latency, or memory constraints. It
 then computes the non-dominated frontier across latency, generation throughput, model size, peak
@@ -179,29 +178,28 @@ RSS, quality, and TTFT.
 
 All four candidates were eligible and stayed on the Pareto frontier. Q8 had the lowest measured
 p95 end-to-end latency at 2231.932869 ms. Its 1% cutoff was 2254.2522 ms, and no Q4 candidate
-entered that shortlist. ParetoPilot therefore selected `q8-generic` as both the numeric winner and
-the canonical recommendation.
+entered that shortlist, so ParetoPilot selected `q8-generic`.
 
 The tuned Q4 + KleidiAI candidate remains a useful measured resource alternative: versus Q8, it
 used a 43.72% smaller model and 42.79% less peak RSS, reduced p95 TTFT by 13.83%, and increased
-prompt throughput by 28.10%. It was also 3.40% slower on the canonical p95 end-to-end objective,
+prompt throughput by 28.10%. It was also 3.40% slower on the p95 end-to-end latency objective,
 9.37% lower on generation throughput, and one behavior case lower.
 
-## Evidence safeguards
+## Validation checks
 
 - Source revisions, model hashes, evaluation-suite hash, build flags, executable hashes, exact
   command arrays, and runtime settings are recorded.
 - Generic server logs must not contain the `CPU_KLEIDIAI model buffer` marker. Both
   KleidiAI-enabled candidates must contain it. This confirms only the recorded build/marker
   state; it is not a microkernel trace.
-- Strict parsers reject malformed, duplicate-key, non-finite, mismatched, oversized,
+- Input validation rejects malformed, duplicate-key, non-finite, mismatched, oversized,
   path-escaping, or synthetic source data.
 - The experiment manifest binds critical artifacts by SHA-256. A bundle-level `SHA256SUMS` binds
   150 released payloads.
 - V1.1 binds the behavior suite, load plan, load and canonical command files, request endpoints,
   policy configuration, reconstructed pass inputs, and candidate-configuration fingerprints.
-- A run is canonical only when it uses the default branch, exactly ten repetitions, and passes
-  every environment, measurement, model-buffer-marker, integrity, selection, and reporting gate.
+- The `canonical` classification requires the default branch, exactly ten repetitions, and every
+  environment, measurement, model-buffer-marker, integrity, selection, and reporting gate to pass.
 - Offline replay must reproduce the selected candidate and the archived decision artifacts
   without rerunning inference.
 

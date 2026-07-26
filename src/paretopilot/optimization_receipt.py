@@ -125,6 +125,29 @@ def _display_text(value: str | None) -> str:
     return _NOT_MEASURED if value is None else _escape(value)
 
 
+def _decision_reason(value: str) -> str:
+    replacements = {
+        "The highest-preference shortlisted candidate is the numeric objective winner.": (
+            "The best measured result also ranked first under the stated preference order."
+        ),
+        (
+            "Preference order selected a candidate within the objective tolerance "
+            "instead of the numeric objective winner."
+        ): "The stated preference order selected a configuration within the tolerance range.",
+        "Selected the numeric objective winner; candidate id breaks exact ties.": (
+            "This configuration had the best result. Candidate ID is used only for exact ties."
+        ),
+        (
+            "No preference order was supplied; selected the lexicographically earliest "
+            "candidate id from the objective-tolerance shortlist."
+        ): (
+            "No preference order was supplied. Candidate ID was used to resolve results "
+            "within the tolerance range."
+        ),
+    }
+    return _escape(replacements.get(value, value))
+
+
 def _format_number(
     value: float | None,
     *,
@@ -648,22 +671,22 @@ def _delta_table(rows: Sequence[Mapping[str, Any]]) -> list[str]:
 def _evidence_statement(grade: str) -> str:
     if grade == "synthetic":
         return (
-            "**Synthetic fixture only.** Values in this receipt are fixture values, "
-            "not measured Arm64 or deployment evidence."
+            "**Synthetic example.** Values in this report are example data, not measured "
+            "Arm64 or deployment results."
         )
     if grade == "arm64-attributed":
         return (
-            "**Arm64-attributed source evidence.** Attribution means the required "
-            "source metadata is complete; the scope below remains authoritative."
+            "**Measured Arm64 result.** The required runner, source, model, and workload "
+            "details are present. See the limits below."
         )
     return (
-        "**Measured but unattributed source evidence.** Arm64 attribution is incomplete, "
-        "so this receipt does not claim a verified Arm64 result."
+        "**Measured result with incomplete source details.** Required Arm64 source metadata "
+        "is missing, so this report does not treat the result as verified Arm64 evidence."
     )
 
 
 def render_optimization_receipt(passport: Mapping[str, Any]) -> str:
-    """Render a strict, deterministic Markdown optimization receipt."""
+    """Render a reproducible Markdown decision summary."""
 
     if not isinstance(passport, Mapping):
         raise TypeError("passport must be a validated Decision Passport mapping")
@@ -674,17 +697,17 @@ def render_optimization_receipt(passport: Mapping[str, Any]) -> str:
     baseline = next(stage for stage in stages if stage["baseline"])
 
     lines = [
-        "# ParetoPilot Optimization Receipt",
+        "# ParetoPilot decision summary",
         "",
         _evidence_statement(data["evidence_grade"]),
         "",
         (
-            "Displayed fixture values are rounded for readability; exact values remain in "
-            "the Decision Passport and other machine-readable artifacts."
+            "Displayed example values are rounded for readability; exact values remain in "
+            "the machine-readable decision details."
             if data["evidence_grade"] == "synthetic"
             else (
                 "Displayed measurements are rounded for readability; exact values remain in "
-                "the Decision Passport and other machine-readable artifacts."
+                "the machine-readable decision details."
             )
         ),
         "",
@@ -695,12 +718,12 @@ def render_optimization_receipt(passport: Mapping[str, Any]) -> str:
                 ("Baseline", _candidate(baseline["label"], baseline["candidate_id"])),
                 ("Selected", _candidate(selected["label"], selected["candidate_id"])),
                 ("Baseline retained", "Yes" if selected["baseline_retained"] else "No"),
-                ("Numeric objective winner", "Yes" if selected["numeric_best"] else "No"),
-                ("Decision reason", _escape(selected["reason"])),
+                ("Best objective result", "Yes" if selected["numeric_best"] else "No"),
+                ("Decision reason", _decision_reason(selected["reason"])),
             )
         ),
         "",
-        "## Objective boundary",
+        "## How the cutoff was applied",
         "",
     ]
     numeric_best = next(
@@ -721,11 +744,14 @@ def render_optimization_receipt(passport: Mapping[str, Any]) -> str:
                 ("Objective", _metric_label(objective["metric"])),
                 ("Direction", _direction(objective["direction"])),
                 (
-                    "Numeric best",
+                    "Best measured value",
                     f"{_candidate(numeric_best['label'], numeric_best['candidate_id'])} "
                     f"at {_format_number(objective['numeric_best_value'])}",
                 ),
-                ("Predeclared tolerance", _format_percent(objective["tolerance_percent"])),
+                (
+                    "Tolerance defined before the run",
+                    _format_percent(objective["tolerance_percent"]),
+                ),
                 ("Tolerance margin", _format_number(objective["tolerance_margin"])),
                 (
                     "Shortlist boundary",
@@ -734,7 +760,7 @@ def render_optimization_receipt(passport: Mapping[str, Any]) -> str:
                 ),
                 ("Selected value", _format_number(objective["selected_value"])),
                 (
-                    "Selected runway to boundary",
+                    "Margin to shortlist boundary",
                     f"{_format_number(objective['selected_runway']['absolute'])} "
                     f"({_format_percent(objective['selected_runway']['percent_of_boundary'])} "
                     "of boundary)",
@@ -744,14 +770,14 @@ def render_optimization_receipt(passport: Mapping[str, Any]) -> str:
         )
     )
 
-    value_kind = "fixture-value" if data["evidence_grade"] == "synthetic" else "supplied benchmark"
     canonical_path = [stage["attribution_stage"] for stage in stages] == list(_STAGE_LABELS)
     lines.extend(
         (
             "",
-            ("## Four-stage optimization path" if canonical_path else "## Optimization path"),
+            ("## Configuration comparison" if canonical_path else "## Compared configurations"),
             "",
-            f"This is the ordered {value_kind} path. Each delta compares only adjacent stages.",
+            "Each stage changes one configuration setting. Deltas compare it with the stage "
+            "immediately before it.",
         )
     )
     for stage in stages:
@@ -769,7 +795,7 @@ def render_optimization_receipt(passport: Mapping[str, Any]) -> str:
                     (
                         ("Candidate", _candidate(stage["label"], stage["candidate_id"])),
                         (
-                            "Attribution stage",
+                            "What changed",
                             _display_text(stage["attribution_stage"]),
                         ),
                         (
@@ -818,8 +844,7 @@ def render_optimization_receipt(passport: Mapping[str, Any]) -> str:
     alternative = data["resource_alternative"]
     if data["evidence_grade"] == "synthetic":
         lines.append(
-            "Not applicable. Synthetic fixture values are not deployment benchmark evidence, "
-            "so this receipt does not claim a resource alternative."
+            "Not applicable. The synthetic example is not a measured deployment benchmark."
         )
     elif alternative is None:
         lines.append(
@@ -828,11 +853,10 @@ def render_optimization_receipt(passport: Mapping[str, Any]) -> str:
     else:
         lines.extend(
             (
-                f"**Secondary comparison, not the recommendation:** "
+                f"**Lower-resource alternative:** "
                 f"{_candidate(alternative['label'], alternative['candidate_id'])}",
                 "",
-                f"Baseline for every delta: "
-                f"{_candidate(baseline['label'], baseline['candidate_id'])}.",
+                f"Compared with: {_candidate(baseline['label'], baseline['candidate_id'])}.",
                 "",
                 *_delta_table(alternative["changes"]),
             )
@@ -846,12 +870,29 @@ def render_optimization_receipt(passport: Mapping[str, Any]) -> str:
     model = provenance["model"]
     suite = provenance["evaluation_suite"]
     provenance_rows = (
-        ("Evidence grade", _escape(data["evidence_grade"])),
         (
-            "Attribution metadata complete",
+            "Data source",
+            {
+                "arm64-attributed": "Measured Arm64 result",
+                "measured-unattributed": "Measured result; source details incomplete",
+                "synthetic": "Synthetic example",
+            }.get(data["evidence_grade"], _escape(data["evidence_grade"])),
+        ),
+        (
+            "Required source details present",
             "Yes" if provenance["attribution_complete"] else "No",
         ),
-        ("Classification", _display_text(provenance["classification"])),
+        (
+            "Study type",
+            {
+                "canonical": "Published benchmark",
+                "exploratory": "Exploratory run",
+                "synthetic": "Synthetic example",
+            }.get(
+                provenance["classification"],
+                _display_text(provenance["classification"]),
+            ),
+        ),
         ("Runner architecture", _display_text(runner["architecture"])),
         ("Runner reported architecture", _display_text(runner["reported_architecture"])),
         ("Runner CPU", _display_text(runner["cpu"])),
@@ -873,7 +914,7 @@ def render_optimization_receipt(passport: Mapping[str, Any]) -> str:
         ("Model revision", _display_text(model["revision"])),
         ("Evaluation suite", _display_text(suite["id"])),
         ("Evaluation suite SHA-256", _display_text(suite["sha256"])),
-        ("Receipt schema", _escape(data["schema_version"])),
+        ("Decision-summary schema", _escape(data["schema_version"])),
         ("ParetoPilot version", _escape(data["paretopilot_version"])),
         *(
             (
@@ -887,20 +928,18 @@ def render_optimization_receipt(passport: Mapping[str, Any]) -> str:
     lines.extend(
         (
             "",
-            "## Provenance, fingerprints, and scope",
+            "## Source and verification details",
             "",
             *_table(provenance_rows),
             "",
             f"**Verification scope:** {_escape(provenance['verification_scope'])}",
             "",
             (
-                "**Attribution issues:** "
+                "**Missing source details:** "
                 + ("; ".join(_escape(issue) for issue in issues) if issues else "None")
             ),
             "",
-            f"**Boundary caveat:** {_escape(data['method']['current_boundary_caveat'])}",
-            "",
-            "**Canonical outputs modified:** No",
+            f"**Limits:** {_escape(data['method']['current_boundary_caveat'])}",
         )
     )
     return "\n".join(lines).rstrip() + "\n"

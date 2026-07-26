@@ -1,79 +1,86 @@
 # ParetoPilot
 
-ParetoPilot is an evidence-first deployment advisor for AI inference on Arm64. It validates
-benchmark provenance, applies quality and resource guardrails, computes the Pareto frontier, and
-recommends a configuration without assuming that an "optimized" build must win.
+ParetoPilot compares Arm64 inference configurations using benchmark data. It checks where the
+measurements came from, applies quality and resource limits, compares the tradeoffs, and
+recommends a configuration for the selected goal.
 
-I designed and built ParetoPilot as a solo Cloud AI entry for the Arm AI Optimization Challenge.
-
-The reusable tooling on `main` is version 1.4.1. It replays the unchanged v1.4.0 capacity archive;
-the canonical Arm64 evidence remains frozen at v1.1.0, so the Decision Passport, Optimization
-Receipt, capacity receipt, and presentation layer cannot rewrite either measured result.
-
-[Live evidence showcase](https://agrovr.github.io/ParetoPilot/) |
-[Exact canonical v1.1 report](https://agrovr.github.io/ParetoPilot/evidence/report-v1.1.html) |
-[Canonical v1.1 result](results/published/30055662526/README.md) |
-[Complete v1.1 evidence](https://github.com/agrovr/ParetoPilot/releases/tag/v1.1.0) |
-[Capacity envelope result](results/published/30144901854/README.md) |
-[Capacity evidence v1.4.0](https://github.com/agrovr/ParetoPilot/releases/tag/v1.4.0) |
-[CI decision gate](docs/github-action.md) |
+[Live results](https://agrovr.github.io/ParetoPilot/) |
+[Published results](#published-arm64-results) |
+[Verify the archives](#verify-published-results) |
+[GitHub Action](docs/github-action.md) |
 [Reproduction guide](docs/reproducibility.md)
 
-## 60-second judge path
+## Results at a glance
 
-1. **See the decision first.** Open the
-   [live evidence showcase](https://agrovr.github.io/ParetoPilot/) and follow the first-screen
-   optimization link. Q8 retained the canonical latency decision. In that same measured run,
-   tuned Q4 used a 43.72% smaller model, 42.79% less peak RSS, and 28.10% more prompt throughput,
-   but p95 end-to-end latency was 3.40% slower and generation throughput was 9.37% lower. The
-   four-stage ladder shows exactly where each change and tradeoff entered.
-2. **Trust the published result.** The showcase links the exact canonical report, Actions runs,
-   release archives, and hashes. To replay both public releases after the one-time
-   [Quick start](#quick-start), run:
+The published v1.1 model and latency study compared four Qwen2.5 1.5B configurations on one
+native Arm64 runner. Q8 remained the best choice for the p95 end-to-end latency goal. Tuned Q4 used a
+43.72% smaller model and 42.79% less peak memory, but its end-to-end latency was 3.40% slower and
+its generation throughput was 9.37% lower.
 
-   ```bash
-   paretopilot verify-published --output-dir ../paretopilot-published-proof
-   ```
+A separate capacity study asked a different question: how should Q8 and tuned Q4 be configured
+for concurrent serving? At four server slots and four simultaneous clients (P4/C4), tuned Q4
+measured 6.74% higher generation throughput and 41.09% lower peak memory. That serving result
+does not replace the published Q8 model choice.
 
-   The command pins, safely extracts, and replays the exact public v1.1 and v1.4 release
-   archives. Expect `PASS`, then open
-   `../paretopilot-published-proof/published-proof.md`. No inference benchmark is rerun.
-3. **Open the measured envelope.** Jump to the
-   [supplementary Arm64 capacity board](https://agrovr.github.io/ParetoPilot/#capacity-envelope).
-   At separately selected P4/C4 points, tuned Q4 measured 6.74% more generation throughput and
-   41.09% less peak RSS than Q8. The board shows all 18 tested P/C cells and every blocked gate.
-   This separate study sizes each candidate; it does not replace the frozen Q8 model decision.
-4. **Try the reusable gate safely.** Use the
-   [Launch Kit](#launch-your-own-decision) to generate a complete synthetic starter without
-   overwriting an existing folder. Then open the
-   [latest green main-branch CI run](https://github.com/agrovr/ParetoPilot/actions/workflows/ci.yml?query=branch%3Amain)
-   and inspect `action-smoke`, which exercises the five-artifact composite Action contract and its
-   fail-closed measured-evidence guard.
+| Study | Question | Result | Published archive |
+| --- | --- | --- | --- |
+| Model and latency v1.1 | Which model configuration best meets the latency goal? | Q8 generic | [v1.1.0](https://github.com/agrovr/ParetoPilot/releases/tag/v1.1.0) |
+| Capacity v1.4 | Which serving point works best for each selected candidate? | 4 slots / 4 clients for Q8 and tuned Q4 | [v1.4.0](https://github.com/agrovr/ParetoPilot/releases/tag/v1.4.0) |
 
-## Verify the published Arm64 evidence
+The source package is currently version 1.4.1. The measured archives remain versioned separately
+so the published results can be reproduced exactly.
 
-This is the shortest measured-proof path on Linux, macOS, or Windows:
+## Install
+
+ParetoPilot requires Python 3.12 or newer and has no runtime package dependencies.
+
+```bash
+git clone https://github.com/agrovr/ParetoPilot.git
+cd ParetoPilot
+python -m venv .venv
+```
+
+Activate the environment:
+
+```bash
+# Linux or macOS
+source .venv/bin/activate
+```
+
+```powershell
+# Windows PowerShell
+.\.venv\Scripts\Activate.ps1
+```
+
+Then install the package:
+
+```bash
+python -m pip install -e .
+python -m paretopilot doctor
+```
+
+## Verify published results
+
+This command downloads the two pinned release archives, checks their size and SHA-256 digest,
+replays their decisions, and writes a Markdown and JSON summary:
 
 ```bash
 paretopilot verify-published --output-dir ../paretopilot-published-proof
 ```
 
-By default, ParetoPilot downloads only the two pinned GitHub release archives. It enforces their
-exact URLs, byte sizes, and SHA-256 digests; rejects unsafe ZIP contents; reuses the existing
-canonical and capacity replay engines; and refuses an existing output destination. A passing run
-prints:
+A successful run prints:
 
 ```text
 PASS: pinned canonical v1.1 and capacity v1.4 archives verified and replayed.
 ```
 
-The new directory contains:
+Here, `canonical v1.1` is the verifier's internal label for the published model and latency
+study. The capacity archive contains the separate serving study.
 
-- `published-proof.md` — a beginner-readable audit with official links, run IDs, hashes,
-  byte-for-byte comparisons, selected IDs, P4/C4 operating points, and evidence limits;
-- `published-proof.json` — the same result as a deterministic machine-readable contract.
+Open `../paretopilot-published-proof/published-proof.md` for the readable summary. The command
+verifies archived measurements; it does not rerun inference or measure the current computer.
 
-For an offline review, download the two official assets once and supply both exact files:
+For offline verification, download both release assets and pass their local paths:
 
 ```bash
 paretopilot verify-published \
@@ -82,60 +89,49 @@ paretopilot verify-published \
   --output-dir ../paretopilot-published-proof
 ```
 
-This verifies archived measurements and decisions; it does not rerun inference or claim current
-hardware performance. The [full reproduction guide](docs/reproducibility.md) documents the
-manual audit and fresh native Arm64 measurement paths.
+See the [reproduction guide](docs/reproducibility.md) for manual archive checks and fresh Arm64
+measurements.
 
-## Launch your own decision
+## Run an example
 
-After cloning the repository and activating the environment from [Quick start](#quick-start),
-this path takes about five minutes and works in Bash or PowerShell:
+The `init` command creates a small synthetic project with benchmark inputs, constraints, and a
+GitHub Actions workflow:
 
 ```bash
-python -m paretopilot init ../paretopilot-launch-kit-demo
-cd ../paretopilot-launch-kit-demo
-paretopilot ci-gate benchmarks/benchmark-set.json --constraints constraints/deployment.json --output-dir paretopilot-output --allow-synthetic --expect-selected-id q4-kleidiai
+python -m paretopilot init ../paretopilot-example
+cd ../paretopilot-example
+paretopilot ci-gate benchmarks/benchmark-set.json \
+  --constraints constraints/deployment.json \
+  --output-dir paretopilot-output \
+  --allow-synthetic \
+  --expect-selected-id q4-kleidiai
 ```
 
-Expected: exit code 0 with `q4-kleidiai` selected. Open
-`paretopilot-output/optimization-receipt.md` for the human-readable decision or
-`paretopilot-output/report.html` for the self-contained report.
+Open `paretopilot-output/optimization-receipt.md` for the decision summary or
+`paretopilot-output/report.html` for the full report. The generated values are clearly marked as
+synthetic and are not Arm64 benchmark evidence.
 
-`init` creates a README, benchmark and constraint examples, and a ready-to-run GitHub workflow.
-It refuses existing files, directories, links, and junctions; there is no force or overwrite
-mode. If a later filesystem write fails, it reports and preserves the incomplete folder instead
-of deleting files. The generated candidate numbers are explicitly synthetic and are not Arm64
-benchmark evidence. Its README explains how to replace them with measured inputs without
-relabeling example numbers as measurements.
+## How it works
 
-The Pages homepage is a judge-facing presentation of the locked v1.1 inputs. Pages generates it
-only after verifying the pinned v1.1.0 release, replaying every authoritative output, and matching
-the archived `report-v1.1.html` byte for byte. That exact canonical report remains available
-separately; the showcase does not replace or modify the evidence artifact. Its accessible light
-and dark themes remember only the reader's display preference and do not change the report data.
+ParetoPilot:
 
-## What it does
+1. checks each candidate and where its measurements came from;
+2. removes configurations that miss the chosen quality or resource limits;
+3. finds the best tradeoff configurations, called the Pareto frontier;
+4. selects a candidate for the chosen goal while ignoring changes too small to matter; and
+5. writes `recommendation.json`, machine-readable decision details in
+   `decision-passport.json`, a Markdown decision summary in `optimization-receipt.md`, and a
+   self-contained `report.html`.
 
-Inference optimization is a multi-objective decision. A faster setup may use more memory, lose
-quality, or appear better only because of run order. ParetoPilot turns controlled measurements
-into an inspectable deployment decision:
+If an alternative does not improve the chosen goal, ParetoPilot retains the baseline.
 
-1. validate candidate identity, source revisions, model hashes, commands, settings, and samples;
-2. reject configurations that miss declared quality or resource limits;
-3. compute the non-dominated candidates across latency, throughput, memory, size, and quality;
-4. select against a declared objective and practical-effect tolerance; and
-5. export deterministic recommendations, an Arm64 decision passport, a human-readable
-   Optimization Receipt, and a self-contained HTML report.
+## Published Arm64 results
 
-The baseline is allowed to win. An honest no-change result is more useful than extra deployment
-complexity when the measured alternatives do not improve the declared objective.
-
-## Canonical Arm64 result
+### Latency study
 
 [Run `30055662526`](https://github.com/agrovr/ParetoPilot/actions/runs/30055662526)
-completed on one GitHub-hosted Ubuntu 24.04 Arm64 runner with a 4-vCPU Arm Neoverse-N2 CPU. It
-compared four configurations in the mirrored order `A-B-C-D-D-C-B-A` from commit
-[`8a9ddce`](https://github.com/agrovr/ParetoPilot/commit/8a9ddce0afa2272c4a4097fe87ef6f06cb7689a9).
+used one GitHub-hosted Ubuntu 24.04 Arm64 runner with a 4-vCPU Arm Neoverse-N2 CPU. It compared the
+four configurations in the mirrored order `A-B-C-D-D-C-B-A`.
 
 | Candidate | E2E p95 | TTFT p95 | Prompt tok/s | Generation tok/s | Peak RSS | Model size | Quality |
 | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
@@ -144,113 +140,38 @@ compared four configurations in the mirrored order `A-B-C-D-D-C-B-A` from commit
 | Q4 + KleidiAI | 2299.454 ms | 470.402 ms | 114.4480 | 35.3764 | 1966.484 MiB | **1016.834 MiB** | 20/24 |
 | Q4 + KleidiAI tuned | 2307.715 ms | **469.968 ms** | **131.4565** | 35.0959 | 1966.480 MiB | **1016.834 MiB** | 20/24 |
 
-ParetoPilot retained **Q8 generic reference** because it was also the numeric p95 end-to-end
-latency winner. The predeclared 1% objective cutoff was 2254.2522 ms, so none of the three Q4
-candidates entered the canonical shortlist. The result is a useful no-change decision: the
-measured optimization alternatives had real resource advantages, but they did not beat the
-declared latency objective.
+The 1% cutoff, defined before the run, was 2254.2522 ms. None of the Q4 candidates entered that
+shortlist, so ParetoPilot selected Q8 for the latency objective.
 
-The tuned Q4 + KleidiAI configuration is a measured resource alternative. Compared
-with Q8, it used a 43.72% smaller model and 42.79% less peak RSS, reduced p95 TTFT by 13.83%, and
-raised prompt throughput by 28.10%. The tradeoff was 3.40% slower p95 end-to-end latency, 9.37%
-lower generation throughput, and one fewer passing behavior case.
+The same release also includes:
 
-## What v1.1 adds
+- a 24-case behavior check;
+- five deployment priorities calculated from the same measurements;
+- a bounded concurrency 1/2/4 load test; and
+- two reconstructed mirrored passes for an observed stability check.
 
-The canonical v1.1 release makes four supplementary views inspectable without changing the core
-selection rule:
+Read the [model and latency result](results/published/30055662526/README.md) or open the
+[archived v1.1 HTML report](https://agrovr.github.io/ParetoPilot/evidence/report-v1.1.html).
 
-- **Behavior gate:** a checksummed 24-case suite uses declared `trimmed-exact` and strict
-  `json-exact` matching. Q8 passed 21/24 cases; every Q4 candidate passed 20/24. All four cleared
-  the 0.80 absolute floor and 95% baseline-retention rule.
-- **Policy sensitivity:** five profiles recompute the decision from the same benchmark. Canonical
-  latency and decode-first select Q8; memory-first selects Q4 generic; first-token-first and
-  prompt-ingest-first select tuned Q4 + KleidiAI.
-- **Bounded load:** every candidate ran eight measured requests at concurrency 1, 2, and 4. All
-  had 100% completion; concurrency 1 was the highest level that met both the 2000 ms p95 TTFT and
-  6500 ms p95 end-to-end SLOs.
-- **Repeat stability:** two separately reconstructed mirrored passes produced 24 comparison
-  rows. All six reported metrics were directionally consistent for the three Q4 candidates. The
-  largest relative spread for those candidates was 1.6695%; this is an observed consistency
-  result, not a statistical significance claim.
+### Capacity study
 
-The release contains 150 checksummed payloads. A separate offline replay verified the complete
-bundle, reproduced the selected candidate, matched all nine core and report comparisons, and
-returned no differences or warnings.
+[Run `30144901854`](https://github.com/agrovr/ParetoPilot/actions/runs/30144901854)
+tested two candidates across server-slot levels 1, 2, and 4 and simultaneous-client levels 1, 2,
+and 4. Both candidates performed best at four server slots and four clients (P4/C4). Across all
+18 tested combinations and two mirrored passes, 288 measured requests completed with no recorded
+failures.
 
-## How the evidence was built
+At the selected points, Q8 measured 84.94 generated tokens/s and 3448.1 MiB peak RSS. Tuned Q4
+measured 90.67 generated tokens/s and 2031.3 MiB peak RSS, while retaining 20/24 behavior cases
+versus Q8's 21/24.
 
-- One native `ubuntu-24.04-arm` job built pinned generic and KleidiAI-enabled `llama.cpp`
-  binaries and verified two pinned Qwen2.5 1.5B Instruct model files.
-- Four stages isolated Q8, Q4 quantization, a KleidiAI-enabled build with its observed
-  model-buffer marker, and one micro-batch change.
-- Throughput and server passes used the mirrored order `A-B-C-D-D-C-B-A` on the same runner.
-- `llama-bench` supplied prompt-processing and generation-throughput samples.
-- `llama-server` supplied the deterministic behavior gate, streamed 64-token TTFT and
-  end-to-end samples, and the bounded 1/2/4-client load sweep; GNU `time -v` supplied peak RSS.
-- Runtime logs had to show the KleidiAI model-buffer marker only for the intended candidates.
-- A closed manifest bound the decision evidence before selection, and bundle-level SHA-256
-  checksums locked the release archive.
+Read the [capacity result](results/published/30144901854/README.md) and
+[capacity-study method](docs/capacity-study.md).
 
-The measurement pins include `llama.cpp`
-`67b9b0e7f6ce45d929a4411907d3c48ec719e81c`, KleidiAI `1.24.0`, Qwen2.5 1.5B Instruct
-revision `91cad51170dc346986eccefdc2dd33a9da36ead9`, and evaluation-suite SHA-256
-`e49c16fba32fd65c947264aef4141026ab68b1fd415ef09eeea6e8ade9a545c7`.
+## GitHub Action
 
-## Quick start
-
-ParetoPilot requires Python 3.12 or newer and has no runtime package dependencies.
-
-```bash
-git clone https://github.com/agrovr/ParetoPilot.git
-cd ParetoPilot
-```
-
-In Windows PowerShell, create and activate the environment with:
-
-```powershell
-py -3.12 -m venv .venv
-.\.venv\Scripts\Activate.ps1
-```
-
-In Bash on Linux or macOS, use:
-
-```bash
-python3 -m venv .venv
-source .venv/bin/activate
-```
-
-Then run the same commands in either shell:
-
-```bash
-python -m pip install -e .
-python -m paretopilot --version
-python -m paretopilot doctor
-python -m paretopilot validate examples/synthetic-results.json
-python -m paretopilot recommend examples/synthetic-results.json --constraints configs/constraints.example.json
-```
-
-The example is explicitly synthetic and exists only to exercise the engine. It is not presented
-as Arm64 benchmark evidence.
-
-### Contributor verification
-
-The complete suite is intentionally separate from the judge quick path and can take several
-minutes:
-
-```bash
-python -m pip install -e ".[dev]"
-ruff check .
-ruff format --check .
-python -m unittest discover -s tests -v
-```
-
-## Use it as a CI decision gate
-
-ParetoPilot includes a composite GitHub Action that validates inputs, generates a machine-readable
-recommendation, supplementary decision passport, human-readable Optimization Receipt, and
-self-contained report, publishes SHA-256 digests, and can fail a deployment job when the selected
-candidate changes unexpectedly:
+The composite Action can validate measured inputs, publish the decision artifacts, and fail when
+the selected candidate changes unexpectedly:
 
 ```yaml
 - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
@@ -265,133 +186,51 @@ candidate changes unexpectedly:
     require-arm64-provenance: "true"
 ```
 
-The `benchmarks/benchmark-set.json` and `constraints/deployment.json` paths belong in the
-repository that consumes the Action. The [Launch Kit](#launch-your-own-decision) generates both
-files and a complete synthetic workflow for a safe first run.
+Measured evidence is required by default. Synthetic inputs must be explicitly enabled for tests
+or examples. See the [GitHub Action guide](docs/github-action.md) for all inputs, outputs, and an
+Arm64 workflow example.
 
-The reviewed v1.4.0 commit keeps the example stable. Measured evidence is required by default. A
-native deployment workflow can additionally require
-complete source-declared Arm64 runner, run, source, runtime, model, and evaluation-suite metadata.
-That completeness gate does not authenticate the claims by itself; the canonical release adds
-checksummed source artifacts and exact replay. Synthetic inputs must be explicitly allowed for
-smoke testing, so a fixture cannot silently pass as deployment proof. See the
-[GitHub Action guide](docs/github-action.md) for every input, output, artifact, and a native
-Arm64 workflow example. Pin the Action to a reviewed commit SHA in production.
+## Run new measurements
 
-## Reproduce the canonical decision
+The repository includes manual workflows for a new native Arm64 candidate study and a separate
+capacity study. New runs are labeled independently and do not change the published v1.1 or v1.4
+results.
 
-Download
-[`paretopilot-v1.1.0-arm64-evidence-30055662526.zip`](https://github.com/agrovr/ParetoPilot/releases/download/v1.1.0/paretopilot-v1.1.0-arm64-evidence-30055662526.zip)
-and verify this outer SHA-256 before extraction:
+- [Model and latency measurement and replay instructions](docs/reproducibility.md)
+- [Benchmark methodology](docs/benchmark-methodology.md)
+- [Capacity-study method](docs/capacity-study.md)
 
-```text
-b5586878ccd214667911390f417db0417111ac2c31d163a2f5f55c4469aefeb2
-```
+## Limitations
 
-After extracting it to `evidence/`, replay the complete archived contract into a fresh directory:
-
-```bash
-python -m paretopilot replay evidence --output-dir output/reproduction
-```
-
-The canonical replay reports `replay_contract: "1.1"`, `valid: true`,
-`decision_reproduced: true`, `fully_reproduced: true`, and `selected_id: "q8-generic"`, with
-empty differences and warnings. See the [reproduction guide](docs/reproducibility.md) for the
-complete checksum and comparison procedure.
-
-## Historical v1.0 evidence
-
-The earlier [run `29973188507`](results/published/29973188507/README.md) and
-[`v1.0.0` release](https://github.com/agrovr/ParetoPilot/releases/tag/v1.0.0) remain preserved as
-historical evidence. That study used a five-case smoke gate and produced a different measured
-latency ordering on a separate ephemeral runner. It is independently reproducible, but it is not
-pooled with or substituted for the current v1.1 canonical run.
-
-## Run a new native Arm64 study
-
-Open **Actions → Native Arm64 candidate study → Run workflow** on the default branch and retain
-the canonical input of ten repetitions. The workflow labels branch runs or changed inputs as
-exploratory, even when their measurements complete successfully.
-
-The workflow downloads sources and models during the job but never uploads model files, build
-trees, or credentials. Only compact evidence is retained.
-
-### Run the supplementary capacity envelope
-
-Reviewed [run `30144901854`](results/published/30144901854/README.md) completed the full bounded
-capacity contract. It selected P4/C4 for both predeclared candidates while leaving the canonical
-Q8 model decision unchanged. The original Actions archive is preserved byte-for-byte in the
-SHA-256-locked [`v1.4.0` release](https://github.com/agrovr/ParetoPilot/releases/tag/v1.4.0).
-
-Open **Actions → Supplementary Arm64 capacity study → Run workflow** on the default branch. This
-separate workflow keeps the canonical v1.1 decision frozen and compares only its Q8 reference with
-the measured tuned-Q4 resource alternative. A successful run measures nine bounded operating
-points for each candidate:
-
-- llama-server slots (`--parallel`) 1, 2, and 4; and
-- simultaneous clients 1, 2, and 4.
-
-`P` means llama-server slots and `C` means simultaneous clients, so `P4/C2` is a four-slot server
-serving two requests at once. The second pass reverses candidate, server-slot, and client order.
-Each server configuration retains its exact command, and each client level retains all eight raw
-request samples.
-
-The study holds context at 2,048 tokens per server slot, so total `--ctx-size` scales with
-`--parallel`. A point is eligible only when both passes meet the existing completion and latency
-SLO, their generation-rate and observed-p95-latency spreads stay within predeclared limits, the
-source-bound quality guard passes, server peak RSS stays within a predeclared 4,096 MiB example
-service budget, and the expected KleidiAI model-buffer marker is present or absent. Dedicated
-fresh-server quality runs keep the two performance passes load-only and comparable.
-
-The resulting `capacity-study.json` and `capacity-receipt.md` are supplementary artifacts. They
-select an observed operating point within each predeclared candidate; they cannot replace the
-canonical model recommendation. To verify the reviewed release without rerunning inference,
-extract it to `evidence/` and run:
-
-```bash
-python -m paretopilot replay-capacity evidence \
-  --output-dir output/replay-capacity
-```
-
-The command verifies complete checksum coverage, reconstructs the capacity study and receipt from
-raw evidence, requires byte-identical outputs, and replays the embedded frozen v1.1 archive. See
-the [capacity-study contract](docs/capacity-study.md).
-
-## Trust and limits
-
-- Measured and synthetic inputs are explicitly separated.
-- Closed schemas reject duplicate keys, non-finite numbers, unknown fields, malformed evidence,
-  mismatched settings, missing fingerprints, path escapes, and invalid checksums.
-- The 24-case behavior suite is a deterministic deployment gate, not a broad language-model
-  quality benchmark.
-- The canonical v1.1 1/2/4-client sweep fixes server parallelism at one and is not a general
-  capacity study.
-- The supplementary v1.4 capacity envelope is still a bounded closed-loop study on one native
-  Arm64 runner. It is not an open-loop production-capacity, cost, energy, or MLPerf claim.
-- Two mirrored forward/reverse passes plus predeclared spread gates support an observed consistency
-  description, not a significance claim.
-- The canonical result is one model and workload on one controlled hosted Arm64 runner. It does
-  not claim the same ranking on every Arm processor or deployment.
+- The published result covers one model family and workload on one hosted Arm64 runner.
+- The 24-case behavior suite is a deployment check, not a general language-model quality
+  benchmark.
+- The capacity study is bounded and closed-loop; it is not an open-loop production, cost, energy,
+  or MLPerf result.
+- Two mirrored passes and declared spread limits support an observed consistency description, not
+  a statistical significance claim.
 - Energy and cost were not measured.
-- Arm Performix remains optional and does not substitute profiler output for benchmark evidence.
 
-## Project map
+## Development
 
-```text
-src/paretopilot/                 validation, assembly, selection, capacity, replay, and reporting
-evals/                           versioned behavior and latency suites
-configs/                         decision, policy, bounded-load, and capacity declarations
-results/published/30055662526/   current v1.1 canonical summary and release lock
-results/published/30144901854/   supplementary v1.4 capacity summary and release lock
-results/published/29973188507/   preserved v1.0 historical summary and release lock
-.github/workflows/               cross-platform CI, Arm64 study, and verified Pages deploy
-docs/                            architecture, methodology, contracts, and reproduction
-tests/                           deterministic behavior and failure-path coverage
-action.yml                       reusable GitHub Actions deployment-decision gate
+```bash
+python -m pip install -e ".[dev]"
+ruff check .
+ruff format --check .
+python -m unittest discover -s tests -v
 ```
+
+## Documentation
+
+- [Architecture](docs/architecture.md)
+- [Benchmark methodology](docs/benchmark-methodology.md)
+- [Reproduction guide](docs/reproducibility.md)
+- [GitHub Action](docs/github-action.md)
+- [Capacity study](docs/capacity-study.md)
+- [llama-bench input format](docs/llama-bench-contract.md)
 
 ## License
 
 ParetoPilot is available under the [Apache License 2.0](LICENSE). Third-party software and model
 artifacts retain their own licenses and are not redistributed by this repository. See
-[third-party notices](THIRD_PARTY_NOTICES.md) for pinned components and upstream terms.
+[third-party notices](THIRD_PARTY_NOTICES.md).

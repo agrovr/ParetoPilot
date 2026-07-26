@@ -1,5 +1,5 @@
 name: ParetoPilot decision gate
-description: Validate benchmark evidence, select a deployment candidate, and publish audit-ready receipts.
+description: Compare inference benchmark results, publish decision artifacts, and optionally catch selection changes in CI.
 author: Ashmit Grover
 
 branding:
@@ -14,7 +14,7 @@ inputs:
     description: Path to a ParetoPilot constraints JSON file.
     required: true
   output-dir:
-    description: New or empty directory for the recommendation, passport, report, optimization receipt, and gate receipt.
+    description: New or empty directory for generated outputs.
     required: false
     default: paretopilot-output
   require-measured:
@@ -26,7 +26,7 @@ inputs:
     required: false
     default: ""
   require-arm64-provenance:
-    description: Reject evidence without complete source-declared Arm64 attribution metadata.
+    description: Reject inputs missing required Arm64 runner and source metadata.
     required: false
     default: "false"
 
@@ -38,19 +38,19 @@ outputs:
     description: Whether the input benchmark set was explicitly synthetic.
     value: ${{ steps.receipt.outputs.synthetic-source }}
   recommendation:
-    description: Path to the generated machine-readable recommendation.
+    description: Path to recommendation.json, which records the selected configuration.
     value: ${{ steps.receipt.outputs.recommendation }}
   report:
     description: Path to the generated self-contained HTML report.
     value: ${{ steps.receipt.outputs.report }}
   decision-passport:
-    description: Path to the supplementary Arm64 decision passport.
+    description: Path to decision-passport.json, which contains machine-readable decision details.
     value: ${{ steps.receipt.outputs.decision-passport }}
   optimization-receipt:
-    description: Path to the deterministic human-readable optimization receipt.
+    description: Path to optimization-receipt.md, which contains the Markdown decision summary.
     value: ${{ steps.receipt.outputs.optimization-receipt }}
   evidence-grade:
-    description: Passport evidence grade.
+    description: Data-source status recorded in decision-passport.json.
     value: ${{ steps.receipt.outputs.evidence-grade }}
   receipt:
     description: Path to the generated CI gate receipt.
@@ -62,10 +62,10 @@ outputs:
     description: SHA-256 of the HTML report.
     value: ${{ steps.receipt.outputs.report-sha256 }}
   decision-passport-sha256:
-    description: SHA-256 of the decision passport.
+    description: SHA-256 of decision-passport.json.
     value: ${{ steps.receipt.outputs.decision-passport-sha256 }}
   optimization-receipt-sha256:
-    description: SHA-256 of the Markdown optimization receipt.
+    description: SHA-256 of optimization-receipt.md.
     value: ${{ steps.receipt.outputs.optimization-receipt-sha256 }}
   receipt-sha256:
     description: SHA-256 of the gate receipt.
@@ -116,7 +116,7 @@ runs:
         esac
         python -m paretopilot "${args[@]}"
 
-    - name: Publish decision receipt
+    - name: Write Action outputs and summary
       id: receipt
       shell: bash
       env:
@@ -174,31 +174,49 @@ runs:
             provenance = passport.get("provenance")
             closest = passport.get("closest_outside_shortlist")
             alternative = passport.get("resource_alternative")
-            attribution_scope = (
-                provenance.get("verification_scope")
+            data_source = {
+                "arm64-attributed": "Measured Arm64 result",
+                "measured-unattributed": "Measured result; source details incomplete",
+                "synthetic": "Synthetic example",
+            }.get(receipt["evidence_grade"], receipt["evidence_grade"])
+            reason = {
+                "The highest-preference shortlisted candidate is the numeric objective winner.": (
+                    "This configuration had the best measured result."
+                ),
+                (
+                    "Preference order selected a candidate within the objective tolerance "
+                    "instead of the numeric objective winner."
+                ): "This configuration was within the configured tolerance and won the tie-break.",
+                "Selected the numeric objective winner; candidate id breaks exact ties.": (
+                    "This configuration had the best measured result. Candidate ID broke an exact tie."
+                ),
+            }.get(selection["reason"], selection["reason"])
+            source_check = (
+                "Required source details present"
                 if isinstance(provenance, dict)
-                else "Not supplied"
+                and provenance.get("attribution_complete") is True
+                else "Some required source details are missing"
             )
             rows = (
-                ("Gate", "Passed"),
-                ("Selected candidate", selected["label"]),
-                ("Selected ID", receipt["selected_id"]),
-                ("Evidence grade", receipt["evidence_grade"]),
-                ("Attribution scope", attribution_scope),
-                ("Eligible candidates", receipt["eligible_count"]),
-                ("Pareto-frontier candidates", receipt["frontier_count"]),
-                ("Decision reason", selection["reason"]),
+                ("Status", "Passed"),
+                ("Selected configuration", selected["label"]),
+                ("Configuration ID", receipt["selected_id"]),
+                ("Data source", data_source),
+                ("Source check", source_check),
+                ("Passing configurations", receipt["eligible_count"]),
+                ("Pareto-frontier configurations", receipt["frontier_count"]),
+                ("Reason", reason),
                 (
-                    "Closest outside shortlist",
+                    "Closest option outside cutoff",
                     closest["label"] if isinstance(closest, dict) else "None",
                 ),
                 (
-                    "Eligible measured resource alternative",
+                    "Lower-resource alternative",
                     alternative["label"] if isinstance(alternative, dict) else "None",
                 ),
             )
             lines = [
-                "## ParetoPilot decision gate",
+                "## ParetoPilot result",
                 "",
                 "| Check | Result |",
                 "| --- | --- |",
@@ -208,7 +226,7 @@ runs:
                 "",
                 f"Report SHA-256: `{receipt['report_sha256']}`",
                 "",
-                f"Decision passport SHA-256: `{receipt['decision_passport_sha256']}`",
+                f"Decision details SHA-256: `{receipt['decision_passport_sha256']}`",
                 "",
             ]
             with Path(summary_path).open("a", encoding="utf-8", newline="\n") as handle:

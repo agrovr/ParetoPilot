@@ -115,9 +115,9 @@ class PagesWorkflowContractTests(unittest.TestCase):
                 self.assertIn(str(value), compact)
 
         capacity_step = workflow[
-            workflow.index(
-                "- name: Download, replay, and verify locked capacity evidence"
-            ) : workflow.index("- name: Rebuild, compare, and present every v1.1 output")
+            workflow.index("- name: Verify and replay the v1.4 capacity release") : workflow.index(
+                "- name: Build the published results page"
+            )
         ]
         self.assertIn('Request(\n              archive["release_asset_url"]', capacity_step)
         self.assertIn(
@@ -130,9 +130,9 @@ class PagesWorkflowContractTests(unittest.TestCase):
     def test_capacity_proof_is_published_and_wired_into_the_showcase(self) -> None:
         workflow = _workflow()
         build_section = workflow[
-            workflow.index(
-                "- name: Rebuild, compare, and present every v1.1 output"
-            ) : workflow.index("- name: Upload Pages artifact")
+            workflow.index("- name: Build the published results page") : workflow.index(
+                "- name: Upload Pages artifact"
+            )
         ]
         expected_copies = (
             (

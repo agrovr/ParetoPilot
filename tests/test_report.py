@@ -218,7 +218,7 @@ class ReportTests(unittest.TestCase):
 
         report = rendered_report(BenchmarkSet.from_mapping(raw))
 
-        self.assertIn("Exploratory evidence — not canonical submission evidence.", report)
+        self.assertIn("Exploratory result — not published benchmark evidence.", report)
         self.assertIn("Exploratory measured evidence · Decision evidence", report)
 
     def test_objective_tolerance_and_preference_are_visible_guardrails(self) -> None:

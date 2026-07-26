@@ -1,4 +1,4 @@
-# llama-bench evidence contract
+# llama-bench input format
 
 ParetoPilot currently targets `llama.cpp` commit
 [`67b9b0e7f6ce45d929a4411907d3c48ec719e81c`](https://github.com/ggml-org/llama.cpp/commit/67b9b0e7f6ce45d929a4411907d3c48ec719e81c).
@@ -7,8 +7,8 @@ tolerates unknown fields.
 
 ## CPU-only benchmark invocation
 
-Use a CPU-only build for the strongest guarantee. With a multi-backend build, make CPU intent
-explicit:
+For an unambiguous CPU-only run, use a CPU-only build. With a multi-backend build, make CPU
+intent explicit:
 
 ```bash
 ./llama-bench \
@@ -21,8 +21,8 @@ explicit:
   -o jsonl
 ```
 
-Warmup is enabled unless `--no-warmup` is passed. The final evidence protocol keeps warmup
-enabled and records the complete command separately because JSONL does not include this fact.
+Warmup is enabled unless `--no-warmup` is passed. The published study keeps warmup enabled and
+records the complete command separately because JSONL does not include this fact.
 Verbose mode preserves the model-buffer log marker on stderr; without `-v`, `llama-bench`
 replaces the normal logger with a null callback.
 
@@ -43,7 +43,7 @@ provide the same optimized path for K-quant model files.
 `avg_ts` is the arithmetic mean of per-repetition throughput. It is not guaranteed to equal
 tokens divided by `avg_ns` due to the upstream aggregation method.
 
-## Evidence boundaries
+## What llama-bench measures
 
 `llama-bench` measures prompt/decode throughput. It excludes model loading, tokenization,
 sampling, warmup, and server request overhead, so it does not directly measure TTFT or p95

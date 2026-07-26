@@ -179,7 +179,7 @@ def replay_capacity_bundle(
             ],
             "verdict": (
                 "PASS: bundle verified, capacity outputs reproduced byte-for-byte, "
-                "and frozen canonical evidence replayed."
+                "and the published v1.1 result replayed."
             ),
         }
         write_json(staging / "capacity-replay.json", payload)

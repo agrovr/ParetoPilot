@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "paretopilot"
 version = "1.4.1"
-description = "Constraint-driven selection for reproducible AI inference benchmarks on Arm64."
+description = "Compare Arm64 inference configurations with reproducible benchmark reports."
 readme = "README.md"
 requires-python = ">=3.12"
 license = "Apache-2.0"

@@ -46,15 +46,13 @@ _KNOWN_METRIC_DIRECTIONS = {
 }
 _SHA256_PATTERN = re.compile(r"^[0-9a-fA-F]{64}$")
 _CURRENT_BOUNDARY_CAVEAT = (
-    "This passport describes only the supplied benchmark set, constraints, and "
-    "current measured context. It does not predict results for another model, "
-    "workload, Arm processor, runner, deployment, energy budget, or cost model, "
-    "and it does not make a statistical-significance claim."
+    "This result applies only to the supplied benchmark, model, runner, and workload. "
+    "It does not predict performance, energy use, or cost on other systems, and it "
+    "does not establish statistical significance."
 )
 _SYNTHETIC_BOUNDARY_CAVEAT = (
-    "This passport describes only the supplied synthetic fixture and constraints. "
-    "It is software smoke-test context, not Arm64 benchmark evidence, and it does "
-    "not predict deployment performance or make a statistical-significance claim."
+    "This is a software example, not measured Arm64 evidence. It does not predict "
+    "deployment performance or establish statistical significance."
 )
 
 
@@ -104,7 +102,7 @@ def _required_text(
 
 
 def _provenance(benchmarks: BenchmarkSet) -> tuple[str, dict[str, Any]]:
-    """Return an honest evidence grade and a bounded provenance mapping."""
+    """Return an evidence grade and a bounded provenance mapping."""
 
     metadata = _mapping(benchmarks.metadata)
     source = _mapping(metadata.get("source"))
@@ -220,8 +218,8 @@ def _provenance(benchmarks: BenchmarkSet) -> tuple[str, dict[str, Any]]:
         "classification": classification,
         "attribution_complete": attribution_complete,
         "verification_scope": (
-            "source-supplied metadata completeness only; this passport does not "
-            "authenticate the claims or bind them to candidate artifacts"
+            "checks whether required source metadata is present; it does not independently "
+            "authenticate that metadata or bind it to candidate artifacts"
         ),
         "runner": {
             "architecture": architecture,
@@ -642,13 +640,9 @@ def build_decision_passport(
                 "and runtime-tuning; then stable input order and candidate id"
             ),
             "resource_alternative": (
-                "not emitted for synthetic fixture evidence; synthetic comparisons do not "
-                "constitute measured deployment alternatives"
+                "not produced for synthetic example data"
                 if synthetic_evidence
-                else (
-                    "descriptive measured comparison only; it does not replace the "
-                    "selected decision"
-                )
+                else "measured comparison only; it does not change the selected configuration"
             ),
             "current_boundary_caveat": (
                 _SYNTHETIC_BOUNDARY_CAVEAT if synthetic_evidence else _CURRENT_BOUNDARY_CAVEAT

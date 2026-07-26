@@ -1,31 +1,28 @@
-# Supplementary Arm64 capacity study
+# Arm64 capacity study
 
-ParetoPilot v1.4 adds a separate contract for measuring an operating envelope. It does not edit
-the canonical v1.1 archive, recommendation, replay path, or report. This page describes the
-predeclared method; measured results are added only after a native Arm64 run completes strict
-assembly and recomputation, with every passing and failing per-cell outcome preserved.
+ParetoPilot v1.4 adds a separate server-capacity study. It tests how server slots and simultaneous
+clients affect the two candidates carried forward from the v1.1 comparison. It does not change the
+published v1.1 latency result.
 
-The frozen v1.1 load sweep varied simultaneous clients while keeping llama-server at
-`--parallel 1`. That correctly measured queue pressure for the canonical deployment command, but
-it could not answer a second deployment question: how many server slots should be configured for
-a bounded number of simultaneous clients?
+The v1.1 load test varied simultaneous clients while `llama-server` used `--parallel 1`. It
+measured queue pressure, but not how performance changes when the server-slot count changes.
 
-## Predeclared question
+## Question
 
 The capacity workflow compares two already measured candidates:
 
 | Candidate | Role |
 | --- | --- |
-| `q8-generic` | Frozen v1.1 canonical reference |
-| `q4-kleidiai-tuned` | Frozen v1.1 measured resource alternative |
+| `q8-generic` | Published v1.1 latency choice |
+| `q4-kleidiai-tuned` | Published v1.1 lower-memory alternative |
 
 For each candidate, it measures the full 3×3 matrix:
 
 - server slots (`--parallel`): 1, 2, and 4; and
 - simultaneous clients: 1, 2, and 4.
 
-This is a candidate-local operating-point decision. A capacity result cannot silently promote a
-different candidate or rewrite the latency-first canonical choice.
+The workflow chooses an operating point for each candidate separately. It does not compare the
+candidates or change the v1.1 model choice.
 
 ## Why context scales with server slots
 
@@ -70,7 +67,7 @@ Only these values may differ:
 Runtime path, model path, CPU thread count, batch size, micro-batch size, GPU-offload setting,
 verbosity, and host binding must remain identical. Any other argument drift fails the assembly.
 
-## Mirrored forward/reverse order and measurement window
+## Test order and timing
 
 The predeclared order uses one forward pass and its exact reverse:
 
@@ -102,7 +99,7 @@ Every load pass uses the existing checksummed plan:
 Eight requests make this an observed p95, not a stable tail-distribution estimate. ParetoPilot does
 not present p99 or confidence intervals from this sample.
 
-## Quality, memory, and model-buffer-marker gates
+## Quality and memory checks
 
 The checksummed 24-case behavior suite runs sequentially for both candidates at every server-slot
 level. It is a task-specific deployment guard, not a broad language-model quality benchmark or a
@@ -112,11 +109,11 @@ concurrent-correctness claim. Each candidate must:
 - retain at least 95% of the Q8 reference score at the same slot level; and
 - preserve its exact pass/fail outcomes across slot levels.
 
-Peak server RSS must remain at or below 4,096 MiB. This is a predeclared example service budget,
-not a natural Arm64 capacity boundary. A KleidiAI-enabled candidate must contain the
-`CPU_KLEIDIAI model buffer` marker; the generic candidate must not contain it. This supports the
-wording "KleidiAI-enabled build with an observed model-buffer marker." It does not prove that a
-particular microkernel executed or attribute every performance difference to KleidiAI.
+Peak server RSS must remain at or below 4,096 MiB. This is the memory limit chosen for this study,
+not a universal Arm64 limit. A KleidiAI-enabled candidate must contain the
+`CPU_KLEIDIAI model buffer` marker; the generic candidate must not contain it. The marker confirms
+which build `llama.cpp` reported. It is not a kernel trace and does not attribute every
+performance difference to KleidiAI.
 
 ## Selection rule
 
@@ -136,32 +133,27 @@ lower maximum RSS, fewer server slots, then fewer clients. The P1/C1 reference i
 Throughput is total completed generated tokens divided by each pass's common measured wall time.
 ParetoPilot does not sum per-response server rates across overlapping requests.
 
-## Reviewed run, replay, and fresh measurement
+## Published result and replay
 
-Reviewed [run `30144901854`](../results/published/30144901854/README.md) completed this contract on
-one native Arm64 runner. Both predeclared candidates selected P4/C4 within their own passing
-envelopes; the frozen canonical Q8 model decision did not change. The original Actions ZIP is
-preserved byte-for-byte in the versioned, SHA-256-locked
-[`v1.4.0` release](https://github.com/agrovr/ParetoPilot/releases/tag/v1.4.0).
-Use ParetoPilot
-[`0f196a4f`](https://github.com/agrovr/ParetoPilot/commit/0f196a4f3764526db48c0481b69f7f90eaffc9e4)
-or newer to run the replay command below. The version 1.4.1 release is intentionally not linked
-until it is published; the tooling does not move, replace, or modify the v1.4.0 evidence archive.
+Published [run `30144901854`](../results/published/30144901854/README.md) completed this study on
+one native Arm64 runner. Both candidates selected P4/C4 among their own passing cells, and the
+published Q8 model choice did not change. The
+[`v1.4.0` release](https://github.com/agrovr/ParetoPilot/releases/tag/v1.4.0) preserves the original
+Actions ZIP unchanged.
 
-For the shortest judge path, read the compact reviewed result first, inspect
-`capacity-receipt.md` for every passing and rejected cell, then replay the bundle without rerunning
-inference:
+Use the current `main` branch and the command below to rebuild the capacity outputs and replay the
+embedded v1.1 result without rerunning inference:
 
 ```bash
 python -m paretopilot replay-capacity evidence \
   --output-dir output/replay-capacity
 ```
 
-`replay-capacity` requires exact `SHA256SUMS` coverage, reconstructs the capacity study and receipt
-from the archived load, RSS, server-log, and quality sources, requires both outputs to match byte
-for byte, and replays the embedded frozen v1.1 evidence into a new output directory.
+`replay-capacity` checks every `SHA256SUMS` entry, reconstructs the capacity study and receipt from
+the archived load, RSS, server-log, and quality sources, requires both outputs to match byte for
+byte, and replays the embedded v1.1 result into a new output directory.
 
-To produce new evidence, run **Supplementary Arm64 capacity study** manually from the repository's
+To produce new results, run **Arm64 capacity study** manually from the repository's
 Actions page after the workflow is on the default branch. A new hosted-runner execution is a new
 measurement, not an exact hardware replay.
 
@@ -170,42 +162,38 @@ about 3 GB of pinned Q8 and Q4 model files plus pinned source archives. Models a
 not uploaded.
 
 On success, download the `supplementary-arm64-capacity-<run>-<attempt>` artifact. Start with
-`status.json`, verify `SHA256SUMS`, then read `capacity-receipt.md`; the full raw and embedded
-evidence remains available for deeper review. A failed run uploads a seven-day `INCOMPLETE`
+`status.json`, verify `SHA256SUMS`, then read `capacity-receipt.md`. The artifact also includes the
+raw measurements and embedded v1.1 archive. A failed run uploads a seven-day `INCOMPLETE`
 diagnostic bundle whose status records the failed stage.
 
-## Evidence outputs
+## Output files
 
-`paretopilot assemble-capacity` validates and binds:
+`paretopilot assemble-capacity` checks:
 
-- the capacity plan, load plan, source manifest, and frozen canonical evidence hashes;
+- the capacity plan, load plan, source manifest, and published v1.1 result hashes;
 - every measured load artifact and raw request sample;
 - every GNU `time -v` file;
 - every server log and model-buffer-marker result;
 - every source-bound quality artifact and outcome vector;
-- exact capacity and canonical command arrays; and
+- exact capacity and published v1.1 command arrays; and
 - native Arm64 runner, source, model, runtime, and build identity.
 
-It embeds the validated load and quality source artifacts in `capacity-study.json`. ParetoPilot
-recomputes every readable quality check, cell, gate, and selection whenever it validates that
-artifact.
+`capacity-study.json` contains the validated load and quality inputs. ParetoPilot recalculates each
+readable quality check, cell result, and selection whenever it validates the file.
 
-Exact input-file byte hashes are checked during assembly and again when the complete bundle is
-reproduced. Standalone JSON validation recomputes the embedded canonical-content hashes; the
-bundle-level `SHA256SUMS` binds the separate original plan, manifest, logs, and measurements.
-`paretopilot capacity-receipt` renders a deterministic Markdown proof with selected points, the
-complete two-candidate envelope, exact rejected gates, methodology, provenance, input hashes, and
-a reproduction command.
+Input-file hashes are checked during assembly and again during replay. `SHA256SUMS` covers the
+original plan, manifest, logs, and measurements. `paretopilot capacity-receipt` writes a Markdown
+summary with the selected points, every cell and rejection reason, the method, source details,
+input hashes, and a replay command.
 
 Both outputs are classified `supplementary-capacity` and state
 `canonical_outputs_modified: false`.
 
-The successful GitHub Actions artifact is retained for 90 days. The reviewed original archive is
-also preserved as a versioned, SHA-256-locked release asset so judging does not depend on temporary
-Actions retention. Call a release immutable only when GitHub release immutability is enabled and
-verified for that release.
+The successful GitHub Actions artifact is retained for 90 days. The `v1.4.0` release keeps the
+original archive beyond temporary Actions retention and records its SHA-256. GitHub guarantees
+release immutability only when that setting is enabled for the release.
 
-## Boundary
+## Study limits
 
 This is a bounded fixed-concurrency study on one GitHub-hosted Ubuntu 24.04 Arm64 runner. It is not
 an open-loop arrival-rate test, an MLPerf Server benchmark, a universal scaling claim, or evidence

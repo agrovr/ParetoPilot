@@ -61,14 +61,14 @@ PINNED_LLAMA_CPP_COMMIT = "67b9b0e7f6ce45d929a4411907d3c48ec719e81c"
 def _parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="paretopilot",
-        description="Quality-aware recommendation for reproducible inference benchmarks.",
+        description="Compare inference benchmark results and select a configuration under chosen limits.",
     )
     parser.add_argument("--version", action="version", version=f"%(prog)s {__version__}")
     subparsers = parser.add_subparsers(dest="command", required=True)
 
     init_parser = subparsers.add_parser(
         "init",
-        help="create a new synthetic Launch Kit for the ParetoPilot decision gate",
+        help="create a synthetic starter project for the ParetoPilot decision gate",
     )
     init_parser.add_argument(
         "directory",
@@ -91,7 +91,11 @@ def _parser() -> argparse.ArgumentParser:
 
     ci_gate_parser = subparsers.add_parser(
         "ci-gate",
-        help="generate a decision receipt and enforce it in continuous integration",
+        help="evaluate a benchmark set and optionally enforce the selected configuration in CI",
+        description=(
+            "Evaluate a benchmark set and write the recommendation, machine-readable decision "
+            "details, Markdown decision summary, HTML report, and CI result."
+        ),
     )
     ci_gate_parser.add_argument("results", type=Path)
     ci_gate_parser.add_argument("--constraints", required=True, type=Path)
@@ -109,14 +113,15 @@ def _parser() -> argparse.ArgumentParser:
         "--require-arm64-provenance",
         action="store_true",
         help=(
-            "return a nonzero status unless the passport has complete source-declared "
-            "Arm64 attribution metadata"
+            "return a nonzero status unless the decision details include the required "
+            "source-declared Arm64 metadata"
         ),
     )
 
     passport_parser = subparsers.add_parser(
         "passport",
-        help="export supplementary Arm64 provenance and optimization-stage context",
+        help="export machine-readable decision details, source metadata, and tradeoffs",
+        description="Export machine-readable decision details, source metadata, and tradeoffs.",
     )
     passport_parser.add_argument("results", type=Path)
     passport_parser.add_argument("--constraints", required=True, type=Path)
@@ -125,14 +130,15 @@ def _parser() -> argparse.ArgumentParser:
         "--require-arm64-provenance",
         action="store_true",
         help=(
-            "return a nonzero status unless the passport has complete source-declared "
-            "Arm64 attribution metadata"
+            "return a nonzero status unless the decision details include the required "
+            "source-declared Arm64 metadata"
         ),
     )
 
     optimization_receipt_parser = subparsers.add_parser(
         "optimization-receipt",
-        help="export a deterministic Markdown optimization proof from the decision passport",
+        help="export a Markdown decision summary from the same evaluated inputs",
+        description="Export a Markdown decision summary from the same evaluated inputs.",
     )
     optimization_receipt_parser.add_argument("results", type=Path)
     optimization_receipt_parser.add_argument("--constraints", required=True, type=Path)
@@ -141,8 +147,8 @@ def _parser() -> argparse.ArgumentParser:
         "--require-arm64-provenance",
         action="store_true",
         help=(
-            "return a nonzero status unless the receipt has complete source-declared "
-            "Arm64 attribution metadata"
+            "return a nonzero status unless the decision details include the required "
+            "source-declared Arm64 metadata"
         ),
     )
 
@@ -268,14 +274,14 @@ def _parser() -> argparse.ArgumentParser:
         "--canonical-server-command",
         required=True,
         type=Path,
-        help="canonical deployment command used for material-equivalence validation",
+        help="reference deployment command used to check equivalent settings",
     )
     evaluate_load_parser.add_argument(
         "--execution-order",
         type=_concurrency_execution_order,
         help=(
             "optional comma-separated permutation of the plan's client levels; "
-            "rows remain serialized in canonical order"
+            "rows remain saved in the plan's standard order"
         ),
     )
     evaluate_load_parser.add_argument("--output", required=True, type=Path)
@@ -296,7 +302,7 @@ def _parser() -> argparse.ArgumentParser:
 
     capacity_parser = subparsers.add_parser(
         "assemble-capacity",
-        help="assemble a strict supplementary server-slots by client-concurrency study",
+        help="combine server-slot and client-concurrency measurements into a capacity study",
     )
     capacity_parser.add_argument("--plan", required=True, type=Path)
     capacity_parser.add_argument("--load-plan", required=True, type=Path)
@@ -337,7 +343,7 @@ def _parser() -> argparse.ArgumentParser:
 
     capacity_receipt_parser = subparsers.add_parser(
         "capacity-receipt",
-        help="render a deterministic Markdown receipt from a validated capacity study",
+        help="write a Markdown summary of a validated capacity study",
     )
     capacity_receipt_parser.add_argument("study", type=Path)
     capacity_receipt_parser.add_argument("--output", required=True, type=Path)
@@ -387,7 +393,7 @@ def _parser() -> argparse.ArgumentParser:
 
     study_parser = subparsers.add_parser(
         "assemble-study",
-        help="verify a published paired Arm64 bundle and create real selection inputs",
+        help="verify a published paired Arm64 bundle and create benchmark and constraint files",
     )
     study_parser.add_argument("bundle", type=Path)
     study_parser.add_argument("--practical-effect-threshold-percent", type=float, default=1.0)
@@ -415,7 +421,7 @@ def _parser() -> argparse.ArgumentParser:
 
     report_v11_parser = subparsers.add_parser(
         "report-v11",
-        help="render the additive v1.1 decision, policy, load, and stability report",
+        help="render the v1.1 HTML report with policy, load, and repeatability sections",
     )
     report_v11_parser.add_argument("results", type=Path)
     report_v11_parser.add_argument("--recommendation", required=True, type=Path)
@@ -426,7 +432,7 @@ def _parser() -> argparse.ArgumentParser:
 
     showcase_v11_parser = subparsers.add_parser(
         "showcase-v11",
-        help="render a judge-facing v1.1 presentation, locked when proof inputs are supplied",
+        help="render the public HTML results page",
     )
     showcase_v11_parser.add_argument("results", type=Path)
     showcase_v11_parser.add_argument("--recommendation", required=True, type=Path)
@@ -453,7 +459,7 @@ def _parser() -> argparse.ArgumentParser:
 
     profiles_parser = subparsers.add_parser(
         "profiles",
-        help="precompute canonical and derived deployment-policy recommendations",
+        help="precompute the main and alternative deployment-policy recommendations",
     )
     profiles_parser.add_argument("results", type=Path)
     profiles_parser.add_argument("--constraints", required=True, type=Path)
@@ -462,7 +468,7 @@ def _parser() -> argparse.ArgumentParser:
 
     replay_parser = subparsers.add_parser(
         "replay",
-        help="verify and regenerate outputs from an extracted evidence directory",
+        help="verify and rebuild the model and latency results from extracted evidence",
     )
     replay_parser.add_argument("evidence", type=Path)
     replay_parser.add_argument("--output-dir", required=True, type=Path)
@@ -474,18 +480,19 @@ def _parser() -> argparse.ArgumentParser:
 
     replay_capacity_parser = subparsers.add_parser(
         "replay-capacity",
-        help="verify and reproduce an extracted supplementary capacity bundle",
+        help="verify and reproduce an extracted published capacity bundle",
     )
     replay_capacity_parser.add_argument("bundle", type=Path)
     replay_capacity_parser.add_argument("--output-dir", required=True, type=Path)
 
     verify_published_parser = subparsers.add_parser(
         "verify-published",
-        help="verify and replay the pinned canonical and capacity release archives",
+        help="verify the published model, latency, and capacity results",
         description=(
-            "Verify both pinned public Arm64 evidence releases on any supported host. "
-            "By default, ParetoPilot downloads both exact archives, checks their size and "
-            "SHA-256 pins, safely extracts them, and replays the archived decisions."
+            "Verify the published v1.1 model and latency study and the separate v1.4 "
+            "capacity study on any supported host. By default, ParetoPilot downloads both "
+            "exact archives, checks their size and SHA-256 pins, safely extracts them, and "
+            "replays the archived decisions."
         ),
         epilog=(
             "This does not require an Arm64 machine and does not rerun inference. "
@@ -496,30 +503,30 @@ def _parser() -> argparse.ArgumentParser:
     verify_published_parser.add_argument(
         "--canonical-archive",
         type=Path,
-        help="exact pinned v1.1 archive to use instead of downloading it",
+        help="local copy of the exact v1.1 model and latency archive",
     )
     verify_published_parser.add_argument(
         "--capacity-archive",
         type=Path,
-        help="exact pinned v1.4 archive to use instead of downloading it",
+        help="local copy of the exact v1.4 capacity archive",
     )
     verify_published_parser.add_argument(
         "--output-dir",
         required=True,
         type=Path,
-        help="new directory for the human-readable Markdown and machine-readable JSON proofs",
+        help="new directory for the Markdown and JSON verification results",
     )
 
     experiment_parser = subparsers.add_parser(
         "assemble-experiment",
-        help="verify a multi-candidate Arm64 manifest and create a real benchmark set",
+        help="verify a multi-candidate Arm64 manifest and create a measured benchmark set",
     )
     experiment_parser.add_argument("manifest", type=Path)
     experiment_parser.add_argument("--output", required=True, type=Path)
 
     recommend_parser = subparsers.add_parser(
         "recommend",
-        help="filter, compute a Pareto frontier, and recommend a candidate",
+        help="apply limits, compare tradeoffs, and recommend a candidate",
     )
     recommend_parser.add_argument("results", type=Path)
     recommend_parser.add_argument("--constraints", required=True, type=Path)
@@ -1123,7 +1130,7 @@ def main(argv: Sequence[str] | None = None) -> int:
                 capacity_archive=args.capacity_archive,
             )
             print(proof["verdict"])
-            print(f"Proof: {args.output_dir.resolve() / 'published-proof.md'}")
+            print(f"Report: {args.output_dir.resolve() / 'published-proof.md'}")
             return 0
         elif args.command == "assemble-experiment":
             payload = assemble_experiment(args.manifest)

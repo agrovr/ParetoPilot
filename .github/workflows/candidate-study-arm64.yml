@@ -66,7 +66,7 @@ jobs:
         with:
           python-version: "3.12"
 
-      - name: Initialize diagnostic status
+      - name: Initialize run status
         shell: bash
         run: |
           set -euo pipefail
@@ -297,7 +297,7 @@ jobs:
           fetch_model "$Q8_FILENAME" "$Q8_SHA256" "$Q8_SIZE_BYTES"
           fetch_model "$Q4_FILENAME" "$Q4_SHA256" "$Q4_SIZE_BYTES"
 
-      - name: Run mirrored forward/reverse multi-candidate throughput study
+      - name: Measure throughput in mirrored order
         shell: bash
         run: |
           set -euo pipefail
@@ -438,7 +438,7 @@ jobs:
               "artifacts/experiment/candidates/$candidate/raw/pass-2.stderr.log"
           done
 
-      - name: Summarize throughput evidence
+      - name: Summarize throughput results
         shell: bash
         run: |
           set -euo pipefail
@@ -1033,7 +1033,7 @@ jobs:
             --output artifacts/experiment/report.html \
             --recommendation-output artifacts/experiment/recommendation.json
 
-      - name: Build v1.1 policy, repeat-stability, and report extensions
+      - name: Build v1.1 analyses and report
         shell: bash
         run: |
           set -euo pipefail
@@ -1075,7 +1075,7 @@ jobs:
             --stability artifacts/extensions/repeat-stability.json \
             --output artifacts/report-v1.1.html
 
-      - name: Finalize checksummed evidence bundle
+      - name: Finalize checksummed study bundle
         shell: bash
         run: |
           set -euo pipefail
@@ -1092,10 +1092,12 @@ jobs:
               "measurement_valid": True,
               "classification": "canonical" if canonical else "exploratory",
               "reason": (
-                  "all candidate, quality, latency, memory, load, repeat-stability, "
-                  "integrity, policy, selection, and report gates passed"
+                  "all study checks passed"
                   if canonical
-                  else "measurement gates passed, but branch or inputs are exploratory"
+                  else (
+                      "study checks passed, but this run is exploratory because of "
+                      "its branch or inputs"
+                  )
               ),
           }
           Path("artifacts/status.json").write_text(

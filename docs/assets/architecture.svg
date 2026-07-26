@@ -1,6 +1,6 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="1600" height="900" viewBox="0 0 1600 900" role="img" aria-labelledby="architecture-title architecture-desc">
-  <title id="architecture-title">ParetoPilot evidence-to-deployment architecture</title>
-  <desc id="architecture-desc">Pinned experiment inputs enter one native Arm64 runner. Four generic and KleidiAI candidates produce throughput, quality, latency, and memory evidence. Strict assembly verifies identities and hashes before constraint filtering, Pareto selection, and an offline report. Arm Performix is shown outside the required path as optional profiling.</desc>
+  <title id="architecture-title">ParetoPilot Arm64 benchmark and decision flow</title>
+  <desc id="architecture-desc">Pinned inputs enter one native Arm64 runner. Four controlled configurations produce throughput, quality, latency, and memory measurements. ParetoPilot validates identities and hashes before applying constraints, selecting a configuration, and writing an offline report. Arm Performix is optional profiling.</desc>
   <defs>
     <filter id="shadow" x="-20%" y="-20%" width="140%" height="150%">
       <feDropShadow dx="0" dy="4" stdDeviation="7" flood-color="#1B3158" flood-opacity="0.09"/>
@@ -46,10 +46,10 @@
   <rect class="canvas" width="1600" height="900"/>
   <rect x="0" y="0" width="12" height="900" fill="#2866D7"/>
 
-  <text x="72" y="65" class="eyebrow blue">PARETOPILOT · CLOUD AI</text>
-  <text x="72" y="116" class="title ink">Evidence to a defensible Arm64 deployment</text>
-  <text x="72" y="154" class="subtitle muted">One controlled runner · attributable candidates · strict provenance · quality-aware selection</text>
-  <text x="72" y="199" class="stage muted">REQUIRED, REPRODUCIBLE PATH</text>
+  <text x="72" y="65" class="eyebrow blue">PARETOPILOT · ARM64 INFERENCE</text>
+  <text x="72" y="116" class="title ink">From Arm64 benchmarks to a deployment choice</text>
+  <text x="72" y="154" class="subtitle muted">One runner · four controlled configurations · quality and performance checks</text>
+  <text x="72" y="199" class="stage muted">BENCHMARK AND DECISION FLOW</text>
   <line x1="310" y1="194" x2="1528" y2="194" class="rule"/>
 
   <!-- Main path connectors -->
@@ -89,12 +89,12 @@
     <text x="332" y="452" class="body muted">Generic llama.cpp</text>
     <text x="332" y="478" class="body muted">KleidiAI enabled</text>
     <line x1="332" y1="500" x2="508" y2="500" class="rule"/>
-    <text x="332" y="527" class="small muted">CPU · OS · compiler · argv</text>
+    <text x="332" y="527" class="small muted">CPU · OS · compiler · command</text>
     <text x="332" y="548" class="small muted">binaries + source hashes</text>
   </g>
 
   <!-- 03 Candidates -->
-  <g aria-label="Stage 3 four attributable candidates">
+  <g aria-label="Stage 3 four controlled configurations">
     <rect x="560" y="215" width="340" height="380" rx="16" class="surface"/>
     <text x="582" y="251" class="stage blue">03 · CANDIDATE MATRIX</text>
     <text x="582" y="286" class="heading ink">One change at a time</text>
@@ -122,7 +122,7 @@
   <g aria-label="Stage 4 throughput and server evaluation">
     <rect x="930" y="235" width="240" height="330" rx="16" class="surface-output"/>
     <text x="952" y="271" class="stage teal">04 · MEASURE</text>
-    <text x="952" y="306" class="heading ink">Two evidence lanes</text>
+    <text x="952" y="306" class="heading ink">Throughput + server tests</text>
 
     <rect x="952" y="329" width="196" height="91" rx="10" class="mini-teal"/>
     <text x="968" y="354" class="subheading ink">Throughput</text>
@@ -137,19 +137,19 @@
     <text x="952" y="549" class="small-strong teal">Fixed suite · streamed output</text>
   </g>
 
-  <!-- 05 Strict assembly -->
-  <g aria-label="Stage 5 strict assembly and integrity verification">
+  <!-- 05 Validate inputs -->
+  <g aria-label="Stage 5 input validation and integrity checks">
     <rect x="1200" y="235" width="220" height="330" rx="16" class="surface"/>
     <text x="1222" y="271" class="stage blue">05 · VERIFY</text>
-    <text x="1222" y="306" class="heading ink">Strict assembly</text>
+    <text x="1222" y="306" class="heading ink">Validate inputs</text>
     <line x1="1222" y1="325" x2="1398" y2="325" class="rule"/>
-    <text x="1222" y="359" class="body ink">Closed manifest schema</text>
+    <text x="1222" y="359" class="body ink">Validated data format</text>
     <text x="1222" y="393" class="body ink">Artifact SHA-256</text>
     <text x="1222" y="427" class="body ink">Identity cross-checks</text>
     <text x="1222" y="461" class="body ink">Metric source checks</text>
     <rect x="1222" y="486" width="176" height="51" rx="9" class="mini-blue"/>
-    <text x="1238" y="508" class="small-strong ink">BenchmarkSet</text>
-    <text x="1238" y="527" class="small muted">fails closed on mismatch</text>
+    <text x="1238" y="508" class="small-strong ink">Validated results</text>
+    <text x="1238" y="527" class="small muted">stops on mismatch</text>
   </g>
 
   <!-- Downstream decision connector -->
@@ -159,34 +159,33 @@
   <path d="M 1050 565 L 1050 620 L 430 620 L 430 665" class="connector-optional"/>
   <g aria-label="Optional Arm Performix profiling">
     <rect x="70" y="665" width="720" height="120" rx="14" class="optional"/>
-    <text x="94" y="701" class="stage muted">OPTIONAL DEPTH · OUTSIDE THE REQUIRED PATH</text>
+    <text x="94" y="701" class="stage muted">OPTIONAL PROFILING</text>
     <text x="94" y="735" class="heading ink">Arm Performix</text>
-    <text x="276" y="734" class="body muted">Hotspot profiling when supported by the target</text>
-    <text x="94" y="763" class="small muted">Adds diagnostic context; never blocks measurement, selection, or report generation.</text>
+    <text x="276" y="734" class="body muted">Hotspot context on supported targets</text>
   </g>
 
   <!-- 06 Decision -->
   <g aria-label="Stage 6 constraints and Pareto decision">
     <rect x="860" y="650" width="270" height="150" rx="16" class="surface-decision"/>
     <text x="882" y="685" class="stage amber">06 · DECIDE</text>
-    <text x="882" y="718" class="heading ink">Quality-aware Pareto</text>
-    <text x="882" y="748" class="small muted">Constraint gate → frontier → objective</text>
+    <text x="882" y="718" class="heading ink">Compare valid options</text>
+    <text x="882" y="748" class="small muted">Apply limits → compare → select</text>
     <text x="882" y="774" class="small-strong amber">Prefer simpler option within 1%</text>
   </g>
 
   <path d="M 1130 725 L 1170 725" class="connector-blue"/>
 
   <!-- 07 Report -->
-  <g aria-label="Stage 7 offline report and evidence bundle">
+  <g aria-label="Stage 7 offline report and measurement bundle">
     <rect x="1170" y="650" width="350" height="150" rx="16" class="surface-accent"/>
     <text x="1192" y="685" class="stage blue">07 · EXPORT</text>
     <text x="1192" y="718" class="heading ink">Offline decision package</text>
     <text x="1192" y="748" class="body muted">report.html · recommendation.json</text>
-    <text x="1192" y="775" class="body muted">raw evidence · status.json · SHA256SUMS</text>
+    <text x="1192" y="775" class="body muted">raw data · status.json · SHA256SUMS</text>
   </g>
 
   <line x1="72" y1="838" x2="1528" y2="838" class="rule"/>
   <circle cx="82" cy="865" r="5" fill="#2866D7"/>
-  <text x="98" y="870" class="small-strong ink">Truth boundary:</text>
-  <text x="210" y="870" class="small muted">the diagram describes the workflow; only a reviewed, complete, canonical evidence bundle supports performance claims.</text>
+  <text x="98" y="870" class="small-strong ink">Data source:</text>
+  <text x="190" y="870" class="small muted">linked Arm64 study.</text>
 </svg>

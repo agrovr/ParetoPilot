@@ -1,10 +1,10 @@
-# Canonical Arm64 result: run 30055662526
+# Arm64 model and latency study: run 30055662526
 
-This directory is the compact repository lock for ParetoPilot's current canonical v1.1 result.
-The complete raw and generated evidence is preserved in the
+This directory records ParetoPilot's published v1.1 result. The complete raw and generated data is
+preserved in the
 [`v1.1.0` release](https://github.com/agrovr/ParetoPilot/releases/tag/v1.1.0).
 
-## Release lock
+## Run and archive details
 
 | Field | Value |
 | --- | --- |
@@ -18,8 +18,8 @@ The complete raw and generated evidence is preserved in the
 | Archive SHA-256 | `b5586878ccd214667911390f417db0417111ac2c31d163a2f5f55c4469aefeb2` |
 | Checksummed payloads | 150 |
 
-The machine-readable [`evidence.json`](evidence.json) binds the run, release asset, outer archive
-digest, source and runner identity, important artifact digests, and replay review.
+The machine-readable [`evidence.json`](evidence.json) records the run, release file, runner, hashes,
+and replay result.
 
 ## Measured candidates
 
@@ -32,9 +32,8 @@ digest, source and runner identity, important artifact digests, and replay revie
 
 ## Decision
 
-ParetoPilot selected **`q8-generic`**. It had the lowest measured p95 end-to-end latency, so the
-baseline was both the numeric winner and the canonical recommendation. The declared 1% cutoff was
-2254.2522 ms; only Q8 entered the shortlist.
+ParetoPilot selected **`q8-generic`** because it had the lowest measured p95 end-to-end latency.
+The declared 1% cutoff was 2254.2522 ms; only Q8 entered the shortlist.
 
 The result does not erase the resource tradeoff. Compared with Q8, tuned Q4 + KleidiAI had:
 
@@ -46,9 +45,9 @@ The result does not erase the resource tradeoff. Compared with Q8, tuned Q4 + Kl
 - 9.37% lower generation throughput; and
 - one fewer passing behavior case.
 
-That makes the tuned candidate a measured resource alternative, not the canonical latency winner.
+That makes the tuned candidate a lower-resource alternative, while Q8 remains the latency choice.
 
-## Supplementary v1.1 evidence
+## Additional v1.1 checks
 
 - **Policy profiles:** `canonical-latency` and `decode-first` select Q8; `memory-first` selects Q4
   generic; `first-token-first` and `prompt-ingest-first` select tuned Q4 + KleidiAI.
@@ -60,7 +59,7 @@ That makes the tuned candidate a measured resource alternative, not the canonica
   for Q4 generic, 1.3919% for Q4 + KleidiAI, and 0.8029% for tuned Q4 + KleidiAI. These are
   observed spreads, not statistical-significance claims.
 
-## Pinned identity
+## Software and model versions
 
 - `llama.cpp`: `67b9b0e7f6ce45d929a4411907d3c48ec719e81c`
 - KleidiAI: `1.24.0`
@@ -85,11 +84,10 @@ Extract it into `evidence/`, verify the payload manifest, and replay into a fres
 python -m paretopilot replay evidence --output-dir output/replay-v1.1
 ```
 
-The independent release review returned `replay_contract: "1.1"`, `valid: true`,
-`decision_reproduced: true`, `fully_reproduced: true`, and `selected_id: "q8-generic"`. All nine
-comparisons matched, and both `differences` and `warnings` were empty.
+Replay completed with contract `1.1`, reproduced `q8-generic`, matched all nine comparisons, and
+found no differences or warnings.
 
-## Boundaries
+## Study limits
 
 This is one model and workload on one ephemeral hosted runner. The bounded load sweep tested only
 concurrency 1, 2, and 4. The deterministic behavior suite is a deployment gate, not a broad model

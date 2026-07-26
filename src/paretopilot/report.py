@@ -732,9 +732,9 @@ def render_report(
     elif classification == "exploratory":
         evidence_banner = (
             '<aside class="synthetic-banner" role="alert">'
-            "<strong>Exploratory evidence — not canonical submission evidence.</strong> "
-            "This report came from a branch or non-default experiment input and must be rerun "
-            "canonically before its measurements are cited."
+            "<strong>Exploratory result — not published benchmark evidence.</strong> "
+            "This report came from a branch or changed experiment input. Repeat the study using "
+            "the published workflow before citing its measurements."
             "</aside>"
         )
 
